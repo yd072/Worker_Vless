@@ -1155,45 +1155,63 @@ async function 双重哈希(文本) {
 }
 
 
+/**
+ * 代理 URL 请求
+ * @param {string} 代理网址 - 用于代理的服务器地址
+ * @param {URL} 目标网址 - 需要代理的目标网址
+ * @returns {Response} 新的响应对象
+ */
 async function 代理URL(代理网址, 目标网址) {
-	const 网址列表 = await 整理(代理网址);
-	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+  try {
+    // 获取代理地址列表，假设 `整理` 是一个返回代理地址列表的异步函数
+    const 网址列表 = await 整理(代理网址);
+    
+    // 随机选择一个代理网址
+    const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-	// 解析目标 URL
-	let 解析后的网址 = new URL(完整网址);
-	console.log(解析后的网址);
-	// 提取并可能修改 URL 组件
-	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-	let 主机名 = 解析后的网址.hostname;
-	let 路径名 = 解析后的网址.pathname;
-	let 查询参数 = 解析后的网址.search;
+    // 解析代理网址
+    let 解析后的网址 = new URL(完整网址);
+    console.log(`代理地址: ${解析后的网址}`);
 
-	// 处理路径名
-	if (路径名.charAt(路径名.length - 1) == '/') {
-		路径名 = 路径名.slice(0, -1);
-	}
-	路径名 += 目标网址.pathname;
+    // 提取 URL 组件
+    let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https'; // 默认使用 https
+    let 主机名 = 解析后的网址.hostname;
+    let 路径名 = 解析后的网址.pathname;
+    let 查询参数 = 解析后的网址.search;
 
-	// 构建新的 URL
-	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+    // 处理路径名：避免多余的 '/'
+    if (路径名.charAt(路径名.length - 1) === '/') {
+      路径名 = 路径名.slice(0, -1);
+    }
+    
+    // 将目标网址的路径拼接到代理网址上
+    路径名 += 目标网址.pathname;
 
-	// 反向代理请求
-	let 响应 = await fetch(新网址);
+    // 构建新的完整网址
+    let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+    console.log(`最终代理网址: ${新网址}`);
 
-	// 创建新的响应
-	let 新响应 = new Response(响应.body, {
-		status: 响应.status,
-		statusText: 响应.statusText,
-		headers: 响应.headers
-	});
+    // 发起代理请求
+    let 响应 = await fetch(新网址);
 
-	// 添加自定义头部，包含 URL 信息
-	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
-	//新响应.headers.set('X-Original-URL', 完整网址);
-	新响应.headers.set('X-New-URL', 新网址);
+    // 创建新的响应
+    let 新响应 = new Response(响应.body, {
+      status: 响应.status,
+      statusText: 响应.statusText,
+      headers: 响应.headers
+    });
 
-	return 新响应;
+    // 设置自定义头部，包含代理 URL 信息
+    新响应.headers.set('X-New-URL', 新网址);
+
+    return 新响应;
+
+  } catch (error) {
+    console.error('代理请求发生错误:', error);
+    return new Response('代理请求失败', { status: 500 });
+  }
 }
+
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
