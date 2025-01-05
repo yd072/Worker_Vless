@@ -749,22 +749,22 @@ function isValidUUID(uuid) {
 	return uuidRegex.test(uuid);
 }
 
-// WebSocket 的两个重要状态常量
-const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
-const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
-
 function safeCloseWebSocket(socket) {
 	try {
-		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
-		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
-		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
+		// WebSocket 的状态常量直接使用 WebSocket.OPEN 和 WebSocket.CLOSING
+		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
+			console.log("Closing WebSocket...");
 			socket.close();
+		} else {
+			// 输出 WebSocket 的状态以及未关闭的原因
+			console.warn(`WebSocket cannot be closed. Current state: ${socket.readyState}`);
 		}
 	} catch (error) {
-		// 记录任何可能发生的错误，虽然按照规范不应该有错误
-		console.error('safeCloseWebSocket error', error);
+		// 捕获并记录错误，详细说明可能的错误信息
+		console.error('Error occurred while safely closing WebSocket:', error);
 	}
 }
+
 
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
