@@ -358,7 +358,6 @@ async function 维列斯OverWSHandler(request) {
 	});
 }
 
-
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
 	async function useSocks5Pattern(address) {
 		if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
@@ -710,24 +709,29 @@ function base64ToArrayBuffer(base64Str) {
 		return { earlyData: undefined, error: null };
 	}
 	try {
-		// Go 语言使用了 URL 安全的 Base64 变体（RFC 4648）
-		// 这种变体使用 '-' 和 '_' 来代替标准 Base64 中的 '+' 和 '/'
-		// JavaScript 的 atob 函数不直接支持这种变体，所以我们需要先转换
+		// 处理 URL 安全 Base64 字符串
+		// 将 '-' 和 '_' 替换为 '+' 和 '/'
 		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
 
-		// 使用 atob 函数解码 Base64 字符串
-		// atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
-		const decode = atob(base64Str);
+		// 处理 Base64 字符串长度，确保其是 4 的倍数（Base64 的特性）
+		const padding = base64Str.length % 4;
+		if (padding) {
+			base64Str += '='.repeat(4 - padding);  // 补齐 Base64 字符串
+		}
+
+		// 使用 atob 解码 Base64 字符串
+		const binaryString = atob(base64Str);
+		const buffer = new ArrayBuffer(binaryString.length);
+		const view = new Uint8Array(buffer);
 
 		// 将二进制字符串转换为 Uint8Array
-		// 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
-		const arryBuffer = Uint8Array.from(decode, (c) => c.charCodeAt(0));
+		for (let i = 0; i < binaryString.length; i++) {
+			view[i] = binaryString.charCodeAt(i);
+		}
 
-		// 返回 Uint8Array 的底层 ArrayBuffer
-		// 这是实际的二进制数据，可以用于网络传输或其他二进制操作
-		return { earlyData: arryBuffer.buffer, error: null };
+		return { earlyData: buffer, error: null };
 	} catch (error) {
-		// 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
+		// 捕获错误并返回
 		return { earlyData: undefined, error };
 	}
 }
