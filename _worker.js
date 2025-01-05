@@ -822,18 +822,18 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
- * @param {(string)=> void} log - 日志记录函数
+ * @param {WebSocket} webSocket - WebSocket 对象，用于发送 DNS 响应数据
+ * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯协议的响应头部数据
+ * @param {(string) => void} log - 日志记录函数
  */
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-	// 无论客户端发送到哪个 DNS 服务器，我们总是使用硬编码的服务器
-	// 因为有些 DNS 服务器不支持 DNS over TCP
 	try {
-		// 选用 Google 的 DNS 服务器（注：后续可能会改为 Cloudflare 的 1.1.1.1）
-		const dnsServer = '8.8.4.4'; // 在 Cloudflare 修复连接自身 IP 的 bug 后，将改为 1.1.1.1
-		const dnsPort = 53; // DNS 服务的标准端口
+		// 选用 Google 的 DNS 服务器（后续可能改为 Cloudflare 的 1.1.1.1）
+		const dnsServer = '8.8.4.4';
+		const dnsPort = 53;
 
-		let 维列斯Header = 维列斯ResponseHeader; // 保存 维列斯 响应头部，用于后续发送
+		// 保存 维列斯 响应头部，用于后续发送
+		let 维列斯Header = 维列斯ResponseHeader;
 
 		// 与指定的 DNS 服务器建立 TCP 连接
 		const tcpSocket = connect({
@@ -842,38 +842,43 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 		});
 
 		log(`连接到 ${dnsServer}:${dnsPort}`); // 记录连接信息
+
+		// 使用写入流将 DNS 查询数据发送到 DNS 服务器
 		const writer = tcpSocket.writable.getWriter();
 		await writer.write(udpChunk); // 将客户端的 DNS 查询数据发送给 DNS 服务器
 		writer.releaseLock(); // 释放写入器，允许其他部分使用
 
-		// 将从 DNS 服务器接收到的响应数据通过 WebSocket 发送回客户端
+		// 从 DNS 服务器接收响应数据
 		await tcpSocket.readable.pipeTo(new WritableStream({
 			async write(chunk) {
+				// 仅当 WebSocket 连接开放时才发送数据
 				if (webSocket.readyState === WS_READY_STATE_OPEN) {
 					if (维列斯Header) {
-						// 如果有 维列斯 头部，则将其与 DNS 响应数据合并后发送
+						// 如果有 维列斯 头部，将其与 DNS 响应数据合并后发送
 						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
 						维列斯Header = null; // 头部只发送一次，之后置为 null
 					} else {
 						// 否则直接发送 DNS 响应数据
 						webSocket.send(chunk);
 					}
+				} else {
+					log('WebSocket 未开放，无法发送数据');
 				}
 			},
 			close() {
-				log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`); // 记录连接关闭信息
+				log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
 			},
 			abort(reason) {
-				console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason); // 记录异常中断原因
+				console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
 			},
 		}));
 	} catch (error) {
 		// 捕获并记录任何可能发生的错误
-		console.error(
-			`handleDNSQuery 函数发生异常，错误信息: ${error.message}`
-		);
+		console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error);
+		log(`处理 DNS 查询时发生错误: ${error.message}`);
 	}
 }
+
 
 /**
  * 建立 SOCKS5 代理连接
