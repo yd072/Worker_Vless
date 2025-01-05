@@ -493,222 +493,210 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
  * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
  */
 function process维列斯Header(维列斯Buffer, userID) {
-	// 检查数据长度是否足够（至少需要 24 字节）
-	if (维列斯Buffer.byteLength < 24) {
-		return {
-			hasError: true,
-			message: 'invalid data',
-		};
-	}
+    // 检查数据长度是否足够（至少需要 24 字节）
+    if (维列斯Buffer.byteLength < 24) {
+        return {
+            hasError: true,
+            message: 'Data length is too short. Expected at least 24 bytes.',
+        };
+    }
 
-	// 解析 维列斯 协议版本（第一个字节）
-	const version = new Uint8Array(维列斯Buffer.slice(0, 1));
+    // 解析 维列斯 协议版本（第一个字节）
+    const version = new Uint8Array(维列斯Buffer.slice(0, 1));
 
-	let isValidUser = false;
-	let isUDP = false;
+    let isValidUser = false;
+    let isUDP = false;
 
-	// 验证用户 ID（接下来的 16 个字节）
-	function isUserIDValid(userID, userIDLow, buffer) {
-		const userIDArray = new Uint8Array(buffer.slice(1, 17));
-		const userIDString = stringify(userIDArray);
-		return userIDString === userID || userIDString === userIDLow;
-	}
+    // 验证用户 ID（接下来的 16 个字节）
+    function isUserIDValid(userID, userIDLow, buffer) {
+        const userIDArray = new Uint8Array(buffer.slice(1, 17));
+        const userIDString = stringify(userIDArray);
+        return userIDString === userID || userIDString === userIDLow;
+    }
 
-	// 使用函数验证
-	isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
+    // 使用函数验证
+    isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
 
-	// 如果用户 ID 无效，返回错误
-	if (!isValidUser) {
-		return {
-			hasError: true,
-			message: `invalid user ${(new Uint8Array(维列斯Buffer.slice(1, 17)))}`,
-		};
-	}
+    // 如果用户 ID 无效，返回错误
+    if (!isValidUser) {
+        return {
+            hasError: true,
+            message: `Invalid user ID. Expected ${userID}, got ${(new Uint8Array(维列斯Buffer.slice(1, 17))).toString()}`,
+        };
+    }
 
-	// 获取附加选项的长度（第 17 个字节）
-	const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
-	// 暂时跳过附加选项
+    // 获取附加选项的长度（第 17 个字节）
+    const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
+    // 暂时跳过附加选项
 
-	// 解析命令（紧跟在选项之后的 1 个字节）
-	// 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
-	const command = new Uint8Array(
-		维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
-	)[0];
+    // 解析命令（紧跟在选项之后的 1 个字节）
+    // 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
+    const command = new Uint8Array(
+        维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
+    )[0];
 
-	// 0x01 TCP
-	// 0x02 UDP
-	// 0x03 MUX
-	if (command === 1) {
-		// TCP 命令，不需特殊处理
-	} else if (command === 2) {
-		// UDP 命令
-		isUDP = true;
-	} else {
-		// 不支持的命令
-		return {
-			hasError: true,
-			message: `command ${command} is not support, command 01-tcp,02-udp,03-mux`,
-		};
-	}
+    // 0x01 TCP
+    // 0x02 UDP
+    // 0x03 MUX
+    if (command === 1) {
+        // TCP 命令，不需特殊处理
+    } else if (command === 2) {
+        // UDP 命令
+        isUDP = true;
+    } else {
+        // 不支持的命令
+        return {
+            hasError: true,
+            message: `Command ${command} is not supported. Valid commands: 01-TCP, 02-UDP, 03-MUX`,
+        };
+    }
 
-	// 解析远程端口（大端序，2 字节）
-	const portIndex = 18 + optLength + 1;
-	const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
-	// port is big-Endian in raw data etc 80 == 0x005d
-	const portRemote = new DataView(portBuffer).getUint16(0);
+    // 解析远程端口（大端序，2 字节）
+    const portIndex = 18 + optLength + 1;
+    const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
+    const portRemote = new DataView(portBuffer).getUint16(0);
 
-	// 解析地址类型和地址
-	let addressIndex = portIndex + 2;
-	const addressBuffer = new Uint8Array(
-		维列斯Buffer.slice(addressIndex, addressIndex + 1)
-	);
+    // 解析地址类型和地址
+    let addressIndex = portIndex + 2;
+    const addressBuffer = new Uint8Array(
+        维列斯Buffer.slice(addressIndex, addressIndex + 1)
+    );
 
-	// 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
-	const addressType = addressBuffer[0];
-	let addressLength = 0;
-	let addressValueIndex = addressIndex + 1;
-	let addressValue = '';
+    // 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
+    const addressType = addressBuffer[0];
+    let addressLength = 0;
+    let addressValueIndex = addressIndex + 1;
+    let addressValue = '';
 
-	switch (addressType) {
-		case 1:
-			// IPv4 地址
-			addressLength = 4;
-			// 将 4 个字节转为点分十进制格式
-			addressValue = new Uint8Array(
-				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-			).join('.');
-			break;
-		case 2:
-			// 域名
-			// 第一个字节是域名长度
-			addressLength = new Uint8Array(
-				维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
-			)[0];
-			addressValueIndex += 1;
-			// 解码域名
-			addressValue = new TextDecoder().decode(
-				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-			);
-			break;
-		case 3:
-			// IPv6 地址
-			addressLength = 16;
-			const dataView = new DataView(
-				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-			);
-			// 每 2 字节构成 IPv6 地址的一部分
-			const ipv6 = [];
-			for (let i = 0; i < 8; i++) {
-				ipv6.push(dataView.getUint16(i * 2).toString(16));
-			}
-			addressValue = ipv6.join(':');
-			// seems no need add [] for ipv6
-			break;
-		default:
-			// 无效的地址类型
-			return {
-				hasError: true,
-				message: `invild addressType is ${addressType}`,
-			};
-	}
+    switch (addressType) {
+        case 1:
+            // IPv4 地址
+            addressLength = 4;
+            addressValue = new Uint8Array(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+            ).join('.');
+            break;
+        case 2:
+            // 域名
+            addressLength = new Uint8Array(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
+            )[0];
+            addressValueIndex += 1;
+            addressValue = new TextDecoder().decode(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+            );
+            break;
+        case 3:
+            // IPv6 地址
+            addressLength = 16;
+            const dataView = new DataView(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+            );
+            const ipv6 = [];
+            for (let i = 0; i < 8; i++) {
+                ipv6.push(dataView.getUint16(i * 2).toString(16));
+            }
+            addressValue = ipv6.join(':');
+            break;
+        default:
+            return {
+                hasError: true,
+                message: `Invalid address type ${addressType}`,
+            };
+    }
 
-	// 确保地址不为空
-	if (!addressValue) {
-		return {
-			hasError: true,
-			message: `addressValue is empty, addressType is ${addressType}`,
-		};
-	}
+    if (!addressValue) {
+        return {
+            hasError: true,
+            message: `Address is empty, address type is ${addressType}`,
+        };
+    }
 
-	// 返回解析结果
-	return {
-		hasError: false,
-		addressRemote: addressValue,  // 解析后的远程地址
-		addressType,				 // 地址类型
-		portRemote,				 // 远程端口
-		rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
-		维列斯Version: version,	  // 维列斯 协议版本
-		isUDP,					 // 是否是 UDP 请求
-	};
+    return {
+        hasError: false,
+        addressRemote: addressValue,  // 解析后的远程地址
+        addressType,                 // 地址类型
+        portRemote,                  // 远程端口
+        rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
+        维列斯Version: version,     // 维列斯 协议版本
+        isUDP,                       // 是否是 UDP 请求
+    };
 }
 
+/**
+ * 远程 Socket 数据转发到 WebSocket
+ * @param {ReadableStream} remoteSocket 远程 Socket 可读流
+ * @param {WebSocket} webSocket WebSocket 实例
+ * @param {ArrayBuffer} 维列斯ResponseHeader 维列斯 协议的头部数据
+ * @param {function} retry 重试函数
+ * @param {function} log 日志记录函数
+ */
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
-	// 将数据从远程服务器转发到 WebSocket
-	let remoteChunkCount = 0;
-	let chunks = [];
-	/** @type {ArrayBuffer | null} */
-	let 维列斯Header = 维列斯ResponseHeader;
-	let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
+    let remoteChunkCount = 0;
+    let chunks = [];
+    /** @type {ArrayBuffer | null} */
+    let 维列斯Header = 维列斯ResponseHeader;
+    let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
 
-	// 使用管道将远程 Socket 的可读流连接到一个可写流
-	await remoteSocket.readable
-		.pipeTo(
-			new WritableStream({
-				start() {
-					// 初始化时不需要任何操作
-				},
-				/**
-				 * 处理每个数据块
-				 * @param {Uint8Array} chunk 数据块
-				 * @param {*} controller 控制器
-				 */
-				async write(chunk, controller) {
-					hasIncomingData = true; // 标记已收到数据
-					// remoteChunkCount++; // 用于流量控制，现在似乎不需要了
+    // 使用管道将远程 Socket 的可读流连接到一个可写流
+    await remoteSocket.readable
+        .pipeTo(
+            new WritableStream({
+                start() {
+                    // 初始化时不需要任何操作
+                },
+                /**
+                 * 处理每个数据块
+                 * @param {Uint8Array} chunk 数据块
+                 * @param {*} controller 控制器
+                 */
+                async write(chunk, controller) {
+                    hasIncomingData = true; // 标记已收到数据
 
-					// 检查 WebSocket 是否处于开放状态
-					if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-						controller.error(
-							'webSocket.readyState is not open, maybe close'
-						);
-					}
+                    // 检查 WebSocket 是否处于开放状态
+                    if (webSocket.readyState !== WebSocket.OPEN) {
+                        controller.error('WebSocket is not open, cannot send data');
+                        return;
+                    }
 
-					if (维列斯Header) {
-						// 如果有 维列斯 响应头部，将其与第一个数据块一起发送
-						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-						维列斯Header = null; // 清空头部，之后不再发送
-					} else {
-						// 直接发送数据块
-						// 以前这里有流量控制代码，限制大量数据的发送速率
-						// 但现在 Cloudflare 似乎已经修复了这个问题
-						// if (remoteChunkCount > 20000) {
-						// 	// cf one package is 4096 byte(4kb),  4096 * 20000 = 80M
-						// 	await delay(1);
-						// }
-						webSocket.send(chunk);
-					}
-				},
-				close() {
-					// 当远程连接的可读流关闭时
-					log(`remoteConnection!.readable is close with hasIncomingData is ${hasIncomingData}`);
-					// 不需要主动关闭 WebSocket，因为这可能导致 HTTP ERR_CONTENT_LENGTH_MISMATCH 问题
-					// 客户端无论如何都会发送关闭事件
-					// safeCloseWebSocket(webSocket);
-				},
-				abort(reason) {
-					// 当远程连接的可读流中断时
-					console.error(`remoteConnection!.readable abort`, reason);
-				},
-			})
-		)
-		.catch((error) => {
-			// 捕获并记录任何异常
-			console.error(
-				`remoteSocketToWS has exception `,
-				error.stack || error
-			);
-			// 发生错误时安全地关闭 WebSocket
-			safeCloseWebSocket(webSocket);
-		});
+                    if (维列斯Header) {
+                        // 如果有 维列斯 响应头部，将其与第一个数据块一起发送
+                        webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
+                        维列斯Header = null; // 清空头部，之后不再发送
+                    } else {
+                        // 直接发送数据块
+                        webSocket.send(chunk);
+                    }
 
-	// 处理 Cloudflare 连接 Socket 的特殊错误情况
-	// 1. Socket.closed 将有错误
-	// 2. Socket.readable 将关闭，但没有任何数据
-	if (hasIncomingData === false && retry) {
-		log(`retry`);
-		retry(); // 调用重试函数，尝试重新建立连接
-	}
+                    // 流量控制（示例代码，限制一次发送的数据块大小）
+                    if (remoteChunkCount > 20000) {
+                        // 暂停发送，等待下一轮发送
+                        await new Promise(resolve => setTimeout(resolve, 1));
+                    }
+
+                    remoteChunkCount++;
+                },
+                close() {
+                    log(`Connection closed. Incoming data received: ${hasIncomingData}`);
+                },
+                abort(reason) {
+                    log(`Connection aborted. Reason: ${reason}`);
+                },
+            })
+        )
+        .catch((error) => {
+            log(`Error in remoteSocketToWS: ${error.message}`);
+            console.error(error.stack);
+            safeCloseWebSocket(webSocket);
+        });
+
+    // 如果没有收到任何数据，且需要重试，则调用重试函数
+    if (!hasIncomingData && retry) {
+        log(`Retrying connection...`);
+        retry(); // 调用重试函数，尝试重新建立连接
+    }
 }
+
 
 /**
  * 将 Base64 编码的字符串转换为 ArrayBuffer
