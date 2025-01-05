@@ -881,7 +881,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 
 
 /**
- * 建立 SOCKS5 代理连接
+ * 与 SOCKS5 代理服务器建立连接，并处理认证和目标服务器连接
  * @param {number} addressType 目标地址类型（1: IPv4, 2: 域名, 3: IPv6）
  * @param {string} addressRemote 目标地址（可以是 IP 或域名）
  * @param {number} portRemote 目标端口
@@ -889,77 +889,190 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
  */
 async function socks5Connect(addressType, addressRemote, portRemote, log) {
 	const { username, password, hostname, port } = parsedSocks5Address;
-	// 连接到 SOCKS5 代理服务器
-	const socket = connect({
-		hostname, // SOCKS5 服务器的主机名
-		port,	// SOCKS5 服务器的端口
-	});
 
-	// 请求头格式（Worker -> SOCKS5 服务器）:
-	// +----+----------+----------+
-	// |VER | NMETHODS | METHODS  |
-	// +----+----------+----------+
-	// | 1  |	1	 | 1 to 255 |
-	// +----+----------+----------+
+	try {
+		// 连接到 SOCKS5 代理服务器
+		const socket = connect({
+			hostname, // SOCKS5 服务器的主机名
+			port,	// SOCKS5 服务器的端口
+		});
 
-	// https://en.wikipedia.org/wiki/SOCKS#SOCKS5
-	// METHODS 字段的含义:
-	// 0x00 不需要认证
-	// 0x02 用户名/密码认证 https://datatracker.ietf.org/doc/html/rfc1929
+		// 发送 SOCKS5 问候消息（支持无认证和用户名/密码认证）
+		await sendSocksGreeting(socket, log);
+
+		// 等待 SOCKS5 服务器的响应
+		const res = await receiveSocksResponse(socket, log);
+		if (res === null) {
+			log("SOCKS5 服务器响应错误");
+			return;
+		}
+
+		// 如果 SOCKS5 服务器需要认证
+		if (res[1] === 0x02) {
+			if (!username || !password) {
+				log("请提供用户名和密码进行认证");
+				return;
+			}
+			await handleSocks5Authentication(socket, username, password, log);
+		}
+
+		// 发送目标连接请求（根据目标地址类型、地址和端口）
+		await sendConnectRequest(socket, addressType, addressRemote, portRemote, log);
+
+		// 等待目标服务器连接的响应
+		const connectResponse = await receiveConnectResponse(socket, log);
+		if (connectResponse === null) {
+			log("目标服务器连接失败");
+			return;
+		}
+
+		log("SOCKS5 代理连接建立成功");
+		// 在此处，你可以继续进行数据转发等操作
+
+	} catch (error) {
+		log(`连接 SOCKS5 代理时发生错误: ${error.message}`);
+	} finally {
+		// 确保关闭 socket 连接
+		socket.close();
+	}
+}
+
+/**
+ * 发送 SOCKS5 问候消息
+ * @param {WritableStreamDefaultWriter} writer SOCKS5 代理的写入流
+ */
+async function sendSocksGreeting(socket, log) {
 	const socksGreeting = new Uint8Array([5, 2, 0, 2]);
-	// 5: SOCKS5 版本号, 2: 支持的认证方法数, 0和2: 两种认证方法（无认证和用户名/密码）
-
 	const writer = socket.writable.getWriter();
-
 	await writer.write(socksGreeting);
 	log('已发送 SOCKS5 问候消息');
+}
 
+/**
+ * 接收 SOCKS5 服务器的响应
+ * @param {ReadableStreamDefaultReader} reader SOCKS5 代理的读取流
+ * @returns {Uint8Array|null} 服务器响应数据，或者 null 表示错误
+ */
+async function receiveSocksResponse(socket, log) {
 	const reader = socket.readable.getReader();
-	const encoder = new TextEncoder();
-	let res = (await reader.read()).value;
-	// 响应格式（SOCKS5 服务器 -> Worker）:
-	// +----+--------+
-	// |VER | METHOD |
-	// +----+--------+
-	// | 1  |   1	|
-	// +----+--------+
+	const res = (await reader.read()).value;
+
+	// 响应格式（SOCKS5 服务器 -> Worker）
 	if (res[0] !== 0x05) {
 		log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
-		return;
+		return null;
 	}
 	if (res[1] === 0xff) {
-		log("服务器不接受任何认证方法");
+		log("SOCKS5 服务器不接受任何认证方法");
+		return null;
+	}
+
+	return res;
+}
+
+/**
+ * 处理 SOCKS5 用户名/密码认证
+ * @param {WritableStreamDefaultWriter} writer SOCKS5 代理的写入流
+ * @param {string} username 用户名
+ * @param {string} password 密码
+ * @param {function} log 日志记录函数
+ */
+async function handleSocks5Authentication(socket, username, password, log) {
+	const encoder = new TextEncoder();
+
+	// 认证请求格式:
+	// +----+------+----------+------+----------+
+	// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+	// +----+------+----------+------+----------+
+	// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+	// +----+------+----------+------+----------+
+	if (username.length > 255 || password.length > 255) {
+		log("用户名或密码长度超过最大限制");
 		return;
 	}
 
-	// 如果返回 0x0502，表示需要用户名/密码认证
-	if (res[1] === 0x02) {
-		log("SOCKS5 服务器需要认证");
-		if (!username || !password) {
-			log("请提供用户名和密码");
-			return;
-		}
-		// 认证请求格式:
-		// +----+------+----------+------+----------+
-		// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
-		// +----+------+----------+------+----------+
-		// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
-		// +----+------+----------+------+----------+
-		const authRequest = new Uint8Array([
-			1,				   // 认证子协议版本
-			username.length,	// 用户名长度
-			...encoder.encode(username), // 用户名
-			password.length,	// 密码长度
-			...encoder.encode(password)  // 密码
-		]);
-		await writer.write(authRequest);
-		res = (await reader.read()).value;
-		// 期望返回 0x0100 表示认证成功
-		if (res[0] !== 0x01 || res[1] !== 0x00) {
-			log("SOCKS5 服务器认证失败");
-			return;
-		}
+	const authRequest = new Uint8Array([
+		1,                    // 认证子协议版本
+		username.length,      // 用户名长度
+		...encoder.encode(username), // 用户名
+		password.length,      // 密码长度
+		...encoder.encode(password)  // 密码
+	]);
+
+	const writer = socket.writable.getWriter();
+	await writer.write(authRequest);
+
+	// 等待认证响应
+	const reader = socket.readable.getReader();
+	const res = (await reader.read()).value;
+
+	// 期望返回 0x0100 表示认证成功
+	if (res[0] !== 0x01 || res[1] !== 0x00) {
+		log("SOCKS5 服务器认证失败");
+		return;
 	}
+	log("SOCKS5 认证成功");
+}
+
+/**
+ * 发送目标连接请求
+ * @param {WritableStreamDefaultWriter} writer SOCKS5 代理的写入流
+ * @param {number} addressType 地址类型（IPv4、域名、IPv6）
+ * @param {string} addressRemote 目标地址
+ * @param {number} portRemote 目标端口
+ * @param {function} log 日志记录函数
+ */
+async function sendConnectRequest(socket, addressType, addressRemote, portRemote, log) {
+	const encoder = new TextEncoder();
+	let addressBytes;
+
+	// 根据地址类型进行处理
+	if (addressType === 1) { // IPv4
+		addressBytes = addressRemote.split('.').map(byte => parseInt(byte, 10));
+	} else if (addressType === 2) { // 域名
+		addressBytes = encoder.encode(addressRemote);
+	} else if (addressType === 3) { // IPv6
+		addressBytes = addressRemote.split(':').map(byte => parseInt(byte, 16));
+	} else {
+		log(`不支持的地址类型: ${addressType}`);
+		return;
+	}
+
+	// 构造目标连接请求
+	const connectRequest = new Uint8Array(7 + addressBytes.length + 2);
+	connectRequest[0] = 0x05; // SOCKS5 协议版本
+	connectRequest[1] = 0x01; // 连接请求
+	connectRequest[2] = 0x00; // 保留字段
+	connectRequest[3] = addressType; // 地址类型
+	connectRequest.set(addressBytes, 4); // 地址数据
+	connectRequest[connectRequest.length - 2] = (portRemote >> 8) & 0xFF; // 端口高字节
+	connectRequest[connectRequest.length - 1] = portRemote & 0xFF; // 端口低字节
+
+	const writer = socket.writable.getWriter();
+	await writer.write(connectRequest);
+	log(`已发送目标连接请求到 ${addressRemote}:${portRemote}`);
+}
+
+/**
+ * 接收目标连接响应
+ * @param {ReadableStreamDefaultReader} reader SOCKS5 代理的读取流
+ * @param {function} log 日志记录函数
+ * @returns {Uint8Array|null} 目标连接响应数据，或者 null 表示错误
+ */
+async function receiveConnectResponse(socket, log) {
+	const reader = socket.readable.getReader();
+	const res = (await reader.read()).value;
+
+	// 响应格式（SOCKS5 服务器 -> Worker）
+	if (res[1] !== 0x00) {
+		log("目标连接失败，错误码：" + res[1]);
+		return null;
+	}
+
+	log("目标连接成功");
+	return res;
+}
+
 
 	// 请求数据格式（Worker -> SOCKS5 服务器）:
 	// +----+-----+-------+------+----------+----------+
