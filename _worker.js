@@ -705,29 +705,26 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
  * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
  */
 function base64ToArrayBuffer(base64Str) {
-	// 如果输入为空，直接返回空结果
 	if (!base64Str) {
 		return { earlyData: undefined, error: null };
 	}
 	try {
-		// Go 语言使用了 URL 安全的 Base64 变体（RFC 4648）
-		// 这种变体使用 '-' 和 '_' 来代替标准 Base64 中的 '+' 和 '/'
-		// JavaScript 的 atob 函数不直接支持这种变体，所以我们需要先转换
+		// 处理 URL 安全 Base64 字符串
 		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
 
-		// 使用 atob 函数解码 Base64 字符串
-		// atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
-		const decode = atob(base64Str);
+		// 使用 atob 解码后，将字符转换为 Uint8Array
+		const binaryString = atob(base64Str);
+		const buffer = new ArrayBuffer(binaryString.length);
+		const view = new Uint8Array(buffer);
 
 		// 将二进制字符串转换为 Uint8Array
-		// 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
-		const arryBuffer = Uint8Array.from(decode, (c) => c.charCodeAt(0));
+		for (let i = 0; i < binaryString.length; i++) {
+			view[i] = binaryString.charCodeAt(i);
+		}
 
-		// 返回 Uint8Array 的底层 ArrayBuffer
-		// 这是实际的二进制数据，可以用于网络传输或其他二进制操作
-		return { earlyData: arryBuffer.buffer, error: null };
+		return { earlyData: buffer, error: null };
 	} catch (error) {
-		// 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
+		// 捕获错误并返回
 		return { earlyData: undefined, error };
 	}
 }
@@ -740,8 +737,6 @@ function base64ToArrayBuffer(base64Str) {
 function isValidUUID(uuid) {
 	// 定义一个正则表达式来匹配 UUID 格式
 	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-	// 使用正则表达式测试 UUID 字符串
 	return uuidRegex.test(uuid);
 }
 
@@ -749,26 +744,35 @@ function isValidUUID(uuid) {
 const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
 const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
 
-function safeCloseWebSocket(socket) {
+/**
+ * 安全关闭 WebSocket 连接，避免多次关闭或错误关闭
+ * @param {WebSocket} socket 要关闭的 WebSocket
+ * @param {number} retryAttempts 重试次数，默认为 3
+ * @param {number} timeout 重试间隔时间，默认为 1 秒
+ */
+function safeCloseWebSocket(socket, retryAttempts = 3, timeout = 1000) {
 	try {
 		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
-		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
 		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
 			socket.close();
+		} else {
+			console.warn('WebSocket is already closed or closing.');
 		}
 	} catch (error) {
-		// 记录任何可能发生的错误，虽然按照规范不应该有错误
+		// 记录错误
 		console.error('safeCloseWebSocket error', error);
+		if (retryAttempts > 0) {
+			// 延时后重试
+			setTimeout(() => safeCloseWebSocket(socket, retryAttempts - 1, timeout), timeout);
+		}
 	}
 }
 
-// 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
-}
+/**
+ * 预计算 0-255 每个字节的十六进制表示
+ * @type {string[]}
+ */
+const byteToHex = new Array(256).fill('').map((_, i) => (i + 256).toString(16).slice(1));
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
@@ -778,9 +782,6 @@ for (let i = 0; i < 256; ++i) {
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
-	// toLowerCase() 确保整个 UUID 是小写的
 	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
 		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
 		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
@@ -798,16 +799,45 @@ function unsafeStringify(arr, offset = 0) {
  * @throws {TypeError} 如果生成的 UUID 字符串无效
  */
 function stringify(arr, offset = 0) {
-	// 使用不安全的函数快速生成 UUID 字符串
 	const uuid = unsafeStringify(arr, offset);
-	// 验证生成的 UUID 是否有效
 	if (!isValidUUID(uuid)) {
-		// 原：throw TypeError("Stringified UUID is invalid");
-		throw TypeError(`生成的 UUID 不符合规范 ${uuid}`);
-		//uuid = userID;
+		console.warn(`生成的 UUID 不符合规范: ${uuid}`);
+		return null; // 或者返回一个默认的 UUID 以避免函数抛出异常
 	}
 	return uuid;
 }
+
+/**
+ * 将 Base64 编码的字符串转换为 ArrayBuffer
+ * 
+ * @param {string} base64Str Base64 编码的输入字符串
+ * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
+ */
+function base64ToArrayBuffer(base64Str) {
+	if (!base64Str) {
+		return { earlyData: undefined, error: null };
+	}
+	try {
+		// 处理 URL 安全 Base64 字符串
+		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+
+		// 使用 atob 解码后，将字符转换为 Uint8Array
+		const binaryString = atob(base64Str);
+		const buffer = new ArrayBuffer(binaryString.length);
+		const view = new Uint8Array(buffer);
+
+		// 将二进制字符串转换为 Uint8Array
+		for (let i = 0; i < binaryString.length; i++) {
+			view[i] = binaryString.charCodeAt(i);
+		}
+
+		return { earlyData: buffer, error: null };
+	} catch (error) {
+		// 捕获错误并返回
+		return { earlyData: undefined, error };
+	}
+}
+
 
 /**
  * 处理 DNS 查询的函数
