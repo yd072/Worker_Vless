@@ -1131,18 +1131,29 @@ function 恢复伪装信息(content, userID, hostName, isBase64, fakeUserID = "f
  * @returns {Promise<string>} 双重哈希后的小写十六进制字符串
  */
 async function 双重哈希(文本) {
-	const 编码器 = new TextEncoder();
-
-	const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-	const 第一次哈希数组 = Array.from(new Uint8Array(第一次哈希));
-	const 第一次十六进制 = 第一次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
-
-	const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-	const 第二次哈希数组 = Array.from(new Uint8Array(第二次哈希));
-	const 第二次十六进制 = 第二次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
-
-	return 第二次十六进制.toLowerCase();
+  try {
+    const 编码器 = new TextEncoder();
+    
+    // 第一次哈希
+    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
+    const 第一次哈希数组 = new Uint8Array(第一次哈希);
+    const 第一次十六进制 = Array.from(第一次哈希数组).map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    
+    // 从第一次哈希结果获取一部分用于第二次哈希
+    const 第二次输入 = 第一次十六进制.slice(0, 16); // 取前16个字符（可根据需要调整）
+    
+    // 第二次哈希
+    const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第二次输入));
+    const 第二次哈希数组 = new Uint8Array(第二次哈希);
+    const 第二次十六进制 = Array.from(第二次哈希数组).map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    
+    return 第二次十六进制.toLowerCase();
+  } catch (error) {
+    console.error("哈希计算失败:", error);
+    throw error;  // 可以根据需求处理错误
+  }
 }
+
 
 async function 代理URL(代理网址, 目标网址) {
 	const 网址列表 = await 整理(代理网址);
