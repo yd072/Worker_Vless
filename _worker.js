@@ -1317,29 +1317,134 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, env
 			];
 
 			// 生成符合给定 CIDR 范围的随机 IP 地址
-			function generateRandomIPFromCIDR(cidr) {
-				const [base, mask] = cidr.split('/');
-				const baseIP = base.split('.').map(Number);
-				const subnetMask = 32 - parseInt(mask, 10);
-				const maxHosts = Math.pow(2, subnetMask) - 1;
-				const randomHost = Math.floor(Math.random() * maxHosts);
+function generateRandomIPFromCIDR(cidr) {
+    // 校验 CIDR 格式
+    const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+    if (!cidrRegex.test(cidr)) {
+        console.error(`无效的CIDR地址格式: ${cidr}`);
+        return null;  // 无效CIDR，返回null
+    }
 
-				const randomIP = baseIP.map((octet, index) => {
-					if (index < 2) return octet;
-					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-					return (octet & (255 << subnetMask)) + (randomHost & 255);
-				});
+    const [base, mask] = cidr.split('/');
+    const baseIP = base.split('.').map(Number);
 
-				return randomIP.join('.');
-			}
-			addresses = addresses.concat('127.0.0.1:1234#CFnat');
-			if (hostName.includes(".workers.dev")) {
-				addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-			} else {
-				addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-			}
-		}
-	}
+    // 检查IP地址的合法性
+    if (baseIP.some(octet => octet < 0 || octet > 255)) {
+        console.error(`无效的IP地址: ${base}`);
+        return null;
+    }
+
+    // 子网掩码的反向（32 - mask），计算最大主机数
+    const subnetMask = 32 - parseInt(mask, 10);
+    const maxHosts = Math.pow(2, subnetMask) - 1;
+
+    // 随机生成一个主机号
+    const randomHost = Math.floor(Math.random() * maxHosts);
+
+    const randomIP = baseIP.map((octet, index) => {
+        if (index < 2) return octet; // IP 地址的前两个部分（网络部分）不变
+
+        if (index === 2) {
+            // 对第三部分（子网部分）做处理
+            return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
+        }
+
+        // 对第四部分（主机部分）做处理
+        return (octet & (255 << subnetMask)) + (randomHost & 255);
+    });
+
+    return randomIP.join('.');  // 返回生成的随机 IP 地址
+}
+
+// 更新地址列表函数，使用生成的随机 IP 地址
+async function updateAddresses(sub, hostName, addresses, addressesnotls, cfips) {
+    if (sub) {
+        const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
+        if (match) {
+            sub = match[1];
+        }
+
+        const subs = await整理(sub);  // 此函数需要根据实际业务定义
+        if (subs.length > 1) sub = subs[0];
+    } else {
+        // 如果没有提供sub地址，使用KV存储中的地址列表
+        if (env.KV) {
+            await migrateAddressList(env);  // 此函数需要根据实际业务定义
+            const 优选地址列表 = await env.KV.get('ADD.txt');
+            if (优选地址列表) {
+                const 优选地址数组 = await整理(优选地址列表); // 此函数需要根据实际业务定义
+                const 分类地址 = {
+                    接口地址: new Set(),
+                    链接地址: new Set(),
+                    优选地址: new Set(),
+                };
+
+                for (const 元素 of 优选地址数组) {
+                    if (元素.startsWith('https://')) {
+                        分类地址.接口地址.add(元素);
+                    } else if (元素.includes('://')) {
+                        分类地址.链接地址.add(元素);
+                    } else {
+                        分类地址.优选地址.add(元素);
+                    }
+                }
+
+                addressesapi = [...分类地址.接口地址];
+                link = [...分类地址.链接地址];
+                addresses = [...分类地址.优选地址];
+            }
+        }
+    }
+
+    if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) === 0) {
+        // 定义 Cloudflare IP 范围的 CIDR 列表
+        let cfips = [
+            '103.21.244.0/23',
+            '104.16.0.0/13',
+            '104.24.0.0/14',
+            '172.64.0.0/14',
+            '103.21.244.0/23',
+            '104.16.0.0/14',
+            '104.24.0.0/15',
+            '141.101.64.0/19',
+            '172.64.0.0/14',
+            '188.114.96.0/21',
+            '190.93.240.0/21',
+        ];
+
+        // 生成随机 IP 地址并更新地址列表
+        addresses = addresses.concat('127.0.0.1:1234#CFnat');
+
+        if (hostName.includes(".workers.dev")) {
+            // 如果 hostName 包含 ".workers.dev"，将随机生成的 IP 地址添加到 addressesnotls
+            addressesnotls = addressesnotls.concat(cfips.map(cidr => {
+                const randomIP = generateRandomIPFromCIDR(cidr);
+                return randomIP ? randomIP + '#CF随机节点' : null;
+            }).filter(Boolean));
+        } else {
+            // 否则将随机生成的 IP 地址添加到 addresses
+            addresses = addresses.concat(cfips.map(cidr => {
+                const randomIP = generateRandomIPFromCIDR(cidr);
+                return randomIP ? randomIP + '#CF随机节点' : null;
+            }).filter(Boolean));
+        }
+    }
+}
+
+// 辅助函数，用于处理和过滤子地址
+async function整理(url) {
+    // 此函数用于从给定的 URL 地址列表中整理有效的地址
+    // 实际业务中需要根据需要定义这个函数
+    return [url];  // 示例返回值
+}
+
+// 示例迁移地址列表函数
+async function migrateAddressList(env) {
+    // 用于迁移地址列表
+    // 需要根据实际业务需求进行实现
+    console.log('迁移地址列表');
+}
+
 
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
