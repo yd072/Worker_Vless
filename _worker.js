@@ -306,40 +306,15 @@ async function 维列斯OverWSHandler(request) {
 }
 
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    // 用于检查目标地址是否匹配 socks5 的规则
-    async function useSocks5Pattern(address) {
-        // 将 base64 编码的规则解码
-        const decodedPatterns = go2Socks5s.map(pattern => atob(pattern));
-
-        // 优化: 提前检查是否包含特定的模式
-        if (decodedPatterns.includes('all in') || decodedPatterns.includes('*')) return true;
-
-        // 优化: 创建并缓存正则表达式，避免重复计算
-        const regexPatterns = decodedPatterns.map(pattern => {
-            // 将 '*' 转换为正则中的 '.*'
-            let regexPattern = pattern.replace(/\*/g, '.*');
-            return new RegExp(`^${regexPattern}$`, 'i');
-        });
-
-        // 检查地址是否符合任何模式
-        return regexPatterns.some(regex => regex.test(address));
-    }
-
-    // 调用 `useSocks5Pattern` 来决定是否要使用 SOCKS5 代理
-    const shouldUseSocks5 = await useSocks5Pattern(addressRemote);
-    
-    if (shouldUseSocks5) {
-        log(`地址 ${addressRemote} 匹配 SOCKS5 规则，正在使用 SOCKS5`);
-        // 这里你可以继续处理使用 SOCKS5 的逻辑
-        // 例如：通过 SOCKS5 代理连接到目标地址
-    } else {
-        log(`地址 ${addressRemote} 不匹配 SOCKS5 规则，使用默认连接`);
-        // 这里你可以继续处理不使用 SOCKS5 的逻辑
-        // 例如：直接连接到目标地址
-    }
-}
-
+async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
+	async function useSocks5Pattern(address) {
+		if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
+		return go2Socks5s.some(pattern => {
+			let regexPattern = pattern.replace(/\*/g, '.*');
+			let regex = new RegExp(`^${regexPattern}$`, 'i');
+			return regex.test(address);
+		});
+	}
 
 	async function connectAndWrite(address, port, socks = false) {
 		log(`connected to ${address}:${port}`);
