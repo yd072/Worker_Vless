@@ -1412,39 +1412,30 @@ async function updateAddresses(sub, hostName, addresses, addressesnotls, cfips) 
             '190.93.240.0/21',
         ];
 
-        // 生成随机 IP 地址并更新地址列表
-        addresses = addresses.concat('127.0.0.1:1234#CFnat');
+       			// 生成符合给定 CIDR 范围的随机 IP 地址
+			function generateRandomIPFromCIDR(cidr) {
+				const [base, mask] = cidr.split('/');
+				const baseIP = base.split('.').map(Number);
+				const subnetMask = 32 - parseInt(mask, 10);
+				const maxHosts = Math.pow(2, subnetMask) - 1;
+				const randomHost = Math.floor(Math.random() * maxHosts);
 
-        if (hostName.includes(".workers.dev")) {
-            // 如果 hostName 包含 ".workers.dev"，将随机生成的 IP 地址添加到 addressesnotls
-            addressesnotls = addressesnotls.concat(cfips.map(cidr => {
-                const randomIP = generateRandomIPFromCIDR(cidr);
-                return randomIP ? randomIP + '#CF随机节点' : null;
-            }).filter(Boolean));
-        } else {
-            // 否则将随机生成的 IP 地址添加到 addresses
-            addresses = addresses.concat(cfips.map(cidr => {
-                const randomIP = generateRandomIPFromCIDR(cidr);
-                return randomIP ? randomIP + '#CF随机节点' : null;
-            }).filter(Boolean));
-        }
-    }
-}
+				const randomIP = baseIP.map((octet, index) => {
+					if (index < 2) return octet;
+					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
+					return (octet & (255 << subnetMask)) + (randomHost & 255);
+				});
 
-// 辅助函数，用于处理和过滤子地址
-async function整理(url) {
-    // 此函数用于从给定的 URL 地址列表中整理有效的地址
-    // 实际业务中需要根据需要定义这个函数
-    return [url];  // 示例返回值
-}
-
-// 示例迁移地址列表函数
-async function migrateAddressList(env) {
-    // 用于迁移地址列表
-    // 需要根据实际业务需求进行实现
-    console.log('迁移地址列表');
-}
-
+				return randomIP.join('.');
+			}
+			addresses = addresses.concat('127.0.0.1:1234#CFnat');
+			if (hostName.includes(".workers.dev")) {
+				addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+			} else {
+				addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+			}
+		}
+	}
 
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
