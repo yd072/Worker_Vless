@@ -1086,43 +1086,20 @@ function socks5AddressParser(address) {
  * @param {string} userID 真实的用户ID
  * @param {string} hostName 真实的主机名
  * @param {boolean} isBase64 内容是否是Base64编码的
- * @param {string} fakeUserID 假用户ID（可选，默认值 "fakeUserID"）
- * @param {string} fakeHostName 假主机名（可选，默认值 "fakeHostName"）
  * @returns {string} 恢复真实信息后的内容
  */
-function 恢复伪装信息(content, userID, hostName, isBase64, fakeUserID = "fakeUserID", fakeHostName = "fakeHostName") {
-  // 如果内容是Base64编码的，先解码
-  if (isBase64) {
-    try {
-      content = atob(content);
-    } catch (error) {
-      console.error("Base64 解码失败", error);
-      return "";  // 解码失败时返回空字符串，或者可以根据需求选择返回原始内容
-    }
-  }
+function 恢复伪装信息(content, userID, hostName, isBase64) {
+	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
-  // 转义假用户ID和假主机名，以防止它们包含正则表达式特殊字符
-  const escapedFakeUserID = fakeUserID.replace(/[.*+?^=!:${}()|\[\]\/\\]/g, "\\$&");
-  const escapedFakeHostName = fakeHostName.replace(/[.*+?^=!:${}()|\[\]\/\\]/g, "\\$&");
+	// 使用正则表达式全局替换（'g'标志）
+	// 将所有出现的假用户ID和假主机名替换为真实的值
+	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
+		.replace(new RegExp(fakeHostName, 'g'), hostName);
 
-  // 使用正则表达式全局替换（'g'标志）
-  // 将所有出现的假用户ID和假主机名替换为真实的值
-  content = content.replace(new RegExp(escapedFakeUserID, 'g'), userID)
-    .replace(new RegExp(escapedFakeHostName, 'g'), hostName);
+	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
 
-  // 如果原内容是Base64编码的，处理完后再次编码
-  if (isBase64) {
-    try {
-      content = btoa(content);
-    } catch (error) {
-      console.error("Base64 编码失败", error);
-      return "";  // 编码失败时返回空字符串，或者可以根据需求选择返回原始内容
-    }
-  }
-
-  return content;
+	return content;
 }
-
 
 /**
  * 双重MD5哈希函数
