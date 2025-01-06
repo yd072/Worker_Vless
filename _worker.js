@@ -1100,6 +1100,15 @@ function socks5AddressParser(address) {
 }
 
 /**
+ * 将字符串中的特殊字符进行转义，以便用于正则表达式
+ * @param {string} str 需要转义的字符串
+ * @returns {string} 转义后的字符串
+ */
+function escapeRegExp(str) {
+    return str.replace(/[.*+?^=!:${}()|\[\]\/\\]/g, '\\$&');
+}
+
+/**
  * 恢复被伪装的信息
  * 这个函数用于将内容中的假用户ID和假主机名替换回真实的值
  * 
@@ -1110,16 +1119,19 @@ function socks5AddressParser(address) {
  * @returns {string} 恢复真实信息后的内容
  */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
-	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
+    if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
-	// 使用正则表达式全局替换（'g'标志）
-	// 将所有出现的假用户ID和假主机名替换为真实的值
-	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
-		.replace(new RegExp(fakeHostName, 'g'), hostName);
+    // 对伪装的用户ID和主机名进行转义，防止正则表达式解析错误
+    const escapedFakeUserID = escapeRegExp(fakeUserID);
+    const escapedFakeHostName = escapeRegExp(fakeHostName);
 
-	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+    // 使用正则表达式全局替换（'g'标志）
+    content = content.replace(new RegExp(escapedFakeUserID, 'g'), userID)
+        .replace(new RegExp(escapedFakeHostName, 'g'), hostName);
 
-	return content;
+    if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+
+    return content;
 }
 
 /**
