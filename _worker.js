@@ -844,6 +844,9 @@ for (let i = 0; i < 256; ++i) {
 	byteToHex.push((i + 256).toString(16).slice(1));
 }
 
+// 字节到十六进制字符的查找表，用于高效转换字节数组为十六进制字符串
+const byteToHex = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
  * 这是一个底层函数，直接操作字节，不做任何验证
@@ -852,15 +855,15 @@ for (let i = 0; i < 256; ++i) {
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
-	// toLowerCase() 确保整个 UUID 是小写的
-	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
-		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
-		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
-		byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
-		byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
-		byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
+  // 通过查找表将字节数组转换为标准的 UUID 格式 (8-4-4-4-12)
+  return (
+    byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
+    byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
+    byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
+    byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
+    byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
+    byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]
+  ).toLowerCase(); // 返回小写的 UUID 字符串
 }
 
 /**
@@ -872,16 +875,28 @@ function unsafeStringify(arr, offset = 0) {
  * @throws {TypeError} 如果生成的 UUID 字符串无效
  */
 function stringify(arr, offset = 0) {
-	// 使用不安全的函数快速生成 UUID 字符串
-	const uuid = unsafeStringify(arr, offset);
-	// 验证生成的 UUID 是否有效
-	if (!isValidUUID(uuid)) {
-		// 原：throw TypeError("Stringified UUID is invalid");
-		throw TypeError(`生成的 UUID 不符合规范 ${uuid}`);
-		//uuid = userID;
-	}
-	return uuid;
+  // 首先通过不安全的方式生成 UUID 字符串
+  const uuid = unsafeStringify(arr, offset);
+
+  // 然后验证该 UUID 是否符合标准格式
+  if (!isValidUUID(uuid)) {
+    throw new TypeError(`生成的 UUID 不符合规范: ${uuid}`);
+  }
+
+  return uuid;
 }
+
+/**
+ * 简单验证 UUID 格式的函数
+ * @param {string} uuid 要验证的 UUID 字符串
+ * @returns {boolean} 如果字符串符合 UUID 格式返回 true，否则返回 false
+ */
+function isValidUUID(uuid) {
+  // 正则表达式，检查 UUID 格式是否符合 "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
 
 /**
  * 处理 DNS 查询的函数
