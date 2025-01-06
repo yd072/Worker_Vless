@@ -859,17 +859,18 @@ function unsafeStringify(arr, offset = 0) {
  * @throws {TypeError} 如果生成的 UUID 字符串无效
  */
 function stringify(arr, offset = 0) {
-	// 使用不安全的函数快速生成 UUID 字符串，并确保 UUID 格式正确
+	// 使用不安全的函数快速生成 UUID 字符串
 	const uuid = unsafeStringify(arr, offset);
-	
-	// 直接验证 UUID 的有效性
+
+	// 验证 UUID 是否符合标准格式
 	if (!isValidUUID(uuid)) {
-		// 生成的 UUID 无效，抛出错误并给出更详细的错误信息
-		throw new TypeError(`生成的 UUID 无效: ${uuid}`);
+		// 如果 UUID 无效，抛出错误并详细说明问题
+		throw new TypeError(`生成的 UUID 无效: ${uuid}. 请确保输入的字节数组符合 UUID 格式。`);
 	}
 
 	return uuid;
 }
+
 
 
 /**
