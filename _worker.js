@@ -48,77 +48,152 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 export default {
-async function fetch(request, env, ctx) {
-    try {
-        // 获取用户代理
-        const UA = request.headers.get('User-Agent') || 'null';
-        const userAgent = UA.toLowerCase();
+async function handleWebSocketConnection(request) {
+    // Create a WebSocket pair for communication
+    const webSocketPair = new WebSocketPair();
+    const [client, webSocket] = Object.values(webSocketPair);
 
-        // 处理用户ID
-        let userID = env.UUID || env.uuid || env.PASSWORD || env.pswd || userID;
-        if (env.KEY || env.TOKEN || (userID && !isValidUUID(userID))) {
-            const [dynamicUserID, userIDLow] = await generateDynamicUUID(userID);
-            userID = dynamicUserID;
+    // Accept the WebSocket connection
+    webSocket.accept();
+
+    let remoteAddress = '';
+    let remotePortLog = '';
+
+    // Logging function to capture connection details
+    const log = (info, event) => {
+        console.log(`[${remoteAddress}:${remotePortLog}] ${info}`, event || '');
+    };
+
+    // Retrieve early data from the WebSocket handshake
+    const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+
+    // Create a readable WebSocket stream to handle incoming data
+    const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+
+    // Object to store remote socket connection info
+    let remoteSocketWrapper = { value: null };
+
+    // Flag to check if the request is a DNS query
+    let isDnsQuery = false;
+
+    // Pipe the incoming data to a writable stream
+    readableWebSocketStream.pipeTo(new WritableStream({
+        async write(chunk, controller) {
+            // If it's a DNS query, handle DNS processing
+            if (isDnsQuery) {
+                return await handleDNSQuery(chunk, webSocket, null, log);
+            }
+
+            // If the remote socket exists, forward the data
+            if (remoteSocketWrapper.value) {
+                const writer = remoteSocketWrapper.value.writable.getWriter();
+                await writer.write(chunk);
+                writer.releaseLock();
+                return;
+            }
+
+            // Process the header for the connection protocol (维列斯)
+            const { hasError, message, addressType, portRemote = 443, addressRemote = '', rawDataIndex, protocolVersion = new Uint8Array([0, 0]), isUDP } = process维列斯Header(chunk, userID);
+            
+            remoteAddress = addressRemote;
+            remotePortLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '}`;
+
+            // If an error occurs in protocol parsing, throw an error
+            if (hasError) {
+                throw new Error(message);
+                return;
+            }
+
+            // Handle UDP protocol
+            if (isUDP) {
+                if (portRemote === 53) {
+                    isDnsQuery = true;
+                } else {
+                    throw new Error('UDP proxy is only enabled for DNS (port 53)');
+                    return;
+                }
+            }
+
+            // Construct response header for the 维列斯 protocol
+            const 维列斯ResponseHeader = new Uint8Array([protocolVersion[0], 0]);
+
+            // Slice the actual client data to be forwarded
+            const rawClientData = chunk.slice(rawDataIndex);
+
+            // Handle DNS queries separately
+            if (isDnsQuery) {
+                return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+            }
+
+            // Handle outbound TCP connections
+            if (!banHosts.includes(addressRemote)) {
+                log(`Handling outbound TCP connection ${addressRemote}:${portRemote}`);
+                handleTCPOutbound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
+            } else {
+                throw new Error(`Connection to blacklisted host, closing TCP connection ${addressRemote}:${portRemote}`);
+            }
+        },
+        close() {
+            log('Readable WebSocket stream closed');
+        },
+        abort(reason) {
+            log('Readable WebSocket stream aborted', JSON.stringify(reason));
         }
+    })).catch((err) => {
+        log('Error in readableWebSocketStream pipe', err);
+    });
 
-        // 确保 UUID 存在
-        if (!userID) {
-            return new Response('请设置你的UUID变量，或尝试重试部署，检查变量是否生效？', { status: 404 });
-        }
-
-        // 生成虚拟用户ID和主机名
-        const timestamp = Math.ceil(new Date().setHours(0, 0, 0, 0) / 1000);
-        const fakeUserIDMD5 = await doubleHash(`${userID}${timestamp}`);
-        const fakeUserID = formatFakeUserID(fakeUserIDMD5);
-        const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
-
-        // 处理代理和 SOCKS5 地址
-        const proxyIP = await getProxyIP(env.PROXYIP);
-        const socks5Address = await getSocks5Address(env.SOCKS5);
-        const { enableSocks, parsedSocks5Address } = parseSocks5Address(socks5Address);
-
-        // WebSocket 升级请求处理
-        const upgradeHeader = request.headers.get('Upgrade');
-        if (upgradeHeader === 'websocket') {
-            return await handleWebSocket(request);
-        }
-
-        // 普通 HTTP 请求处理
-        const url = new URL(request.url);
-        if (url.pathname === '/') {
-            return await handleRootPath(env, url);
-        }
-
-        // 其他路径处理
-        if (url.pathname === `/${fakeUserID}`) {
-            return await handleFakeUserIDPath(userID, request);
-        }
-
-        return new Response('未找到匹配的路径', { status: 404 });
-
-    } catch (error) {
-        console.error(error);
-        return new Response('服务器错误', { status: 500 });
-    }
+    // Return the WebSocket upgrade response
+    return new Response(null, {
+        status: 101,
+        webSocket: client,
+    });
 }
 
-async function generateDynamicUUID(userID) {
-    // 生成动态 UUID 的逻辑
+// Helper function to handle DNS queries
+async function handleDNSQuery(chunk, webSocket, 维列斯ResponseHeader, log) {
+    // Handle DNS query logic here...
+    // For instance, process the DNS request and send the response back to the WebSocket
+    log('Handling DNS Query');
+    // You can call DNS resolver functions here
 }
 
-function formatFakeUserID(fakeUserIDMD5) {
-    return [
-        fakeUserIDMD5.slice(0, 8),
-        fakeUserIDMD5.slice(8, 12),
-        fakeUserIDMD5.slice(12, 16),
-        fakeUserIDMD5.slice(16, 20),
-        fakeUserIDMD5.slice(20)
-    ].join('-');
+// Helper function to handle outbound TCP connections
+function handleTCPOutbound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
+    // Logic for handling outbound TCP connections
+    log(`Handling TCP outbound to ${addressRemote}:${portRemote}`);
+    // Forward data to the remote server and send the response to WebSocket
 }
 
-async function getProxyIP(proxyIP) {
-    const proxyIPs = await processList(proxyIP);
-    return proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
+// Helper function to process the 维列斯 protocol header
+function process维列斯Header(chunk, userID) {
+    // Parse the protocol header and return details such as address, port, version, and any errors
+    // Dummy return for example purposes
+    return {
+        hasError: false,
+        message: '',
+        addressType: 0,
+        portRemote: 443,
+        addressRemote: 'example.com',
+        rawDataIndex: 10,
+        protocolVersion: new Uint8Array([0, 0]),
+        isUDP: false
+    };
+}
+
+// Helper function to make the WebSocket stream readable
+function makeReadableWebSocketStream(webSocket, earlyDataHeader, log) {
+    // Implement logic to make the WebSocket stream readable
+    return new ReadableStream({
+        start(controller) {
+            // Initialize the stream, perhaps listening for data on the WebSocket and passing it to the controller
+            webSocket.addEventListener('message', (event) => {
+                controller.enqueue(event.data);
+            });
+        }
+    });
+}
+
 }
 
 async function getSocks5Address(socks5Address) {
