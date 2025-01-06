@@ -658,82 +658,83 @@ function process维列斯Header(维列斯Buffer, userID) {
 }
 
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
-	// 将数据从远程服务器转发到 WebSocket
-	let remoteChunkCount = 0;
-	let chunks = [];
-	/** @type {ArrayBuffer | null} */
-	let 维列斯Header = 维列斯ResponseHeader;
-	let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
+    // 将数据从远程服务器转发到 WebSocket
+    let remoteChunkCount = 0;
+    let chunks = [];
+    /** @type {ArrayBuffer | null} */
+    let 维列斯Header = 维列斯ResponseHeader;
+    let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
 
-	// 使用管道将远程 Socket 的可读流连接到一个可写流
-	await remoteSocket.readable
-		.pipeTo(
-			new WritableStream({
-				start() {
-					// 初始化时不需要任何操作
-				},
-				/**
-				 * 处理每个数据块
-				 * @param {Uint8Array} chunk 数据块
-				 * @param {*} controller 控制器
-				 */
-				async write(chunk, controller) {
-					hasIncomingData = true; // 标记已收到数据
-					// remoteChunkCount++; // 用于流量控制，现在似乎不需要了
+    // 使用管道将远程 Socket 的可读流连接到一个可写流
+    await remoteSocket.readable
+        .pipeTo(
+            new WritableStream({
+                start() {
+                    // 初始化时不需要任何操作
+                },
+                /**
+                 * 处理每个数据块
+                 * @param {Uint8Array} chunk 数据块
+                 * @param {*} controller 控制器
+                 */
+                async write(chunk, controller) {
+                    hasIncomingData = true; // 标记已收到数据
 
-					// 检查 WebSocket 是否处于开放状态
-					if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-						controller.error(
-							'webSocket.readyState is not open, maybe close'
-						);
-					}
+                    // 检查 WebSocket 是否处于开放状态
+                    if (webSocket.readyState !== WebSocket.OPEN) {
+                        controller.error('WebSocket.readyState is not open, maybe close');
+                    }
 
-					if (维列斯Header) {
-						// 如果有 维列斯 响应头部，将其与第一个数据块一起发送
-						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-						维列斯Header = null; // 清空头部，之后不再发送
-					} else {
-						// 直接发送数据块
-						// 以前这里有流量控制代码，限制大量数据的发送速率
-						// 但现在 Cloudflare 似乎已经修复了这个问题
-						// if (remoteChunkCount > 20000) {
-						// 	// cf one package is 4096 byte(4kb),  4096 * 20000 = 80M
-						// 	await delay(1);
-						// }
-						webSocket.send(chunk);
-					}
-				},
-				close() {
-					// 当远程连接的可读流关闭时
-					log(`remoteConnection!.readable is close with hasIncomingData is ${hasIncomingData}`);
-					// 不需要主动关闭 WebSocket，因为这可能导致 HTTP ERR_CONTENT_LENGTH_MISMATCH 问题
-					// 客户端无论如何都会发送关闭事件
-					// safeCloseWebSocket(webSocket);
-				},
-				abort(reason) {
-					// 当远程连接的可读流中断时
-					console.error(`remoteConnection!.readable abort`, reason);
-				},
-			})
-		)
-		.catch((error) => {
-			// 捕获并记录任何异常
-			console.error(
-				`remoteSocketToWS has exception `,
-				error.stack || error
-			);
-			// 发生错误时安全地关闭 WebSocket
-			safeCloseWebSocket(webSocket);
-		});
+                    try {
+                        if (维列斯Header) {
+                            // 如果有 维列斯 响应头部，将其与第一个数据块一起发送
+                            await webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
+                            维列斯Header = null; // 清空头部，之后不再发送
+                        } else {
+                            // 直接发送数据块
+                            // 以前这里有流量控制代码，限制大量数据的发送速率
+                            // 但现在 Cloudflare 似乎已经修复了这个问题
+                            // if (remoteChunkCount > 20000) {
+                            //     // cf one package is 4096 byte(4kb),  4096 * 20000 = 80M
+                            //     await delay(1);
+                            // }
+                            await webSocket.send(chunk);
+                        }
+                    } catch (err) {
+                        // 捕获 WebSocket 发送错误
+                        console.error(`Error while sending data to WebSocket: ${err.message}`);
+                        controller.error(err); // 抛出异常，终止流
+                    }
+                },
+                close() {
+                    // 当远程连接的可读流关闭时
+                    log(`remoteConnection!.readable is close with hasIncomingData is ${hasIncomingData}`);
+                    // 不需要主动关闭 WebSocket，因为这可能导致 HTTP ERR_CONTENT_LENGTH_MISMATCH 问题
+                    // 客户端无论如何都会发送关闭事件
+                    // safeCloseWebSocket(webSocket);
+                },
+                abort(reason) {
+                    // 当远程连接的可读流中断时
+                    console.error(`remoteConnection!.readable abort`, reason);
+                },
+            })
+        )
+        .catch((error) => {
+            // 捕获并记录任何异常
+            console.error(`remoteSocketToWS has exception `, error.stack || error);
+            // 发生错误时安全地关闭 WebSocket
+            safeCloseWebSocket(webSocket);
+        });
 
-	// 处理 Cloudflare 连接 Socket 的特殊错误情况
-	// 1. Socket.closed 将有错误
-	// 2. Socket.readable 将关闭，但没有任何数据
-	if (hasIncomingData === false && retry) {
-		log(`retry`);
-		retry(); // 调用重试函数，尝试重新建立连接
-	}
+    // 处理 Cloudflare 连接 Socket 的特殊错误情况
+    // 1. Socket.closed 将有错误
+    // 2. Socket.readable 将关闭，但没有任何数据
+    if (hasIncomingData === false && retry) {
+        log(`retry`);
+        retry(); // 调用重试函数，尝试重新建立连接
+    }
 }
+
 
 /**
  * 将 Base64 编码的字符串转换为 ArrayBuffer
