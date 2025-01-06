@@ -451,7 +451,6 @@ function parseProxyIP(proxyIP, defaultPort = '8080') {
     return parsedProxy;
 }
 
-
 	let useSocks = false;
 	if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
 	// 首次尝试连接远程服务器
@@ -680,7 +679,6 @@ function process维列斯Header(维列斯Buffer, userID) {
 	};
 }
 
-
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
 	// 将数据从远程服务器转发到 WebSocket
 	let remoteChunkCount = 0;
@@ -835,7 +833,6 @@ function safeCloseWebSocket(socket, force = false) {
     }
 }
 
-
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
@@ -882,7 +879,6 @@ function stringify(arr, offset = 0) {
 	}
 	return uuid;
 }
-
 
 /**
  * 处理 DNS 查询的函数
@@ -1314,7 +1310,6 @@ async function 代理URL(代理网址, 目标网址) {
 		return new Response('代理请求失败: ' + error.message, { status: 500 });
 	}
 }
-
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
