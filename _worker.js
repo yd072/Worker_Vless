@@ -692,12 +692,12 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
 	let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
 
 	// 使用管道将远程 Socket 的可读流连接到一个可写流
-	await remoteSocket.readable
-		.pipeTo(
+	try {
+		await remoteSocket.readable.pipeTo(
 			new WritableStream({
-				start() {
-					// 初始化时不需要任何操作
-				},
+				// 初始化时不需要任何操作
+				start() {},
+
 				/**
 				 * 处理每个数据块
 				 * @param {Uint8Array} chunk 数据块
@@ -705,58 +705,47 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
 				 */
 				async write(chunk, controller) {
 					hasIncomingData = true; // 标记已收到数据
-					// remoteChunkCount++; // 用于流量控制，现在似乎不需要了
 
 					// 检查 WebSocket 是否处于开放状态
-					if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-						controller.error(
-							'webSocket.readyState is not open, maybe close'
-						);
+					if (webSocket.readyState !== WebSocket.OPEN) {
+						controller.error('webSocket.readyState is not open, maybe closed');
+						return;
 					}
 
+					// 如果有 维列斯 响应头，将其与第一个数据块一起发送
 					if (维列斯Header) {
-						// 如果有 维列斯 响应头部，将其与第一个数据块一起发送
-						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
+						const blob = new Blob([维列斯Header, chunk]);
+						webSocket.send(await blob.arrayBuffer());
 						维列斯Header = null; // 清空头部，之后不再发送
 					} else {
 						// 直接发送数据块
-						// 以前这里有流量控制代码，限制大量数据的发送速率
-						// 但现在 Cloudflare 似乎已经修复了这个问题
-						// if (remoteChunkCount > 20000) {
-						// 	// cf one package is 4096 byte(4kb),  4096 * 20000 = 80M
-						// 	await delay(1);
-						// }
 						webSocket.send(chunk);
 					}
 				},
+
+				// 当远程连接的可读流关闭时
 				close() {
-					// 当远程连接的可读流关闭时
-					log(`remoteConnection!.readable is close with hasIncomingData is ${hasIncomingData}`);
-					// 不需要主动关闭 WebSocket，因为这可能导致 HTTP ERR_CONTENT_LENGTH_MISMATCH 问题
-					// 客户端无论如何都会发送关闭事件
-					// safeCloseWebSocket(webSocket);
+					log(`remoteConnection.readable is closed with hasIncomingData: ${hasIncomingData}`);
 				},
+
+				// 当远程连接的可读流中断时
 				abort(reason) {
-					// 当远程连接的可读流中断时
-					console.error(`remoteConnection!.readable abort`, reason);
+					console.error(`remoteConnection.readable abort`, reason);
 				},
 			})
-		)
-		.catch((error) => {
-			// 捕获并记录任何异常
-			console.error(
-				`remoteSocketToWS has exception `,
-				error.stack || error
-			);
-			// 发生错误时安全地关闭 WebSocket
-			safeCloseWebSocket(webSocket);
-		});
+		);
+	} catch (error) {
+		// 捕获并记录任何异常
+		console.error('remoteSocketToWS has exception', error.stack || error);
+		// 发生错误时安全地关闭 WebSocket
+		safeCloseWebSocket(webSocket);
+	}
 
 	// 处理 Cloudflare 连接 Socket 的特殊错误情况
 	// 1. Socket.closed 将有错误
 	// 2. Socket.readable 将关闭，但没有任何数据
-	if (hasIncomingData === false && retry) {
-		log(`retry`);
+	if (!hasIncomingData && retry) {
+		log(`Retrying connection...`);
 		retry(); // 调用重试函数，尝试重新建立连接
 	}
 }
