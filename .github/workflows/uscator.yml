@@ -29,7 +29,9 @@ jobs:
       # 简化混淆命令用于调试
       - name: Obfuscate code (simplified for debugging)
         run: |
+          echo "Running javascript-obfuscator"
           javascript-obfuscator 节点订阅.js --output _worker.js || echo "Obfuscation failed"
+          ls -al _worker.js
 
       # 查看 Git 状态，确认是否有更改
       - name: Check git status
@@ -41,7 +43,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add _worker.js || echo "No files to add"
-          git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
+          git diff --exit-code || git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
 
       # 推送更改
       - name: Push changes
