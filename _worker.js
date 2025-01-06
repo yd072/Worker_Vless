@@ -747,37 +747,39 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
  * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
  */
 function base64ToArrayBuffer(base64Str) {
-	// 如果输入为空，直接返回空结果
-	if (!base64Str) {
-		return { earlyData: undefined, error: null };
-	}
-	try {
-		// 处理 URL 安全 Base64 字符串
-		// 将 '-' 和 '_' 替换为 '+' 和 '/'
-		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+    // 检查是否为空或非字符串
+    if (typeof base64Str !== 'string' || base64Str.trim() === '') {
+        return { earlyData: undefined, error: new Error('Input must be a non-empty Base64 string.') };
+    }
 
-		// 处理 Base64 字符串长度，确保其是 4 的倍数（Base64 的特性）
-		const padding = base64Str.length % 4;
-		if (padding) {
-			base64Str += '='.repeat(4 - padding);  // 补齐 Base64 字符串
-		}
+    try {
+        // 处理 URL 安全 Base64 字符串
+        // 将 '-' 和 '_' 替换为 '+' 和 '/'
+        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
 
-		// 使用 atob 解码 Base64 字符串
-		const binaryString = atob(base64Str);
-		const buffer = new ArrayBuffer(binaryString.length);
-		const view = new Uint8Array(buffer);
+        // 处理 Base64 字符串长度，确保其是 4 的倍数（Base64 的特性）
+        const padding = base64Str.length % 4;
+        if (padding) {
+            base64Str += '='.repeat(4 - padding);  // 补齐 Base64 字符串
+        }
 
-		// 将二进制字符串转换为 Uint8Array
-		for (let i = 0; i < binaryString.length; i++) {
-			view[i] = binaryString.charCodeAt(i);
-		}
+        // 使用 atob 解码 Base64 字符串
+        const binaryString = atob(base64Str);
+        const buffer = new ArrayBuffer(binaryString.length);
+        const view = new Uint8Array(buffer);
 
-		return { earlyData: buffer, error: null };
-	} catch (error) {
-		// 捕获错误并返回
-		return { earlyData: undefined, error };
-	}
+        // 将二进制字符串转换为 Uint8Array
+        for (let i = 0; i < binaryString.length; i++) {
+            view[i] = binaryString.charCodeAt(i);
+        }
+
+        return { earlyData: buffer, error: null };
+    } catch (error) {
+        // 捕获错误并返回
+        return { earlyData: undefined, error: new Error('Failed to decode Base64 string.') };
+    }
 }
+
 
 /**
  * 这不是真正的 UUID 验证，而是一个简化的版本
