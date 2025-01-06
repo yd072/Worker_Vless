@@ -825,26 +825,30 @@ const byteToHex = [...Array(256)].map((_, i) => (i + 256).toString(16).slice(1))
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
- * 这是一个底层函数，直接操作字节，不做任何验证
  * @param {Uint8Array} arr 包含 UUID 字节的数组
  * @param {number} offset 数组中 UUID 开始的位置，默认为 0
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-	// 使用数组拼接代替 + 拼接，提高效率
+	// UUID 格式的各部分拼接
+	const hex = byteToHex;
+
+	// 直接拼接字符串，通过数组拼接提高效率
 	return [
-		byteToHex[arr[offset + 0]], byteToHex[arr[offset + 1]], byteToHex[arr[offset + 2]], byteToHex[arr[offset + 3]],
+		// 拼接 UUID 的各个部分
+		hex[arr[offset + 0]] + hex[arr[offset + 1]] + hex[arr[offset + 2]] + hex[arr[offset + 3]], 
+		// 分隔符 '-'
 		'-',
-		byteToHex[arr[offset + 4]], byteToHex[arr[offset + 5]],
+		hex[arr[offset + 4]] + hex[arr[offset + 5]],
 		'-',
-		byteToHex[arr[offset + 6]], byteToHex[arr[offset + 7]],
+		hex[arr[offset + 6]] + hex[arr[offset + 7]],
 		'-',
-		byteToHex[arr[offset + 8]], byteToHex[arr[offset + 9]],
+		hex[arr[offset + 8]] + hex[arr[offset + 9]],
 		'-',
-		byteToHex[arr[offset + 10]], byteToHex[arr[offset + 11]], byteToHex[arr[offset + 12]], byteToHex[arr[offset + 13]], 
-		byteToHex[arr[offset + 14]], byteToHex[arr[offset + 15]]
+		hex[arr[offset + 10]] + hex[arr[offset + 11]] + hex[arr[offset + 12]] + hex[arr[offset + 13]] + hex[arr[offset + 14]] + hex[arr[offset + 15]]
 	].join('').toLowerCase();
 }
+
 
 /**
  * 将字节数组转换为 UUID 字符串，并验证其有效性
