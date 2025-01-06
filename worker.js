@@ -386,81 +386,39 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		return tcpSocket;
 	}
 
-	// 辅助函数：处理 proxyIP 格式并提取地址和端口
-function parseProxyIP(proxyIP, defaultPort) {
-    if (!proxyIP || proxyIP === '') {
-        return { address: atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw=='), port: defaultPort };
-    }
+	/**
+	 * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
+	 * 这可能是因为某些网络问题导致的连接失败
+	 */
+	async function retry() {
+		if (enableSocks) {
+			// 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
+			tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+		} else {
+			// 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
+			if (!proxyIP || proxyIP == '') {
+				proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+			} else if (proxyIP.includes(']:')) {
+				portRemote = proxyIP.split(']:')[1] || portRemote;
+				proxyIP = proxyIP.split(']:')[0] || proxyIP;
+			} else if (proxyIP.split(':').length === 2) {
+				portRemote = proxyIP.split(':')[1] || portRemote;
+				proxyIP = proxyIP.split(':')[0] || proxyIP;
+			}
+			if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+			tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
+		}
+		// 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
+		tcpSocket.closed.catch(error => {
+			console.log('retry tcpSocket closed error', error);
+		}).finally(() => {
+			safeCloseWebSocket(webSocket);
+		})
+		// 建立从远程 Socket 到 WebSocket 的数据流
+		remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+	}
 
-    let address = proxyIP;
-    let port = defaultPort;
-
-    if (proxyIP.includes(']:')) {
-        const parts = proxyIP.split(']:');
-        address = parts[0];
-        port = parts[1] || port;
-    } else if (proxyIP.includes(':')) {
-        const parts = proxyIP.split(':');
-        address = parts[0];
-        port = parts[1] || port;
-    }
-
-    if (address.includes('.tp')) {
-        port = address.split('.tp')[1].split('.')[0] || port;
-    }
-
-    return { address, port };
-}
-
-/**
- * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
- * 这可能是因为某些网络问题导致的连接失败
- */
-async function retry() {
-    let proxyAddress = addressRemote;
-    let proxyPort = portRemote;
-
-    if (enableSocks) {
-        // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
-        try {
-            tcpSocket = await connectAndWrite(proxyAddress, proxyPort, true);
-        } catch (error) {
-            console.error('SOCKS5 代理连接失败', error);
-            return;
-        }
-    } else {
-        // 尝试使用预设的代理 IP（如果有）或原始地址重试连接
-        const { address, port } = parseProxyIP(proxyIP, portRemote);
-        proxyAddress = address;
-        proxyPort = port;
-
-        try {
-            tcpSocket = await connectAndWrite(proxyAddress, proxyPort);
-        } catch (error) {
-            console.error(`连接失败：${proxyAddress}:${proxyPort}`, error);
-            return;
-        }
-    }
-
-    // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
-    tcpSocket.closed
-        .catch((error) => {
-            console.log('tcpSocket 关闭时出错', error);
-        })
-        .finally(() => {
-            safeCloseWebSocket(webSocket);
-        });
-
-    // 建立从远程 Socket 到 WebSocket 的数据流
-    try {
-        await remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-    } catch (error) {
-        console.error('远程 Socket 到 WebSocket 数据流处理失败', error);
-        safeCloseWebSocket(webSocket);
-    }
-}
-
-let useSocks = false;
+	let useSocks = false;
 	if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
 	// 首次尝试连接远程服务器
 	let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
