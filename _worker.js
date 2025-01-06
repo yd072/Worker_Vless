@@ -435,79 +435,83 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 	remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
-async function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
-  // 标记流是否已取消
-  let readableStreamCancel = false;
+function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
+	// 标记可读流是否已被取消
+	let readableStreamCancel = false;
 
-  // 创建新的可读流
-  const stream = new ReadableStream({
-    // 当流开始时的初始化函数
-    start(controller) {
-      // 监听 WebSocket 的消息事件
-      const onMessage = (event) => {
-        // 如果流已取消，不再处理新消息
-        if (readableStreamCancel) return;
-        const message = event.data;
-        // 将消息加入流的队列中
-        controller.enqueue(message);
-      };
+	// 创建一个新的可读流
+	const stream = new ReadableStream({
+		// 当流开始时的初始化函数
+		start(controller) {
+			// 监听 WebSocket 的消息事件
+			webSocketServer.addEventListener('message', (event) => {
+				// 如果流已被取消，不再处理新消息
+				if (readableStreamCancel) {
+					return;
+				}
+				const message = event.data;
+				// 将消息加入流的队列中
+				controller.enqueue(message);
+			});
 
-      // 监听 WebSocket 的关闭事件
-      const onClose = () => {
-        if (readableStreamCancel) return;
-        log('WebSocket 关闭，关闭流');
-        controller.close();
-      };
+			// 监听 WebSocket 的关闭事件
+			// 注意：这个事件意味着客户端关闭了客户端 -> 服务器的流
+			// 但是，服务器 -> 客户端的流仍然打开，直到在服务器端调用 close()
+			// WebSocket 协议要求在每个方向上都要发送单独的关闭消息，以完全关闭 Socket
+			webSocketServer.addEventListener('close', () => {
+				// 客户端发送了关闭信号，需要关闭服务器端
+				safeCloseWebSocket(webSocketServer);
+				// 如果流未被取消，则关闭控制器
+				if (readableStreamCancel) {
+					return;
+				}
+				controller.close();
+			});
 
-      // 监听 WebSocket 的错误事件
-      const onError = (err) => {
-        log('WebSocket 发生错误', err);
-        controller.error(err);
-      };
+			// 监听 WebSocket 的错误事件
+			webSocketServer.addEventListener('error', (err) => {
+				log('WebSocket 服务器发生错误');
+				// 将错误传递给控制器
+				controller.error(err);
+			});
 
-      // 绑定 WebSocket 事件
-      webSocketServer.addEventListener('message', onMessage);
-      webSocketServer.addEventListener('close', onClose);
-      webSocketServer.addEventListener('error', onError);
+			// 处理 WebSocket 0-RTT（零往返时间）的早期数据
+			// 0-RTT 允许在完全建立连接之前发送数据，提高了效率
+			const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
+			if (error) {
+				// 如果解码早期数据时出错，将错误传递给控制器
+				controller.error(error);
+			} else if (earlyData) {
+				// 如果有早期数据，将其加入流的队列中
+				controller.enqueue(earlyData);
+			}
+		},
 
-      // 处理 WebSocket 0-RTT（零往返时间）的早期数据
-      const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
-      if (error) {
-        // 如果解码早期数据时出错，将错误传递给控制器
-        controller.error(error);
-      } else if (earlyData) {
-        // 如果有早期数据，将其加入流的队列中
-        controller.enqueue(earlyData);
-      }
-    },
+		// 当使用者从流中拉取数据时调用
+		pull(controller) {
+			// 这里可以实现反压机制
+			// 如果 WebSocket 可以在流满时停止读取，我们就可以实现反压
+			// 参考：https://streams.spec.whatwg.org/#example-rs-push-backpressure
+		},
 
-    // 当使用者从流中拉取数据时调用
-    pull(controller) {
-      // 反压机制（可选）
-      // 在此实现如何控制流的拉取速率，避免处理太多数据时导致内存压力过大
-      // 参考：https://streams.spec.whatwg.org/#example-rs-push-backpressure
-    },
+		// 当流被取消时调用
+		cancel(reason) {
+			// 流被取消的几种情况：
+			// 1. 当管道的 WritableStream 有错误时，这个取消函数会被调用，所以在这里处理 WebSocket 服务器的关闭
+			// 2. 如果 ReadableStream 被取消，所有 controller.close/enqueue 都需要跳过
+			// 3. 但是经过测试，即使 ReadableStream 被取消，controller.error 仍然有效
+			if (readableStreamCancel) {
+				return;
+			}
+			log(`可读流被取消，原因是 ${reason}`);
+			readableStreamCancel = true;
+			// 安全地关闭 WebSocket
+			safeCloseWebSocket(webSocketServer);
+		}
+	});
 
-    // 当流被取消时调用
-    cancel(reason) {
-      if (readableStreamCancel) return;
-      log(`可读流被取消，原因是 ${reason}`);
-      readableStreamCancel = true;
-      // 安全地关闭 WebSocket
-      safeCloseWebSocket(webSocketServer);
-    }
-  });
-
-  // 确保在流关闭时解绑事件监听器，防止内存泄漏
-  stream.closed.finally(() => {
-    webSocketServer.removeEventListener('message', onMessage);
-    webSocketServer.removeEventListener('close', onClose);
-    webSocketServer.removeEventListener('error', onError);
-  });
-
-  return stream;
+	return stream;
 }
-
 
 // https://xtls.github.io/development/protocols/维列斯.html
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
