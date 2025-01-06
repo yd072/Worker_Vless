@@ -1155,33 +1155,17 @@ function escapeRegExp(str) {
  * @returns {string} 恢复真实信息后的内容
  */
 function 恢复伪装信息(content, userID, hostName, isBase64) {
-    // 输入检查
-    if (typeof content !== 'string' || typeof userID !== 'string' || typeof hostName !== 'string') {
-        throw new TypeError("Invalid input types: content, userID, and hostName must be strings.");
-    }
+	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
-    if (isBase64) {
-        // Base64解码
-        content = atob(content);
-    }
+	// 使用正则表达式全局替换（'g'标志）
+	// 将所有出现的假用户ID和假主机名替换为真实的值
+	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
+		.replace(new RegExp(fakeHostName, 'g'), hostName);
 
-    // 如果fakeUserID和fakeHostName包含特殊字符，需要转义
-    const escapedFakeUserID = escapeRegExp(fakeUserID);
-    const escapedFakeHostName = escapeRegExp(fakeHostName);
+	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
 
-    // 使用正则表达式全局替换（'g'标志）
-    // 将所有出现的假用户ID和假主机名替换为真实的值
-    content = content.replace(new RegExp(escapedFakeUserID, 'g'), userID)
-                     .replace(new RegExp(escapedFakeHostName, 'g'), hostName);
-
-    if (isBase64) {
-        // Base64编码
-        content = btoa(content);
-    }
-
-    return content;
+	return content;
 }
-
 
 /**
  * 转义正则表达式中的特殊字符
