@@ -20,9 +20,10 @@ jobs:
           node-version: "16"
 
       - name: Install dependencies
-        run: npm install -g javascript-obfuscator
+        run: |
+          npm install -g javascript-obfuscator
 
-      - name: Check if file exists
+      - name: Check if 节点订阅.js exists
         run: |
           ls -alh 节点订阅.js
 
@@ -41,6 +42,10 @@ jobs:
           --string-array-threshold 1 \
           --transform-object-keys true \
           --unicode-escape-sequence true
+
+      - name: Check if _worker.js was generated
+        run: |
+          ls -alh _worker.js
 
       - name: Commit changes
         run: |
