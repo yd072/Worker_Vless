@@ -825,9 +825,13 @@ function safeCloseWebSocket(socket) {
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
+	// 直接用 toString(16) 并 padStart 保证每个十六进制表示为两位数
+	byteToHex.push(i.toString(16).padStart(2, '0'));
+}
+
+// 输出示例：打印从 0 到 255 的十六进制表示
+console.log(byteToHex);
+
 }
 
 /**
