@@ -1,7 +1,10 @@
 name: Obfuscate and Commit
 
 on:
-  workflow_dispatch:
+    #push:
+    #    paths:
+    #        - '节点订阅.js'
+    workflow_dispatch:
 
 jobs:
   obfuscate:
@@ -22,48 +25,29 @@ jobs:
       - name: Install dependencies
         run: npm install -g javascript-obfuscator
 
-      # 输出 javascript-obfuscator 版本，确保它被正确安装
-      - name: Check javascript-obfuscator version
-        run: javascript-obfuscator --version
-
-      # 确认文件内容是否有效
-      - name: Display 节点订阅.js content
-        run: cat 节点订阅.js
-
-      # 检查文件是否存在
-      - name: Check if 节点订阅.js exists
-        run: ls -al 节点订阅.js
-
-      # 简化混淆命令，查看是否能成功生成
-      - name: Obfuscate code (simplified)
+      - name: Obfuscate code
         run: |
-          javascript-obfuscator 节点订阅.js --output _worker.js || echo "Obfuscation failed"
-          ls -al _worker.js
+          javascript-obfuscator 节点订阅.js --output _worker.js \
+          --compact true \
+          --control-flow-flattening true \
+          --control-flow-flattening-threshold 1 \
+          --dead-code-injection true \
+          --dead-code-injection-threshold 1 \
+          --identifier-names-generator hexadecimal \
+          --rename-globals true \
+          --string-array true \
+          --string-array-encoding 'rc4' \
+          --string-array-threshold 1 \
+          --transform-object-keys true \
+          --unicode-escape-sequence true
 
-      # 确认命令是否成功
-      - name: Obfuscate code with exit code check
-        run: |
-          javascript-obfuscator 节点订阅.js --output _worker.js
-          if [ $? -ne 0 ]; then
-            echo "Obfuscation failed"
-          else
-            echo "Obfuscation succeeded"
-          fi
-          ls -al _worker.js
-
-      # 查看 git 状态
-      - name: Check git status
-        run: git status
-
-      # 提交更改
       - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add _worker.js || echo "No files to add"
-          git diff --exit-code || git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
+          git add _worker.js
+          git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
 
-      # 推送更改
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
