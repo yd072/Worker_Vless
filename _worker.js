@@ -1157,44 +1157,58 @@ async function 双重哈希(文本) {
 }
 
 async function 代理URL(代理网址, 目标网址) {
-	const 网址列表 = await 整理(代理网址);
-	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+    // 获取代理网址列表
+    const 网址列表 = await 整理(代理网址);
+    const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-	// 解析目标 URL
-	let 解析后的网址 = new URL(完整网址);
-	console.log(解析后的网址);
-	// 提取并可能修改 URL 组件
-	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-	let 主机名 = 解析后的网址.hostname;
-	let 路径名 = 解析后的网址.pathname;
-	let 查询参数 = 解析后的网址.search;
+    try {
+        // 解析目标 URL 和代理 URL
+        let 解析后的网址 = new URL(完整网址);
+        let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
+        let 主机名 = 解析后的网址.hostname;
+        let 查询参数 = 解析后的网址.search;
 
-	// 处理路径名
-	if (路径名.charAt(路径名.length - 1) == '/') {
-		路径名 = 路径名.slice(0, -1);
-	}
-	路径名 += 目标网址.pathname;
+        // 处理路径名并避免重复斜杠
+        let 路径名 = 解析后的网址.pathname;
+        if (路径名.charAt(路径名.length - 1) === '/') {
+            路径名 = 路径名.slice(0, -1);
+        }
 
-	// 构建新的 URL
-	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+        // 拼接目标网址的路径
+        let 目标路径 = 目标网址.pathname.startsWith('/')
+            ? 目标网址.pathname
+            : `/${目标网址.pathname}`;
 
-	// 反向代理请求
-	let 响应 = await fetch(新网址);
+        路径名 += 目标路径;
 
-	// 创建新的响应
-	let 新响应 = new Response(响应.body, {
-		status: 响应.status,
-		statusText: 响应.statusText,
-		headers: 响应.headers
-	});
+        // 构建新的 URL
+        let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
 
-	// 添加自定义头部，包含 URL 信息
-	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
-	//新响应.headers.set('X-Original-URL', 完整网址);
-	新响应.headers.set('X-New-URL', 新网址);
+        // 反向代理请求
+        let 响应 = await fetch(新网址);
 
-	return 新响应;
+        // 创建新的响应对象
+        let 新响应 = new Response(响应.body, {
+            status: 响应.status,
+            statusText: 响应.statusText,
+            headers: 响应.headers
+        });
+
+        // 设置自定义响应头，包含新的 URL 信息
+        新响应.headers.set('X-New-URL', 新网址);
+
+        return 新响应;
+
+    } catch (error) {
+        // 错误处理，确保即使有问题也能返回合适的错误响应
+        console.error('代理请求失败:', error);
+        return new Response('代理请求失败', {
+            status: 500,
+            statusText: 'Internal Server Error'
+        });
+    }
 }
+
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
