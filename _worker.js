@@ -505,7 +505,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 	return stream;
 }
 
-
 // https://xtls.github.io/development/protocols/维列斯.html
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
 
@@ -733,7 +732,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
     }
 }
 
-
 /**
  * 将 Base64 编码的字符串转换为 ArrayBuffer
  * 
@@ -772,7 +770,6 @@ function base64ToArrayBuffer(base64Str) {
 		return { earlyData: undefined, error };
 	}
 }
-
 
 /**
  * 这不是真正的 UUID 验证，而是一个简化的版本
@@ -1299,19 +1296,44 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, env
 				'190.93.240.0/21',
 			];
 
-			// 生成符合给定 CIDR 范围的随机 IP 地址
-			function generateRandomIPFromCIDR(cidr) {
-				const [base, mask] = cidr.split('/');
-				const baseIP = base.split('.').map(Number);
-				const subnetMask = 32 - parseInt(mask, 10);
-				const maxHosts = Math.pow(2, subnetMask) - 1;
-				const randomHost = Math.floor(Math.random() * maxHosts);
+/**
+ * 生成符合给定 CIDR 范围的随机 IP 地址
+ * @param {string} cidr - CIDR 范围，如 "192.168.1.0/24"
+ * @returns {string} 随机生成的 IP 地址
+ */
+function generateRandomIPFromCIDR(cidr) {
+    // 分解 CIDR 字符串，提取基本 IP 地址和子网掩码
+    const [base, mask] = cidr.split('/');
+    const baseIP = base.split('.').map(Number);
+    const subnetMask = parseInt(mask, 10);
+    
+    // 计算子网的起始地址和最大主机数
+    const maxHosts = Math.pow(2, 32 - subnetMask) - 2;  // 减去网络地址和广播地址
+    if (maxHosts <= 0) {
+        throw new Error('Invalid CIDR block: No available hosts.');
+    }
 
-				const randomIP = baseIP.map((octet, index) => {
-					if (index < 2) return octet;
-					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-					return (octet & (255 << subnetMask)) + (randomHost & 255);
-				});
+    // 生成一个随机的主机地址
+    const randomHost = Math.floor(Math.random() * maxHosts) + 1; // 不包括网络地址和广播地址
+
+    // 将 baseIP 转换为数字形式（用于方便计算）
+    let ipBase = (baseIP[0] << 24) | (baseIP[1] << 16) | (baseIP[2] << 8) | baseIP[3];
+    
+    // 计算随机 IP 地址
+    const randomIPInt = ipBase + randomHost;
+
+    // 将随机 IP 地址转换回四个字节
+    const randomIP = [
+        (randomIPInt >>> 24) & 255,
+        (randomIPInt >>> 16) & 255,
+        (randomIPInt >>> 8) & 255,
+        randomIPInt & 255
+    ];
+
+    // 将生成的随机 IP 地址转换为标准的 IP 格式（字符串）
+    return randomIP.join('.');
+}
+
 
 				return randomIP.join('.');
 			}
