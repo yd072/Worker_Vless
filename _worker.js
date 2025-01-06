@@ -252,66 +252,111 @@ export default {
 	},
 };
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
-	async function useSocks5Pattern(address) {
-		if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
-		return go2Socks5s.some(pattern => {
-			let regexPattern = pattern.replace(/\*/g, '.*');
-			let regex = new RegExp(`^${regexPattern}$`, 'i');
-			return regex.test(address);
-		});
-	}
+async function 维列斯OverWSHandler(request) {
 
-	async function connectAndWrite(address, port, socks = false) {
-		log(`connected to ${address}:${port}`);
-		//if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(address)) address = `${atob('d3d3Lg==')}${address}${atob('LmlwLjA5MDIyNy54eXo=')}`;
-		// 如果指定使用 SOCKS5 代理，则通过 SOCKS5 协议连接；否则直接连接
-		const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
-			: connect({
-				hostname: address,
-				port: port,
-			});
-		remoteSocket.value = tcpSocket;
-		//log(`connected to ${address}:${port}`);
-		const writer = tcpSocket.writable.getWriter();
-		// 首次写入，通常是 TLS 客户端 Hello 消息
-		await writer.write(rawClientData);
-		writer.releaseLock();
-		return tcpSocket;
-	}
+	// @ts-ignore
+	const webSocketPair = new WebSocketPair();
+	const [client, webSocket] = Object.values(webSocketPair);
 
-	/**
-	 * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
-	 * 这可能是因为某些网络问题导致的连接失败
-	 */
-	async function retry() {
-		if (enableSocks) {
-			// 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
-			tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
-		} else {
-			// 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
-			if (!proxyIP || proxyIP == '') {
-				proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
-			} else if (proxyIP.includes(']:')) {
-				portRemote = proxyIP.split(']:')[1] || portRemote;
-				proxyIP = proxyIP.split(']:')[0] || proxyIP;
-			} else if (proxyIP.split(':').length === 2) {
-				portRemote = proxyIP.split(':')[1] || portRemote;
-				proxyIP = proxyIP.split(':')[0] || proxyIP;
+	// 接受 WebSocket 连接
+	webSocket.accept();
+
+	let address = '';
+	let portWithRandomLog = '';
+	// 日志函数，用于记录连接信息
+	const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
+		console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+	};
+	// 获取早期数据头部，可能包含了一些初始化数据
+	const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+
+	// 创建一个可读的 WebSocket 流，用于接收客户端数据
+	const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+
+	// 用于存储远程 Socket 的包装器
+	let remoteSocketWapper = {
+		value: null,
+	};
+	// 标记是否为 DNS 查询
+	let isDns = false;
+
+	// WebSocket 数据流向远程服务器的管道
+	readableWebSocketStream.pipeTo(new WritableStream({
+		async write(chunk, controller) {
+			if (isDns) {
+				// 如果是 DNS 查询，调用 DNS 处理函数
+				return await handleDNSQuery(chunk, webSocket, null, log);
 			}
-			if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
-			tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
-		}
-		// 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
-		tcpSocket.closed.catch(error => {
-			console.log('retry tcpSocket closed error', error);
-		}).finally(() => {
-			safeCloseWebSocket(webSocket);
-		})
-		// 建立从远程 Socket 到 WebSocket 的数据流
-		remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-	}
+			if (remoteSocketWapper.value) {
+				// 如果已有远程 Socket，直接写入数据
+				const writer = remoteSocketWapper.value.writable.getWriter()
+				await writer.write(chunk);
+				writer.releaseLock();
+				return;
+			}
 
+			// 处理 维列斯 协议头部
+			const {
+				hasError,
+				message,
+				addressType,
+				portRemote = 443,
+				addressRemote = '',
+				rawDataIndex,
+				维列斯Version = new Uint8Array([0, 0]),
+				isUDP,
+			} = process维列斯Header(chunk, userID);
+			// 设置地址和端口信息，用于日志
+			address = addressRemote;
+			portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
+			if (hasError) {
+				// 如果有错误，抛出异常
+				throw new Error(message);
+				return;
+			}
+			// 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
+			if (isUDP) {
+				if (portRemote === 53) {
+					isDns = true;
+				} else {
+					throw new Error('UDP 代理仅对 DNS（53 端口）启用');
+					return;
+				}
+			}
+			// 构建 维列斯 响应头部
+			const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
+			// 获取实际的客户端数据
+			const rawClientData = chunk.slice(rawDataIndex);
+
+			if (isDns) {
+				// 如果是 DNS 查询，调用 DNS 处理函数
+				return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+			}
+			// 处理 TCP 出站连接
+			if (!banHosts.includes(addressRemote)) {
+				log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
+				handleTCPOutBound(remoteSocketWapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
+			} else {
+				throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
+			}
+		},
+		close() {
+			log(`readableWebSocketStream 已关闭`);
+		},
+		abort(reason) {
+			log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
+		},
+	})).catch((err) => {
+		log('readableWebSocketStream 管道错误', err);
+	});
+
+	// 返回一个 WebSocket 升级的响应
+	return new Response(null, {
+		status: 101,
+		// @ts-ignore
+		webSocket: client,
+	});
+}
 	let useSocks = false;
 	if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
 	// 首次尝试连接远程服务器
