@@ -441,8 +441,15 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let readableStreamCancel = false;
 
+    const closeWebSocket = () => {
+        if (webSocketServer.readyState !== WebSocket.CLOSED) {
+            safeCloseWebSocket(webSocketServer);
+        }
+    };
+
     const stream = new ReadableStream({
         start(controller) {
+            // 处理 WebSocket 消息
             webSocketServer.addEventListener('message', (event) => {
                 if (readableStreamCancel) return;
 
@@ -450,27 +457,35 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
                 controller.enqueue(message);
             });
 
+            // 处理 WebSocket 关闭事件
             webSocketServer.addEventListener('close', () => {
                 if (readableStreamCancel) return;
-                safeCloseWebSocket(webSocketServer);
+                closeWebSocket();
                 controller.close();
             });
 
+            // 处理 WebSocket 错误事件
             webSocketServer.addEventListener('error', (err) => {
                 log(`WebSocket 服务器发生错误`, err);
                 controller.error(err);
             });
 
-            const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
-            if (error) {
-                controller.error(new Error('Failed to decode early data'));
-            } else if (earlyData) {
-                controller.enqueue(earlyData);
+            // 处理早期数据
+            try {
+                const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
+                if (error) {
+                    throw new Error('Failed to decode early data');
+                }
+                if (earlyData) {
+                    controller.enqueue(earlyData);
+                }
+            } catch (err) {
+                controller.error(err);
             }
         },
 
         pull(controller) {
-            // 可选: 处理反压机制
+            // 反压机制处理（可以根据需要扩展）
             if (controller.desiredSize > 0) {
                 // 如果有足够空间，可以继续从 WebSocket 拉取数据
             }
@@ -481,14 +496,13 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 
             log(`可读流被取消，原因是 ${reason}`);
             readableStreamCancel = true;
-            if (webSocketServer.readyState !== WebSocket.CLOSED) {
-                safeCloseWebSocket(webSocketServer);
-            }
+            closeWebSocket();
         }
     });
 
     return stream;
 }
+
 
 
 // https://xtls.github.io/development/protocols/维列斯.html
