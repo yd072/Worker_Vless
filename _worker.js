@@ -781,7 +781,7 @@ function base64ToArrayBuffer(base64Str) {
 }
 
 
-**
+/**
  * 这不是真正的 UUID 验证，而是一个简化的版本
  * @param {string} uuid 要验证的 UUID 字符串
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
