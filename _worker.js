@@ -251,6 +251,108 @@ export default {
 		}
 	},
 };
+async function handleWebSocketConnection(request) {
+    // Create a WebSocket pair for communication
+    const webSocketPair = new WebSocketPair();
+    const [client, webSocket] = Object.values(webSocketPair);
+
+    // Accept the WebSocket connection
+    webSocket.accept();
+
+    let remoteAddress = '';
+    let remotePortLog = '';
+
+    // Logging function to capture connection details
+    const log = (info, event) => {
+        console.log(`[${remoteAddress}:${remotePortLog}] ${info}`, event || '');
+    };
+
+    // Retrieve early data from the WebSocket handshake
+    const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+
+    // Create a readable WebSocket stream to handle incoming data
+    const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+
+    // Object to store remote socket connection info
+    let remoteSocketWrapper = { value: null };
+
+    // Flag to check if the request is a DNS query
+    let isDnsQuery = false;
+
+    // Pipe the incoming data to a writable stream
+    readableWebSocketStream.pipeTo(new WritableStream({
+        async write(chunk, controller) {
+            // If it's a DNS query, handle DNS processing
+            if (isDnsQuery) {
+                return await handleDNSQuery(chunk, webSocket, null, log);
+            }
+
+            // If the remote socket exists, forward the data
+            if (remoteSocketWrapper.value) {
+                const writer = remoteSocketWrapper.value.writable.getWriter();
+                await writer.write(chunk);
+                writer.releaseLock();
+                return;
+            }
+
+            // Process the header for the connection protocol (维列斯)
+            const { hasError, message, addressType, portRemote = 443, addressRemote = '', rawDataIndex, protocolVersion = new Uint8Array([0, 0]), isUDP } = process维列斯Header(chunk, userID);
+            
+            remoteAddress = addressRemote;
+            remotePortLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '}`;
+
+            // If an error occurs in protocol parsing, throw an error
+            if (hasError) {
+                throw new Error(message);
+                return;
+            }
+
+            // Handle UDP protocol
+            if (isUDP) {
+                if (portRemote === 53) {
+                    isDnsQuery = true;
+                } else {
+                    throw new Error('UDP proxy is only enabled for DNS (port 53)');
+                    return;
+                }
+            }
+
+            // Construct response header for the 维列斯 protocol
+            const 维列斯ResponseHeader = new Uint8Array([protocolVersion[0], 0]);
+
+            // Slice the actual client data to be forwarded
+            const rawClientData = chunk.slice(rawDataIndex);
+
+            // Handle DNS queries separately
+            if (isDnsQuery) {
+                return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+            }
+
+            // Handle outbound TCP connections
+            if (!banHosts.includes(addressRemote)) {
+                log(`Handling outbound TCP connection ${addressRemote}:${portRemote}`);
+                handleTCPOutbound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
+            } else {
+                throw new Error(`Connection to blacklisted host, closing TCP connection ${addressRemote}:${portRemote}`);
+            }
+        },
+        close() {
+            log('Readable WebSocket stream closed');
+        },
+        abort(reason) {
+            log('Readable WebSocket stream aborted', JSON.stringify(reason));
+        }
+    })).catch((err) => {
+        log('Error in readableWebSocketStream pipe', err);
+    });
+
+    // Return the WebSocket upgrade response
+    return new Response(null, {
+        status: 101,
+        webSocket: client,
+    });
+}
+
 // Helper function to handle DNS queries
 async function handleDNSQuery(chunk, webSocket, 维列斯ResponseHeader, log) {
     // Handle DNS query logic here...
@@ -293,145 +395,6 @@ function makeReadableWebSocketStream(webSocket, earlyDataHeader, log) {
             });
         }
     });
-}
-
-}
-
-async function getSocks5Address(socks5Address) {
-    const socks5s = await processList(socks5Address);
-    return socks5s[Math.floor(Math.random() * socks5s.length)];
-}
-
-async function processList(list) {
-    if (!list) return [];
-    // 处理列表，可能包含异步操作
-    return await list.split(',').map(async (item) => item.trim());
-}
-
-async function handleWebSocket(request) {
-    // WebSocket 相关处理逻辑
-}
-
-async function handleRootPath(env, url) {
-    // 根路径请求处理
-    return new Response('根路径处理');
-}
-
-async function handleFakeUserIDPath(userID, request) {
-    // 伪造的用户ID路径处理逻辑
-    return new Response(`用户ID: ${userID}`);
-}
-
-async function doubleHash(text) {
-    // 双重哈希处理
-}
-
-
-
-async function 维列斯OverWSHandler(request) {
-
-	// @ts-ignore
-	const webSocketPair = new WebSocketPair();
-	const [client, webSocket] = Object.values(webSocketPair);
-
-	// 接受 WebSocket 连接
-	webSocket.accept();
-
-	let address = '';
-	let portWithRandomLog = '';
-	// 日志函数，用于记录连接信息
-	const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
-		console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
-	};
-	// 获取早期数据头部，可能包含了一些初始化数据
-	const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
-
-	// 创建一个可读的 WebSocket 流，用于接收客户端数据
-	const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
-
-	// 用于存储远程 Socket 的包装器
-	let remoteSocketWapper = {
-		value: null,
-	};
-	// 标记是否为 DNS 查询
-	let isDns = false;
-
-	// WebSocket 数据流向远程服务器的管道
-	readableWebSocketStream.pipeTo(new WritableStream({
-		async write(chunk, controller) {
-			if (isDns) {
-				// 如果是 DNS 查询，调用 DNS 处理函数
-				return await handleDNSQuery(chunk, webSocket, null, log);
-			}
-			if (remoteSocketWapper.value) {
-				// 如果已有远程 Socket，直接写入数据
-				const writer = remoteSocketWapper.value.writable.getWriter()
-				await writer.write(chunk);
-				writer.releaseLock();
-				return;
-			}
-
-			// 处理 维列斯 协议头部
-			const {
-				hasError,
-				message,
-				addressType,
-				portRemote = 443,
-				addressRemote = '',
-				rawDataIndex,
-				维列斯Version = new Uint8Array([0, 0]),
-				isUDP,
-			} = process维列斯Header(chunk, userID);
-			// 设置地址和端口信息，用于日志
-			address = addressRemote;
-			portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
-			if (hasError) {
-				// 如果有错误，抛出异常
-				throw new Error(message);
-				return;
-			}
-			// 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
-			if (isUDP) {
-				if (portRemote === 53) {
-					isDns = true;
-				} else {
-					throw new Error('UDP 代理仅对 DNS（53 端口）启用');
-					return;
-				}
-			}
-			// 构建 维列斯 响应头部
-			const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
-			// 获取实际的客户端数据
-			const rawClientData = chunk.slice(rawDataIndex);
-
-			if (isDns) {
-				// 如果是 DNS 查询，调用 DNS 处理函数
-				return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
-			}
-			// 处理 TCP 出站连接
-			if (!banHosts.includes(addressRemote)) {
-				log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-				handleTCPOutBound(remoteSocketWapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
-			} else {
-				throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
-			}
-		},
-		close() {
-			log(`readableWebSocketStream 已关闭`);
-		},
-		abort(reason) {
-			log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
-		},
-	})).catch((err) => {
-		log('readableWebSocketStream 管道错误', err);
-	});
-
-	// 返回一个 WebSocket 升级的响应
-	return new Response(null, {
-		status: 101,
-		// @ts-ignore
-		webSocket: client,
-	});
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
