@@ -657,68 +657,87 @@ function process维列斯Header(维列斯Buffer, userID) {
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
     let remoteChunkCount = 0;
     let chunks = [];
-    /** @type {ArrayBuffer | null} */
     let 维列斯Header = 维列斯ResponseHeader;
     let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
 
-    // 使用管道将远程 Socket 的可读流连接到一个可写流
-    await remoteSocket.readable
-        .pipeTo(
-            new WritableStream({
-                start() {
-                    // 初始化时不需要任何操作
-                },
-                /**
-                 * 处理每个数据块
-                 * @param {Uint8Array} chunk 数据块
-                 * @param {*} controller 控制器
-                 */
-                async write(chunk, controller) {
-                    hasIncomingData = true; // 标记已收到数据
+    // 将远程 Socket 数据流转发到 WebSocket
+    const writer = new WritableStream({
+        start() {
+            // 初始化时不需要任何操作
+        },
+        /**
+         * 处理每个数据块
+         * @param {Uint8Array} chunk 数据块
+         * @param {*} controller 控制器
+         */
+        async write(chunk, controller) {
+            hasIncomingData = true; // 标记已收到数据
 
-                    // 检查 WebSocket 是否处于开放状态
-                    if (webSocket.readyState !== WebSocket.OPEN) {
-                        controller.error('WebSocket is not open, cannot send data');
-                        return;
-                    }
+            // 检查 WebSocket 是否处于开放状态
+            if (webSocket.readyState !== WebSocket.OPEN) {
+                controller.error('WebSocket is not open, cannot send data');
+                return;
+            }
 
-                    if (维列斯Header) {
-                        // 如果有 维列斯 响应头部，将其与第一个数据块一起发送
-                        webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-                        维列斯Header = null; // 清空头部，之后不再发送
-                    } else {
-                        // 直接发送数据块
-                        webSocket.send(chunk);
-                    }
+            // 处理 维列斯Header 和数据块
+            await handleDataSending(chunk);
 
-                    // 流量控制（示例代码，限制一次发送的数据块大小）
-                    if (remoteChunkCount > 20000) {
-                        // 暂停发送，等待下一轮发送
-                        await new Promise(resolve => setTimeout(resolve, 1));
-                    }
+            // 流量控制（示例代码，限制一次发送的数据块大小）
+            if (remoteChunkCount > 20000) {
+                // 暂停发送，等待下一轮发送
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
 
-                    remoteChunkCount++;
-                },
-                close() {
-                    log(`Connection closed. Incoming data received: ${hasIncomingData}`);
-                },
-                abort(reason) {
-                    log(`Connection aborted. Reason: ${reason}`);
-                },
-            })
-        )
-        .catch((error) => {
-            log(`Error in remoteSocketToWS: ${error.message}`);
-            console.error(error.stack);
-            safeCloseWebSocket(webSocket);
-        });
+            remoteChunkCount++;
+        },
+        close() {
+            log(`Connection closed. Incoming data received: ${hasIncomingData}`);
+        },
+        abort(reason) {
+            log(`Connection aborted. Reason: ${reason}`);
+        },
+    });
+
+    try {
+        // 使用管道将远程 Socket 的可读流连接到写入流
+        await remoteSocket.readable.pipeTo(writer);
+    } catch (error) {
+        log(`Error in remoteSocketToWS: ${error.message}`);
+        console.error(error.stack);
+        safeCloseWebSocket(webSocket);
+    }
 
     // 如果没有收到任何数据，且需要重试，则调用重试函数
     if (!hasIncomingData && retry) {
         log(`Retrying connection...`);
         retry(); // 调用重试函数，尝试重新建立连接
     }
+
+    // 处理维列斯Header与数据块的发送
+    async function handleDataSending(chunk) {
+        if (维列斯Header) {
+            // 如果有维列斯响应头，将其与第一个数据块一起发送
+            try {
+                await sendWithHeader(维列斯Header, chunk);
+            } catch (e) {
+                log(`Error sending data with header: ${e.message}`);
+                controller.error(e);
+            }
+            维列斯Header = null; // 清空头部，之后不再发送
+        } else {
+            // 直接发送数据块
+            webSocket.send(chunk);
+        }
+    }
+
+    // 发送数据时将维列斯响应头与数据块一起发送
+    async function sendWithHeader(header, chunk) {
+        const blob = new Blob([header, chunk]);
+        const arrayBuffer = await blob.arrayBuffer();
+        webSocket.send(arrayBuffer);
+    }
 }
+
 
 
 /**
