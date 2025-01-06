@@ -1167,15 +1167,6 @@ function 恢复伪装信息(content, userID, hostName, isBase64) {
 	return content;
 }
 
-/**
- * 转义正则表达式中的特殊字符
- * 以确保匹配到伪装的值时不会因为特殊字符而出错
- * @param {string} str 需要转义的字符串
- * @returns {string} 转义后的字符串
- */
-function escapeRegExp(str) {
-    return str.replace(/[.*+?^=!:${}()|[\]\/\\]/g, "\\$&");
-}
 
 /**
  * 双重MD5哈希函数
