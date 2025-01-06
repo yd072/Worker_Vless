@@ -1267,106 +1267,88 @@ function 配置信息(UUID, 域名地址) {
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 /**
- * 生成配置信息
- * @param {string} userID 用户ID
- * @param {string | null} hostName 主机名
- * @param {string} sub 子域名或网址
- * @param {string} UA 用户代理
- * @param {string} RproxyIP 代理 IP
- * @param {string} _url URL
- * @param {string} fakeUserID 假用户ID
- * @param {string} fakeHostName 假主机名
- * @param {Object} env 环境变量
- * @returns {Promise<string>} 生成的配置信息
+ * @param {string} userID
+ * @param {string | null} hostName
+ * @param {string} sub
+ * @param {string} UA
+ * @returns {Promise<string>}
  */
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
-    try {
-        if (sub) {
-            const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
-            if (match) {
-                sub = match[1];  // 提取域名部分
-            }
-            const subs = await 整理(sub);  // 整理网址列表
-            if (subs.length > 1) sub = subs[0];  // 如果有多个，选择第一个
-        } else {
-            if (env.KV) {
-                await 迁移地址列表(env);  // 从 KV 中迁移地址列表
-                const 优选地址列表 = await env.KV.get('ADD.txt');
-                if (优选地址列表) {
-                    const 优选地址数组 = await 整理(优选地址列表);
-                    const 分类地址 = {
-                        接口地址: new Set(),
-                        链接地址: new Set(),
-                        优选地址: new Set()
-                    };
+	if (sub) {
+		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
+		if (match) {
+			sub = match[1];
+		}
+		const subs = await 整理(sub);
+		if (subs.length > 1) sub = subs[0];
+	} else {
+		if (env.KV) {
+			await 迁移地址列表(env);
+			const 优选地址列表 = await env.KV.get('ADD.txt');
+			if (优选地址列表) {
+				const 优选地址数组 = await 整理(优选地址列表);
+				const 分类地址 = {
+					接口地址: new Set(),
+					链接地址: new Set(),
+					优选地址: new Set()
+				};
 
-                    for (const 元素 of 优选地址数组) {
-                        if (元素.startsWith('https://')) {
-                            分类地址.接口地址.add(元素);
-                        } else if (元素.includes('://')) {
-                            分类地址.链接地址.add(元素);
-                        } else {
-                            分类地址.优选地址.add(元素);
-                        }
-                    }
+				for (const 元素 of 优选地址数组) {
+					if (元素.startsWith('https://')) {
+						分类地址.接口地址.add(元素);
+					} else if (元素.includes('://')) {
+						分类地址.链接地址.add(元素);
+					} else {
+						分类地址.优选地址.add(元素);
+					}
+				}
 
-                    addressesapi = [...分类地址.接口地址];
-                    link = [...分类地址.链接地址];
-                    addresses = [...分类地址.优选地址];
-                }
-            }
+				addressesapi = [...分类地址.接口地址];
+				link = [...分类地址.链接地址];
+				addresses = [...分类地址.优选地址];
+			}
+		}
 
-            // 如果没有找到任何有效地址，生成随机地址
-            if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) === 0) {
-                // 定义 Cloudflare IP 范围的 CIDR 列表
-                const cfips = [
-                    '103.21.244.0/23',
-                    '104.16.0.0/13',
-                    '104.24.0.0/14',
-                    '172.64.0.0/14',
-                    '103.21.244.0/23',
-                    '104.16.0.0/14',
-                    '104.24.0.0/15',
-                    '141.101.64.0/19',
-                    '172.64.0.0/14',
-                    '188.114.96.0/21',
-                    '190.93.240.0/21',
-                ];
+		if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
+			// 定义 Cloudflare IP 范围的 CIDR 列表
+			let cfips = [
+				'103.21.244.0/23',
+				'104.16.0.0/13',
+				'104.24.0.0/14',
+				'172.64.0.0/14',
+				'103.21.244.0/23',
+				'104.16.0.0/14',
+				'104.24.0.0/15',
+				'141.101.64.0/19',
+				'172.64.0.0/14',
+				'188.114.96.0/21',
+				'190.93.240.0/21',
+			];
 
-                // 生成符合给定 CIDR 范围的随机 IP 地址
-                function generateRandomIPFromCIDR(cidr) {
-                    const [base, mask] = cidr.split('/');
-                    const baseIP = base.split('.').map(Number);
-                    const subnetMask = 32 - parseInt(mask, 10);
-                    const maxHosts = Math.pow(2, subnetMask) - 1;
-                    const randomHost = Math.floor(Math.random() * maxHosts);
+			// 生成符合给定 CIDR 范围的随机 IP 地址
+			function generateRandomIPFromCIDR(cidr) {
+				const [base, mask] = cidr.split('/');
+				const baseIP = base.split('.').map(Number);
+				const subnetMask = 32 - parseInt(mask, 10);
+				const maxHosts = Math.pow(2, subnetMask) - 1;
+				const randomHost = Math.floor(Math.random() * maxHosts);
 
-                    const randomIP = baseIP.map((octet, index) => {
-                        if (index < 2) return octet;
-                        if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-                        return (octet & (255 << subnetMask)) + (randomHost & 255);
-                    });
+				const randomIP = baseIP.map((octet, index) => {
+					if (index < 2) return octet;
+					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
+					return (octet & (255 << subnetMask)) + (randomHost & 255);
+				});
 
-                    return randomIP.join('.');
-                }
-
-                addresses = addresses.concat('127.0.0.1:1234#CFnat');
-                if (hostName.includes(".workers.dev")) {
-                    addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-                } else {
-                    addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-                }
-            }
-        }
-
-        // 生成的配置信息可以包括用户信息，代理信息等
-        return `UserID: ${userID}, HostName: ${hostName}, Sub: ${sub}, ProxyIP: ${RproxyIP}, URL: ${_url}`;
-    } catch (error) {
-        console.error('生成配置信息时发生错误:', error);
-        return '生成配置信息失败';
-    }
-}
-
+				return randomIP.join('.');
+			}
+			addresses = addresses.concat('127.0.0.1:1234#CFnat');
+			if (hostName.includes(".workers.dev")) {
+				addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+			} else {
+				addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+			}
+		}
+	}
 
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
