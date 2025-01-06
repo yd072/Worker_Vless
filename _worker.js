@@ -794,21 +794,34 @@ function isValidUUID(uuid) {
 	return uuidRegex.test(uuid);
 }
 
+/**
+ * 安全地关闭 WebSocket 连接
+ * @param {WebSocket} socket 要关闭的 WebSocket 实例
+ */
 function safeCloseWebSocket(socket) {
 	try {
+		// 确保传入的是一个 WebSocket 实例
+		if (!(socket instanceof WebSocket)) {
+			throw new TypeError('Provided socket is not a valid WebSocket instance');
+		}
+
 		// WebSocket 的状态常量直接使用 WebSocket.OPEN 和 WebSocket.CLOSING
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
 			console.log("Closing WebSocket...");
 			socket.close();
 		} else {
-			// 输出 WebSocket 的状态以及未关闭的原因
-			console.warn(`WebSocket cannot be closed. Current state: ${socket.readyState}`);
+			// 如果 WebSocket 不能关闭，记录警告并输出当前状态
+			console.warn(`WebSocket cannot be closed because it is in state: ${socket.readyState}`);
 		}
 	} catch (error) {
 		// 捕获并记录错误，详细说明可能的错误信息
 		console.error('Error occurred while safely closing WebSocket:', error);
+	} finally {
+		// 在结束时执行清理操作，如果需要的话
+		// console.log('WebSocket close operation completed.');
 	}
 }
+
 
 
 // 预计算 0-255 每个字节的十六进制表示
