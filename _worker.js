@@ -1342,29 +1342,41 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, env
 			];
 
 			// 生成符合给定 CIDR 范围的随机 IP 地址
-			function generateRandomIPFromCIDR(cidr) {
-				const [base, mask] = cidr.split('/');
-				const baseIP = base.split('.').map(Number);
-				const subnetMask = 32 - parseInt(mask, 10);
-				const maxHosts = Math.pow(2, subnetMask) - 1;
-				const randomHost = Math.floor(Math.random() * maxHosts);
+function generateRandomIPFromCIDR(cidr) {
+    const [base, mask] = cidr.split('/');
+    const baseIP = base.split('.').map(Number);
+    const subnetMask = 32 - parseInt(mask, 10);
+    const maxHosts = Math.pow(2, subnetMask) - 1;
+    const randomHost = Math.floor(Math.random() * maxHosts);
 
-				const randomIP = baseIP.map((octet, index) => {
-					if (index < 2) return octet;
-					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-					return (octet & (255 << subnetMask)) + (randomHost & 255);
-				});
+    const randomIP = baseIP.map((octet, index) => {
+        if (index < 2) return octet;
+        if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
+        return (octet & (255 << subnetMask)) + (randomHost & 255);
+    });
 
-				return randomIP.join('.');
-			}
-			addresses = addresses.concat('127.0.0.1:1234#CFnat');
-			if (hostName.includes(".workers.dev")) {
-				addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-			} else {
-				addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-			}
-		}
-	}
+    return randomIP.join('.');
+}
+
+// 假设 cfips 是一个包含 CIDR 范围的数组
+const cfips = ["192.168.1.0/24", "10.0.0.0/16"];  // 示例 CIDR 范围
+let addresses = [];
+let addressesnotls = [];
+let hostName = "example.workers.dev";  // 假设的主机名
+
+// 初始地址添加
+addresses = addresses.concat('127.0.0.1:1234#CFnat');
+
+// 根据 hostName 选择不同的地址数组
+if (hostName.includes(".workers.dev")) {
+    addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+} else {
+    addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+}
+
+console.log(addresses);      // 打印地址列表
+console.log(addressesnotls); // 打印没有 TLS 的地址列表
+
 
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
