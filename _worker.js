@@ -424,25 +424,33 @@ async function retry() {
 /**
  * 解析代理 IP，提取 IP 和端口
  * @param {string} proxyIP - 代理 IP 地址
+ * @param {string} [defaultPort='8080'] - 默认端口（可选）
  * @returns {object} 包含解析后的 proxyIP 和 portRemote
  */
-function parseProxyIP(proxyIP) {
-    let parsedProxy = { proxyIP, portRemote };
+function parseProxyIP(proxyIP, defaultPort = '8080') {
+    let parsedProxy = { proxyIP, portRemote: defaultPort }; // 默认端口
 
-    if (!proxyIP || proxyIP === '') {
+    // 如果 proxyIP 为空或无效，设置为默认值
+    if (!proxyIP) {
         parsedProxy.proxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw=='); // 默认代理 IP
-    } else if (proxyIP.includes(']:')) {
-        parsedProxy.portRemote = proxyIP.split(']:')[1] || portRemote;
-        parsedProxy.proxyIP = proxyIP.split(']:')[0];
-    } else if (proxyIP.includes(':')) {
-        parsedProxy.portRemote = proxyIP.split(':')[1] || portRemote;
-        parsedProxy.proxyIP = proxyIP.split(':')[0];
+        return parsedProxy;
+    }
+
+    // 正则表达式用于解析带端口的代理 IP 地址
+    const regex = /^(?:(.*?)(?::(\d+))?)$/;
+    const match = proxyIP.match(regex);
+
+    if (match) {
+        parsedProxy.proxyIP = match[1]; // 获取 IP 地址
+        parsedProxy.portRemote = match[2] || defaultPort; // 获取端口，默认为 `defaultPort`
     } else if (proxyIP.includes('.tp')) {
-        parsedProxy.portRemote = proxyIP.split('.tp')[1]?.split('.')[0] || portRemote;
+        // 特殊处理 .tp 格式的代理 IP
+        parsedProxy.portRemote = proxyIP.split('.tp')[1]?.split('.')[0] || defaultPort;
     }
 
     return parsedProxy;
 }
+
 
 	let useSocks = false;
 	if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
