@@ -505,9 +505,12 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 
 
 
+// https://xtls.github.io/development/protocols/维列斯.html
+// https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
+
 /**
  * 解析 维列斯 协议的头部数据
- * @param {ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
+ * @param { ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
  * @param {string} userID 用于验证的用户 ID
  * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
  */
@@ -527,14 +530,14 @@ function process维列斯Header(维列斯Buffer, userID) {
     let isUDP = false;
 
     // 验证用户 ID（接下来的 16 个字节）
-    function isUserIDValid(userID, buffer) {
+    function isUserIDValid(userID, userIDLow, buffer) {
         const userIDArray = new Uint8Array(buffer.slice(1, 17));
-        const userIDString = new TextDecoder().decode(userIDArray);
-        return userIDString === userID;
+        const userIDString = stringify(userIDArray);
+        return userIDString === userID || userIDString === userIDLow;
     }
 
     // 使用函数验证
-    isValidUser = isUserIDValid(userID, 维列斯Buffer);
+    isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
 
     // 如果用户 ID 无效，返回错误
     if (!isValidUser) {
@@ -550,27 +553,24 @@ function process维列斯Header(维列斯Buffer, userID) {
 
     // 解析命令（紧跟在选项之后的 1 个字节）
     // 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
-    const command = new Uint8Array(维列斯Buffer.slice(18 + optLength, 18 + optLength + 1))[0];
+    const command = new Uint8Array(
+        维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
+    )[0];
 
-    switch (command) {
-        case 1:
-            // TCP 命令，不需特殊处理
-            break;
-        case 2:
-            // UDP 命令
-            isUDP = true;
-            break;
-        case 3:
-            // 不支持的命令
-            return {
-                hasError: true,
-                message: `Command ${command} is not supported. Valid commands: 01-TCP, 02-UDP, 03-MUX`,
-            };
-        default:
-            return {
-                hasError: true,
-                message: `Invalid command ${command}`,
-            };
+    // 0x01 TCP
+    // 0x02 UDP
+    // 0x03 MUX
+    if (command === 1) {
+        // TCP 命令，不需特殊处理
+    } else if (command === 2) {
+        // UDP 命令
+        isUDP = true;
+    } else {
+        // 不支持的命令
+        return {
+            hasError: true,
+            message: `Command ${command} is not supported. Valid commands: 01-TCP, 02-UDP, 03-MUX`,
+        };
     }
 
     // 解析远程端口（大端序，2 字节）
@@ -580,29 +580,41 @@ function process维列斯Header(维列斯Buffer, userID) {
 
     // 解析地址类型和地址
     let addressIndex = portIndex + 2;
-    const addressType = new Uint8Array(维列斯Buffer.slice(addressIndex, addressIndex + 1))[0];
-    let addressLength = 0;
-    let addressValue = '';
+    const addressBuffer = new Uint8Array(
+        维列斯Buffer.slice(addressIndex, addressIndex + 1)
+    );
 
     // 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
+    const addressType = addressBuffer[0];
+    let addressLength = 0;
+    let addressValueIndex = addressIndex + 1;
+    let addressValue = '';
+
     switch (addressType) {
         case 1:
             // IPv4 地址
             addressLength = 4;
-            addressValue = new Uint8Array(维列斯Buffer.slice(addressIndex + 1, addressIndex + 1 + addressLength)).join('.');
+            addressValue = new Uint8Array(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+            ).join('.');
             break;
         case 2:
             // 域名
-            addressLength = new Uint8Array(维列斯Buffer.slice(addressIndex + 1, addressIndex + 2))[0];
+            addressLength = new Uint8Array(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
+            )[0];
+            addressValueIndex += 1;
             addressValue = new TextDecoder().decode(
-                维列斯Buffer.slice(addressIndex + 2, addressIndex + 2 + addressLength)
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
             );
             break;
         case 3:
             // IPv6 地址
             addressLength = 16;
+            const dataView = new DataView(
+                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+            );
             const ipv6 = [];
-            const dataView = new DataView(维列斯Buffer.slice(addressIndex + 1, addressIndex + 1 + addressLength));
             for (let i = 0; i < 8; i++) {
                 ipv6.push(dataView.getUint16(i * 2).toString(16));
             }
@@ -622,13 +634,12 @@ function process维列斯Header(维列斯Buffer, userID) {
         };
     }
 
-    // 返回解析结果
     return {
         hasError: false,
         addressRemote: addressValue,  // 解析后的远程地址
         addressType,                 // 地址类型
         portRemote,                  // 远程端口
-        rawDataIndex: addressIndex + 1 + addressLength,  // 原始数据的实际起始位置
+        rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
         维列斯Version: version,     // 维列斯 协议版本
         isUDP,                       // 是否是 UDP 请求
     };
