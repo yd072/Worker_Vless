@@ -22,22 +22,36 @@ jobs:
       - name: Install dependencies
         run: npm install -g javascript-obfuscator
 
-      # 确认文件是否存在
-      - name: List files to confirm 节点订阅.js exists
-        run: ls -al
+      # 确认文件内容是否正常
+      - name: Display 节点订阅.js content
+        run: cat 节点订阅.js
 
-      # 简化混淆命令用于调试
-      - name: Obfuscate code (simplified for debugging)
+      # 检查文件是否存在
+      - name: Check if 节点订阅.js exists
+        run: ls -al 节点订阅.js
+
+      # 简化混淆命令，查看是否能成功生成
+      - name: Obfuscate code (simplified)
         run: |
-          echo "Running javascript-obfuscator"
-          javascript-obfuscator 节点订阅.js --output _worker.js || echo "Obfuscation failed"
+          javascript-obfuscator 节点订阅.js --output _worker.js
           ls -al _worker.js
 
-      # 查看 Git 状态，确认是否有更改
+      # 确认命令是否成功
+      - name: Obfuscate code (with exit code check)
+        run: |
+          javascript-obfuscator 节点订阅.js --output _worker.js
+          if [ $? -ne 0 ]; then
+            echo "Obfuscation failed"
+          else
+            echo "Obfuscation succeeded"
+          fi
+          ls -al _worker.js
+
+      # 查看 git 状态
       - name: Check git status
         run: git status
 
-      # 提交变更
+      # 提交更改
       - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
