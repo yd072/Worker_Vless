@@ -864,16 +864,23 @@ function unsafeStringify(arr, offset = 0) {
  * @throws {TypeError} 如果生成的 UUID 字符串无效
  */
 function stringify(arr, offset = 0) {
-	// 使用不安全的函数快速生成 UUID 字符串
-	const uuid = unsafeStringify(arr, offset);
-	// 验证生成的 UUID 是否有效
-	if (!isValidUUID(uuid)) {
-		// 原：throw TypeError("Stringified UUID is invalid");
-		throw TypeError(`生成的 UUID 不符合规范 ${uuid}`);
-		//uuid = userID;
-	}
-	return uuid;
+    // 检查输入是否为 Uint8Array 类型
+    if (!(arr instanceof Uint8Array)) {
+        throw new TypeError('Expected input to be a Uint8Array');
+    }
+
+    // 使用不安全的函数快速生成 UUID 字符串
+    const uuid = unsafeStringify(arr, offset);
+
+    // 验证生成的 UUID 是否有效
+    if (!isValidUUID(uuid)) {
+        // 提供更具体的错误信息，便于调试
+        throw new TypeError(`生成的 UUID 不符合规范: ${uuid}`);
+    }
+
+    return uuid;
 }
+
 
 /**
  * 处理 DNS 查询的函数
