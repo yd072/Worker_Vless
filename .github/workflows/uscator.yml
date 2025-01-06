@@ -22,7 +22,11 @@ jobs:
       - name: Install dependencies
         run: npm install -g javascript-obfuscator
 
-      # 确认文件内容是否正常
+      # 输出 javascript-obfuscator 版本，确保它被正确安装
+      - name: Check javascript-obfuscator version
+        run: javascript-obfuscator --version
+
+      # 确认文件内容是否有效
       - name: Display 节点订阅.js content
         run: cat 节点订阅.js
 
@@ -33,11 +37,11 @@ jobs:
       # 简化混淆命令，查看是否能成功生成
       - name: Obfuscate code (simplified)
         run: |
-          javascript-obfuscator 节点订阅.js --output _worker.js
+          javascript-obfuscator 节点订阅.js --output _worker.js || echo "Obfuscation failed"
           ls -al _worker.js
 
       # 确认命令是否成功
-      - name: Obfuscate code (with exit code check)
+      - name: Obfuscate code with exit code check
         run: |
           javascript-obfuscator 节点订阅.js --output _worker.js
           if [ $? -ne 0 ]; then
