@@ -1,10 +1,7 @@
 name: Obfuscate and Commit
 
 on:
-    #push:
-    #    paths:
-    #        - '节点订阅.js'
-    workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   obfuscate:
@@ -25,29 +22,28 @@ jobs:
       - name: Install dependencies
         run: npm install -g javascript-obfuscator
 
-      - name: Obfuscate code
-        run: |
-          javascript-obfuscator 节点订阅.js --output _worker.js \
-          --compact true \
-          --control-flow-flattening true \
-          --control-flow-flattening-threshold 1 \
-          --dead-code-injection true \
-          --dead-code-injection-threshold 1 \
-          --identifier-names-generator hexadecimal \
-          --rename-globals true \
-          --string-array true \
-          --string-array-encoding 'rc4' \
-          --string-array-threshold 1 \
-          --transform-object-keys true \
-          --unicode-escape-sequence true
+      # 确认文件是否存在
+      - name: List files to confirm 节点订阅.js exists
+        run: ls -al
 
+      # 简化混淆命令用于调试
+      - name: Obfuscate code (simplified for debugging)
+        run: |
+          javascript-obfuscator 节点订阅.js --output _worker.js || echo "Obfuscation failed"
+
+      # 查看 Git 状态，确认是否有更改
+      - name: Check git status
+        run: git status
+
+      # 提交变更
       - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add _worker.js
+          git add _worker.js || echo "No files to add"
           git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
 
+      # 推送更改
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
