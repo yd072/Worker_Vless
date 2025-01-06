@@ -1181,26 +1181,54 @@ function socks5AddressParser(address) {
 }
 
 /**
- * 恢复被伪装的信息
- * 这个函数用于将内容中的假用户ID和假主机名替换回真实的值
- * 
- * @param {string} content 需要处理的内容
- * @param {string} userID 真实的用户ID
- * @param {string} hostName 真实的主机名
- * @param {boolean} isBase64 内容是否是Base64编码的
- * @returns {string} 恢复真实信息后的内容
+ * 将 Base64 编码的内容转换为原始文本（如果是 Base64 编码的）
+ * @param {string} content - 输入的内容
+ * @param {boolean} isBase64 - 内容是否是 Base64 编码
+ * @returns {string} 解码后的原始内容（如果是 Base64 编码的）
  */
-function 恢复伪装信息(content, userID, hostName, isBase64) {
-	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
+function decodeIfBase64(content, isBase64) {
+    if (isBase64) {
+        try {
+            return atob(content);  // 解码 Base64
+        } catch (e) {
+            console.error("Base64 解码失败:", e);
+            return content;  // 如果解码失败，返回原始内容
+        }
+    }
+    return content;
+}
 
-	// 使用正则表达式全局替换（'g'标志）
-	// 将所有出现的假用户ID和假主机名替换为真实的值
-	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
-		.replace(new RegExp(fakeHostName, 'g'), hostName);
+/**
+ * 将内容恢复为原始信息，替换伪装的用户ID和主机名
+ * @param {string} content - 需要处理的内容
+ * @param {string} userID - 真实的用户ID
+ * @param {string} hostName - 真实的主机名
+ * @param {boolean} isBase64 - 内容是否是 Base64 编码的
+ * @param {string} fakeUserID - 伪装的用户ID
+ * @param {string} fakeHostName - 伪装的主机名
+ * @returns {string} 恢复后的内容
+ */
+function 恢复伪装信息(content, userID, hostName, isBase64, fakeUserID, fakeHostName) {
+    // 如果是 Base64 编码，先解码
+    content = decodeIfBase64(content, isBase64);
 
-	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+    // 创建正则表达式，用于替换所有伪装的用户ID和主机名
+    const userIDRegex = new RegExp(fakeUserID, 'g');
+    const hostNameRegex = new RegExp(fakeHostName, 'g');
 
-	return content;
+    // 替换伪装的用户ID和主机名
+    content = content.replace(userIDRegex, userID).replace(hostNameRegex, hostName);
+
+    // 如果内容是 Base64 编码，恢复为 Base64 编码
+    if (isBase64) {
+        try {
+            content = btoa(content);  // 编码为 Base64
+        } catch (e) {
+            console.error("Base64 编码失败:", e);
+        }
+    }
+
+    return content;
 }
 
 /**
