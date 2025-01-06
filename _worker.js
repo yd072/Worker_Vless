@@ -873,9 +873,6 @@ function stringify(arr, offset = 0) {
 
 
 
-const net = require('net');  // Node.js 的 net 模块
-const WebSocket = require('ws');  // 假设使用 WebSocket 库来处理 WebSocket 连接
-
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
