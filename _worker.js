@@ -794,15 +794,24 @@ function isValidUUID(uuid) {
 	return uuidRegex.test(uuid);
 }
 
+/**
+ * 安全地关闭 WebSocket 连接
+ * @param {WebSocket} socket WebSocket 实例
+ */
 function safeCloseWebSocket(socket) {
 	try {
+		// 确保传入的对象是一个 WebSocket 实例
+		if (!(socket instanceof WebSocket)) {
+			throw new TypeError('The provided object is not a valid WebSocket instance.');
+		}
+
 		// WebSocket 的状态常量直接使用 WebSocket.OPEN 和 WebSocket.CLOSING
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
 			console.log("Closing WebSocket...");
 			socket.close();
 		} else {
 			// 输出 WebSocket 的状态以及未关闭的原因
-			console.warn(`WebSocket cannot be closed. Current state: ${socket.readyState}`);
+			console.warn(`WebSocket cannot be closed because it is in state: ${socket.readyState}`);
 		}
 	} catch (error) {
 		// 捕获并记录错误，详细说明可能的错误信息
@@ -810,14 +819,8 @@ function safeCloseWebSocket(socket) {
 	}
 }
 
-
 // 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
-}
+const byteToHex = [...Array(256)].map((_, i) => (i + 256).toString(16).slice(1));
 
 
 /**
