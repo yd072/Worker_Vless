@@ -3,7 +3,7 @@ name: Obfuscate and Commit
 on:
     #push:
     #    paths:
-    #        - '节点订阅..js'
+    #        - '节点订阅.js'
     workflow_dispatch:
 
 jobs:
