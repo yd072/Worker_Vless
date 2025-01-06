@@ -795,28 +795,31 @@ function base64ToArrayBuffer(base64Str) {
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
  */
 function isValidUUID(uuid) {
-	// 定义一个正则表达式来匹配 UUID 格式
-	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    // 定义一个正则表达式来匹配 UUID 格式
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-	// 使用正则表达式测试 UUID 字符串
-	return uuidRegex.test(uuid);
+    // 使用正则表达式测试 UUID 字符串
+    return uuidRegex.test(uuid);
 }
 
 // WebSocket 的两个重要状态常量
-const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
+const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态，可以发送和接收消息
 const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
+const WS_READY_STATE_CONNECTING = 0;  // WebSocket 处于连接中
+const WS_READY_STATE_CLOSED = 3;     // WebSocket 已关闭
 
 function safeCloseWebSocket(socket) {
-	try {
-		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
-		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
-		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-			socket.close();
-		}
-	} catch (error) {
-		// 记录任何可能发生的错误，虽然按照规范不应该有错误
-		console.error('safeCloseWebSocket error', error);
-	}
+    try {
+        if (socket && (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING)) {
+            console.log(`Closing WebSocket with readyState: ${socket.readyState}`);
+            socket.close();
+        } else {
+            console.log('WebSocket 已关闭或未打开');
+        }
+    } catch (error) {
+        // 记录任何可能发生的错误，虽然按照规范不应该有错误
+        console.error('safeCloseWebSocket error', error);
+    }
 }
 
 // 预计算 0-255 每个字节的十六进制表示
