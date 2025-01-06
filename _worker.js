@@ -839,15 +839,20 @@ for (let i = 0; i < 256; ++i) {
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
-	// toLowerCase() 确保整个 UUID 是小写的
-	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
-		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
-		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
-		byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
-		byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
-		byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
+    // 检查数组的长度是否至少为 16
+    if (arr.length < offset + 16) {
+        throw new Error('Input array is too short to contain a valid UUID.');
+    }
+
+    // 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
+    // 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
+    // toLowerCase() 确保整个 UUID 是小写的
+    return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
+        byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
+        byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
+        byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
+        byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
+        byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
 
 /**
