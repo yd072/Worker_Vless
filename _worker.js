@@ -782,27 +782,23 @@ function base64ToArrayBuffer(base64Str) {
 
 
 /**
- * 这不是真正的 UUID 验证，而是一个简化的版本
- * @param {string} uuid 要验证的 UUID 字符串
- * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
+ * 安全地关闭 WebSocket 连接
+ * @param {WebSocket} socket 要关闭的 WebSocket 实例
  */
-function isValidUUID(uuid) {
-	// 定义一个正则表达式来匹配 UUID 格式
-	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-	// 使用正则表达式测试 UUID 字符串
-	return uuidRegex.test(uuid);
-}
-
 function safeCloseWebSocket(socket) {
 	try {
+		// 确保传入的是 WebSocket 实例
+		if (!(socket instanceof WebSocket)) {
+			throw new TypeError('Provided socket is not a valid WebSocket instance');
+		}
+
 		// WebSocket 的状态常量直接使用 WebSocket.OPEN 和 WebSocket.CLOSING
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
 			console.log("Closing WebSocket...");
 			socket.close();
 		} else {
-			// 输出 WebSocket 的状态以及未关闭的原因
-			console.warn(`WebSocket cannot be closed. Current state: ${socket.readyState}`);
+			// 如果 WebSocket 不能关闭，则记录警告
+			console.warn('WebSocket cannot be closed due to its current state:', socket.readyState);
 		}
 	} catch (error) {
 		// 捕获并记录错误，详细说明可能的错误信息
@@ -810,14 +806,6 @@ function safeCloseWebSocket(socket) {
 	}
 }
 
-
-// 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
-}
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
