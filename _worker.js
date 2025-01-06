@@ -1177,44 +1177,62 @@ async function 双重哈希(文本) {
 }
 
 async function 代理URL(代理网址, 目标网址) {
-	const 网址列表 = await 整理(代理网址);
-	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+    try {
+        // 获取代理网址列表并随机选择一个代理地址
+        const 网址列表 = await 整理(代理网址);
+        const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-	// 解析目标 URL
-	let 解析后的网址 = new URL(完整网址);
-	console.log(解析后的网址);
-	// 提取并可能修改 URL 组件
-	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-	let 主机名 = 解析后的网址.hostname;
-	let 路径名 = 解析后的网址.pathname;
-	let 查询参数 = 解析后的网址.search;
+        // 解析目标 URL
+        let 解析后的网址 = new URL(完整网址);
+        console.log(解析后的网址);
 
-	// 处理路径名
-	if (路径名.charAt(路径名.length - 1) == '/') {
-		路径名 = 路径名.slice(0, -1);
-	}
-	路径名 += 目标网址.pathname;
+        // 提取并可能修改 URL 组件
+        let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';  // 如果没有协议默认为 https
+        let 主机名 = 解析后的网址.hostname;
+        let 路径名 = 解析后的网址.pathname;
+        let 查询参数 = 解析后的网址.search;
 
-	// 构建新的 URL
-	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+        // 处理路径名，确保不会重复 '/'
+        if (路径名.charAt(路径名.length - 1) == '/') {
+            路径名 = 路径名.slice(0, -1);
+        }
 
-	// 反向代理请求
-	let 响应 = await fetch(新网址);
+        // 将目标网址的路径名拼接到代理网址的路径上
+        路径名 += 目标网址.pathname;
 
-	// 创建新的响应
-	let 新响应 = new Response(响应.body, {
-		status: 响应.status,
-		statusText: 响应.statusText,
-		headers: 响应.headers
-	});
+        // 处理查询参数，合并或覆盖
+        let 目标查询参数 = new URLSearchParams(目标网址.search);
+        let 代理查询参数 = new URLSearchParams(查询参数);
 
-	// 添加自定义头部，包含 URL 信息
-	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
-	//新响应.headers.set('X-Original-URL', 完整网址);
-	新响应.headers.set('X-New-URL', 新网址);
+        // 合并目标查询参数和代理查询参数，目标参数会覆盖代理参数
+        目标查询参数.forEach((value, key) => {
+            代理查询参数.set(key, value);
+        });
 
-	return 新响应;
+        // 构建新的完整网址
+        let 新网址 = `${协议}://${主机名}${路径名}?${代理查询参数.toString()}`;
+
+        // 反向代理请求
+        let 响应 = await fetch(新网址);
+
+        // 创建新的响应
+        let 新响应 = new Response(响应.body, {
+            status: 响应.status,
+            statusText: 响应.statusText,
+            headers: 响应.headers
+        });
+
+        // 添加自定义头部，包含 URL 信息
+        新响应.headers.set('X-New-URL', 新网址);
+
+        return 新响应;
+    } catch (error) {
+        // 错误处理，捕获任何异常并返回一个错误响应
+        console.error('代理 URL 处理时发生错误:', error);
+        return new Response('代理请求失败', { status: 500 });
+    }
 }
+
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
