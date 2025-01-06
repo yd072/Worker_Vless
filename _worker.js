@@ -1250,30 +1250,46 @@ async function 代理URL(代理网址, 目标网址) {
     }
 }
 
-const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
-function 配置信息(UUID, 域名地址) {
-	const 协议类型 = atob(啥啥啥_写的这是啥啊);
+async function 配置信息(UUID, 域名地址, FileName, path) {
+    const 协议类型 = atob('ZG14bGMzTT0=');  // 该值解码后是某种协议类型
+    const 别名 = FileName;  // 假设 FileName 是外部传入的变量
+    let 地址 = 域名地址;
+    let 端口 = 443;  // 默认端口 443
 
-	const 别名 = FileName;
-	let 地址 = 域名地址;
-	let 端口 = 443;
+    const 用户ID = UUID;
+    const 加密方式 = 'none';
+    const 传输层协议 = 'ws';  // 默认使用 ws 协议
+    const 伪装域名 = 域名地址;
+    const 路径 = path;
 
-	const 用户ID = UUID;
-	const 加密方式 = 'none';
+    let 传输层安全 = ['tls', true];  // 默认使用 tls 安全协议
+    const SNI = 域名地址;
+    const 指纹 = 'randomized';
 
-	const 传输层协议 = 'ws';
-	const 伪装域名 = 域名地址;
-	const 路径 = path;
+    // 根据域名地址包含 `.workers.dev` 来动态调整配置
+    if (域名地址.includes('.workers.dev')) {
+        地址 = atob('dmlzYS5jbg==');  // 解码后是 'visa.cn'
+        端口 = 80;  // 使用 80 端口
+        传输层安全 = ['', false];  // 不使用 TLS
+    }
 
-	let 传输层安全 = ['tls', true];
-	const SNI = 域名地址;
-	const 指纹 = 'randomized';
+    // 返回生成的配置对象
+    return {
+        协议类型,
+        别名,
+        地址,
+        端口,
+        用户ID,
+        加密方式,
+        传输层协议,
+        伪装域名,
+        路径,
+        传输层安全,
+        SNI,
+        指纹
+    };
+}
 
-	if (域名地址.includes('.workers.dev')) {
-		地址 = atob('dmlzYS5jbg==');
-		端口 = 80;
-		传输层安全 = ['', false];
-	}
 
 	const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079` + 'p' + `${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
 	const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3], udp: false, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
