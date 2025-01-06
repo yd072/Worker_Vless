@@ -1,7 +1,7 @@
-name: worker
+name: Obfuscate and Commit
 
 on:
-  workflow_dispatch:
+    workflow_dispatch:
 
 jobs:
   obfuscate:
@@ -20,7 +20,7 @@ jobs:
           node-version: "16"
 
       - name: Install dependencies
-        run: npm install -g javascript-obfuscator@3.0.0
+        run: npm install -g javascript-obfuscator
 
       - name: Obfuscate code
         run: |
@@ -46,7 +46,7 @@ jobs:
           git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
 
       - name: Push changes
-        uses: ad-m/github-push-action@v0.6.0
+        uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.ref }}
