@@ -856,6 +856,7 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
+ * @param {WebSocket} webSocket - WebSocket 连接，用于向客户端发送 DNS 响应
  * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
  * @param {(string)=> void} log - 日志记录函数
  */
@@ -908,6 +909,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 		);
 	}
 }
+
 
 /**
  * 建立 SOCKS5 代理连接
