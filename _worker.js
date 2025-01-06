@@ -1199,36 +1199,26 @@ function decodeIfBase64(content, isBase64) {
 }
 
 /**
- * 将内容恢复为原始信息，替换伪装的用户ID和主机名
- * @param {string} content - 需要处理的内容
- * @param {string} userID - 真实的用户ID
- * @param {string} hostName - 真实的主机名
- * @param {boolean} isBase64 - 内容是否是 Base64 编码的
- * @param {string} fakeUserID - 伪装的用户ID
- * @param {string} fakeHostName - 伪装的主机名
- * @returns {string} 恢复后的内容
+ * 恢复被伪装的信息
+ * 这个函数用于将内容中的假用户ID和假主机名替换回真实的值
+ * 
+ * @param {string} content 需要处理的内容
+ * @param {string} userID 真实的用户ID
+ * @param {string} hostName 真实的主机名
+ * @param {boolean} isBase64 内容是否是Base64编码的
+ * @returns {string} 恢复真实信息后的内容
  */
-function 恢复伪装信息(content, userID, hostName, isBase64, fakeUserID, fakeHostName) {
-    // 如果是 Base64 编码，先解码
-    content = decodeIfBase64(content, isBase64);
+function 恢复伪装信息(content, userID, hostName, isBase64) {
+	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
-    // 创建正则表达式，用于替换所有伪装的用户ID和主机名
-    const userIDRegex = new RegExp(fakeUserID, 'g');
-    const hostNameRegex = new RegExp(fakeHostName, 'g');
+	// 使用正则表达式全局替换（'g'标志）
+	// 将所有出现的假用户ID和假主机名替换为真实的值
+	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
+		.replace(new RegExp(fakeHostName, 'g'), hostName);
 
-    // 替换伪装的用户ID和主机名
-    content = content.replace(userIDRegex, userID).replace(hostNameRegex, hostName);
+	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
 
-    // 如果内容是 Base64 编码，恢复为 Base64 编码
-    if (isBase64) {
-        try {
-            content = btoa(content);  // 编码为 Base64
-        } catch (e) {
-            console.error("Base64 编码失败:", e);
-        }
-    }
-
-    return content;
+	return content;
 }
 
 /**
@@ -1240,58 +1230,91 @@ function 恢复伪装信息(content, userID, hostName, isBase64, fakeUserID, fak
  * @returns {Promise<string>} 双重哈希后的小写十六进制字符串
  */
 async function 双重哈希(文本) {
-	const 编码器 = new TextEncoder();
+    const 编码器 = new TextEncoder();
 
-	const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-	const 第一次哈希数组 = Array.from(new Uint8Array(第一次哈希));
-	const 第一次十六进制 = 第一次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    // 第一次哈希
+    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
+    const 第一次哈希数组 = new Uint8Array(第一次哈希); // 将哈希结果转换为 Uint8Array
 
-	const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-	const 第二次哈希数组 = Array.from(new Uint8Array(第二次哈希));
-	const 第二次十六进制 = 第二次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    // 获取第一次哈希的部分数据 (例如字节 7 到 27)
+    const 部分数据 = 第一次哈希数组.slice(7, 27);
 
-	return 第二次十六进制.toLowerCase();
+    // 第二次哈希
+    const 第二次哈希 = await crypto.subtle.digest('MD5', 部分数据);
+    const 第二次哈希数组 = new Uint8Array(第二次哈希); // 转换为 Uint8Array
+
+    // 转换为十六进制字符串
+    const 第二次十六进制 = Array.from(第二次哈希数组)
+        .map(字节 => 字节.toString(16).padStart(2, '0'))
+        .join('');
+
+    return 第二次十六进制.toLowerCase(); // 返回小写的十六进制字符串
 }
 
+/**
+ * 代理请求通过代理网址
+ * @param {string} 代理网址 代理网址的基础 URL
+ * @param {URL} 目标网址 目标 URL，包含协议、主机名、路径等
+ * @returns {Promise<Response>} 返回新的代理响应
+ */
 async function 代理URL(代理网址, 目标网址) {
-	const 网址列表 = await 整理(代理网址);
-	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+	try {
+		// 获取代理网址列表
+		const 网址列表 = await 整理(代理网址);
+		if (网址列表.length === 0) {
+			throw new Error("没有可用的代理网址");
+		}
 
-	// 解析目标 URL
-	let 解析后的网址 = new URL(完整网址);
-	console.log(解析后的网址);
-	// 提取并可能修改 URL 组件
-	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-	let 主机名 = 解析后的网址.hostname;
-	let 路径名 = 解析后的网址.pathname;
-	let 查询参数 = 解析后的网址.search;
+		// 随机选择一个代理网址
+		const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-	// 处理路径名
-	if (路径名.charAt(路径名.length - 1) == '/') {
-		路径名 = 路径名.slice(0, -1);
+		// 解析目标 URL
+		let 解析后的网址 = new URL(完整网址);
+		console.log(解析后的网址);
+
+		// 提取 URL 组件
+		let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https'; // 默认使用 https 协议
+		let 主机名 = 解析后的网址.hostname;
+		let 路径名 = 解析后的网址.pathname;
+		let 查询参数 = 解析后的网址.search;
+
+		// 处理路径名，确保路径格式正确
+		if (路径名.charAt(路径名.length - 1) == '/') {
+			路径名 = 路径名.slice(0, -1); // 去除末尾的斜杠
+		}
+		路径名 += 目标网址.pathname;
+
+		// 合并查询参数
+		if (目标网址.search) {
+			查询参数 = `${查询参数}&${目标网址.search.slice(1)}`;
+		}
+
+		// 构建新的代理 URL
+		let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+
+		// 发送代理请求
+		let 响应 = await fetch(新网址);
+
+		// 创建新的响应对象
+		let 新响应 = new Response(响应.body, {
+			status: 响应.status,
+			statusText: 响应.statusText,
+			headers: 响应.headers
+		});
+
+		// 添加自定义头部，包含代理和目标 URL 信息
+		新响应.headers.set('X-New-URL', 新网址);
+		// 可以添加更多自定义头部
+		// 新响应.headers.set('X-Original-URL', 目标网址.href);
+
+		return 新响应;
+	} catch (error) {
+		// 捕获错误并返回一个错误响应
+		console.error('代理请求出错:', error);
+		return new Response('代理请求失败: ' + error.message, { status: 500 });
 	}
-	路径名 += 目标网址.pathname;
-
-	// 构建新的 URL
-	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
-
-	// 反向代理请求
-	let 响应 = await fetch(新网址);
-
-	// 创建新的响应
-	let 新响应 = new Response(响应.body, {
-		status: 响应.status,
-		statusText: 响应.statusText,
-		headers: 响应.headers
-	});
-
-	// 添加自定义头部，包含 URL 信息
-	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
-	//新响应.headers.set('X-Original-URL', 完整网址);
-	新响应.headers.set('X-New-URL', 新网址);
-
-	return 新响应;
 }
+
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
