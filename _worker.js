@@ -873,6 +873,9 @@ function stringify(arr, offset = 0) {
 
 
 
+const net = require('net');  // Node.js 的 net 模块
+const WebSocket = require('ws');  // 假设使用 WebSocket 库来处理 WebSocket 连接
+
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
@@ -881,57 +884,85 @@ function stringify(arr, offset = 0) {
  * @param {(string) => void} log - 日志记录函数
  */
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-	try {
-		// 选用 Google 的 DNS 服务器（后续可能改为 Cloudflare 的 1.1.1.1）
-		const dnsServer = '8.8.4.4';
-		const dnsPort = 53;
+    try {
+        // 选用 Google 的 DNS 服务器（后续可能改为 Cloudflare 的 1.1.1.1）
+        const dnsServer = '8.8.4.4';
+        const dnsPort = 53;
 
-		// 保存 维列斯 响应头部，用于后续发送
-		let 维列斯Header = 维列斯ResponseHeader;
+        // 保存 维列斯 响应头部，用于后续发送
+        let 维列斯Header = 维列斯ResponseHeader;
 
-		// 与指定的 DNS 服务器建立 TCP 连接
-		const tcpSocket = connect({
-			hostname: dnsServer,
-			port: dnsPort,
-		});
+        // 与指定的 DNS 服务器建立 TCP 连接
+        const tcpSocket = net.createConnection(dnsPort, dnsServer, () => {
+            log(`连接到 ${dnsServer}:${dnsPort}`); // 记录连接信息
+        });
 
-		log(`连接到 ${dnsServer}:${dnsPort}`); // 记录连接信息
+        // 使用写入流将 DNS 查询数据发送到 DNS 服务器
+        tcpSocket.write(udpChunk);
+        tcpSocket.end(); // 数据发送完毕后关闭 TCP 连接
 
-		// 使用写入流将 DNS 查询数据发送到 DNS 服务器
-		const writer = tcpSocket.writable.getWriter();
-		await writer.write(udpChunk); // 将客户端的 DNS 查询数据发送给 DNS 服务器
-		writer.releaseLock(); // 释放写入器，允许其他部分使用
+        // 从 DNS 服务器接收响应数据
+        tcpSocket.on('data', (chunk) => {
+            // 仅当 WebSocket 连接开放时才发送数据
+            if (webSocket.readyState === WebSocket.OPEN) {
+                if (维列斯Header) {
+                    // 如果有 维列斯 头部，将其与 DNS 响应数据合并后发送
+                    webSocket.send(new Blob([维列斯Header, chunk]).arrayBuffer());
+                    维列斯Header = null; // 头部只发送一次，之后置为 null
+                } else {
+                    // 否则直接发送 DNS 响应数据
+                    webSocket.send(chunk);
+                }
+            } else {
+                log('WebSocket 未开放，无法发送数据');
+            }
+        });
 
-		// 从 DNS 服务器接收响应数据
-		await tcpSocket.readable.pipeTo(new WritableStream({
-			async write(chunk) {
-				// 仅当 WebSocket 连接开放时才发送数据
-				if (webSocket.readyState === WS_READY_STATE_OPEN) {
-					if (维列斯Header) {
-						// 如果有 维列斯 头部，将其与 DNS 响应数据合并后发送
-						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-						维列斯Header = null; // 头部只发送一次，之后置为 null
-					} else {
-						// 否则直接发送 DNS 响应数据
-						webSocket.send(chunk);
-					}
-				} else {
-					log('WebSocket 未开放，无法发送数据');
-				}
-			},
-			close() {
-				log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
-			},
-			abort(reason) {
-				console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
-			},
-		}));
-	} catch (error) {
-		// 捕获并记录任何可能发生的错误
-		console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error);
-		log(`处理 DNS 查询时发生错误: ${error.message}`);
-	}
+        tcpSocket.on('close', () => {
+            log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
+        });
+
+        tcpSocket.on('error', (error) => {
+            log(`DNS 服务器(${dnsServer}) TCP 连接出错: ${error.message}`);
+            console.error(error.stack);
+        });
+    } catch (error) {
+        // 捕获并记录任何可能发生的错误
+        log(`处理 DNS 查询时发生错误: ${error.message}`);
+        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error);
+    }
 }
+
+/**
+ * WebSocket 状态检查常量
+ * 使用标准的 WebSocket.OPEN 来确保状态检查正常
+ */
+const WS_READY_STATE_OPEN = WebSocket.OPEN;
+
+/**
+ * 日志记录函数，用于输出日志信息
+ * @param {string} message 日志信息
+ */
+function log(message) {
+    console.log(`[LOG] ${new Date().toISOString()} - ${message}`);
+}
+
+/**
+ * 假设 WebSocket 客户端对象
+ * 你可以根据自己的需要连接到 WebSocket 服务
+ */
+const webSocket = new WebSocket('ws://localhost:8080');  // WebSocket 服务器地址
+
+webSocket.on('open', () => {
+    log('WebSocket 连接已开启');
+});
+
+// 假设 UDP 查询数据为一个 ArrayBuffer（从客户端接收的 DNS 查询数据）
+const udpQueryData = new TextEncoder().encode('dns query data');  // 示例数据
+const 维列斯ResponseHeader = new ArrayBuffer(0);  // 假设维列斯响应头部为空
+
+// 处理 DNS 查询
+handleDNSQuery(udpQueryData, webSocket, 维列斯ResponseHeader, log);
 
 
 /**
