@@ -392,82 +392,48 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		return tcpSocket;
 	}
 
-/**
- * 解析代理 IP 地址和端口
- * @param {string} proxyIP 代理 IP 地址
- * @param {number} defaultPort 默认端口
- * @returns {Object} 解析后的 IP 地址和端口
- */
-function parseProxyIP(proxyIP, defaultPort) {
-  let parsedIP = proxyIP || '';
-  let parsedPort = defaultPort;
+	/**
+	 * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
+	 * 这可能是因为某些网络问题导致的连接失败
+	 */
+	async function retry() {
+		if (enableSocks) {
+			// 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
+			tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+		} else {
+			// 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
+			if (!proxyIP || proxyIP == '') {
+				proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+			} else if (proxyIP.includes(']:')) {
+				portRemote = proxyIP.split(']:')[1] || portRemote;
+				proxyIP = proxyIP.split(']:')[0] || proxyIP;
+			} else if (proxyIP.split(':').length === 2) {
+				portRemote = proxyIP.split(':')[1] || portRemote;
+				proxyIP = proxyIP.split(':')[0] || proxyIP;
+			}
+			if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+			tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
+		}
+		// 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
+		tcpSocket.closed.catch(error => {
+			console.log('retry tcpSocket closed error', error);
+		}).finally(() => {
+			safeCloseWebSocket(webSocket);
+		})
+		// 建立从远程 Socket 到 WebSocket 的数据流
+		remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+	}
 
-  if (parsedIP.includes(']:')) {
-    parsedPort = parsedIP.split(']:')[1] || parsedPort;
-    parsedIP = parsedIP.split(']:')[0] || parsedIP;
-  } else if (parsedIP.split(':').length === 2) {
-    parsedPort = parsedIP.split(':')[1] || parsedPort;
-    parsedIP = parsedIP.split(':')[0] || parsedIP;
-  }
-  if (parsedIP.includes('.tp')) {
-    parsedPort = parsedIP.split('.tp')[1].split('.')[0] || parsedPort;
-  }
+	let useSocks = false;
+	if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
+	// 首次尝试连接远程服务器
+	let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
 
-  return { parsedIP, parsedPort };
+	// 当远程 Socket 就绪时，将其传递给 WebSocket
+	// 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
+	// 如果连接失败或无数据，retry 函数将被调用进行重试
+	remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
-
-/**
- * 尝试重新连接 TCP 并建立数据流
- */
-async function retry() {
-  try {
-    let proxyIPToUse = proxyIP;
-    let remoteAddress = addressRemote;
-    let remotePort = portRemote;
-
-    // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
-    if (enableSocks) {
-      tcpSocket = await connectAndWrite(remoteAddress, remotePort, true);
-    } else {
-      // 否则尝试使用代理 IP 连接
-      if (!proxyIP || proxyIP === '') {
-        proxyIPToUse = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw=='); // 解码代理 IP
-      }
-
-      // 解析代理 IP 和端口
-      const { parsedIP, parsedPort } = parseProxyIP(proxyIPToUse, remotePort);
-      tcpSocket = await connectAndWrite(parsedIP, parsedPort);
-    }
-
-    // 无论重试是否成功，关闭 WebSocket 连接
-    tcpSocket.closed
-      .catch(error => {
-        console.log('retry tcpSocket closed error', error);
-      })
-      .finally(() => {
-        safeCloseWebSocket(webSocket); // 确保 WebSocket 连接被关闭
-      });
-
-    // 建立从远程 Socket 到 WebSocket 的数据流
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-  } catch (error) {
-    console.error('Retry failed:', error);
-    safeCloseWebSocket(webSocket); // 出错时也要确保 WebSocket 关闭
-  }
-}
-
-let useSocks = false;
-if (go2Socks5s.length > 0 && enableSocks) {
-  useSocks = await useSocks5Pattern(addressRemote);
-}
-
-// 首次尝试连接远程服务器
-let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
-
-// 当远程 Socket 就绪时，将其传递给 WebSocket
-// 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
-// 如果连接失败或无数据，retry 函数将被调用进行重试
-remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 	// 标记可读流是否已被取消
