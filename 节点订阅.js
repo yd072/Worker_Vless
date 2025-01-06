@@ -416,7 +416,6 @@ function parseProxyIP(proxyIP, defaultPort = '8080') {
     return parsedProxy;
 }
 
-
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     // 标记可读流是否已被取消
     let readableStreamCancel = false;
