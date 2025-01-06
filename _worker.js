@@ -844,9 +844,6 @@ for (let i = 0; i < 256; ++i) {
 	byteToHex.push((i + 256).toString(16).slice(1));
 }
 
-// 字节到十六进制字符的查找表，用于高效转换字节数组为十六进制字符串
-const byteToHex = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
-
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
  * 这是一个底层函数，直接操作字节，不做任何验证
