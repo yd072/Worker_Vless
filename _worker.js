@@ -1250,23 +1250,28 @@ async function 代理URL(代理网址, 目标网址) {
     }
 }
 
-async function 配置信息(UUID, 域名地址, FileName, path) {
-    const 协议类型 = atob('ZG14bGMzTT0=');  // 该值解码后是某种协议类型
-    const 别名 = FileName;  // 假设 FileName 是外部传入的变量
+const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
+// 假设 FileName 和 path 在函数外部已经定义
+function 配置信息(UUID, 域名地址, FileName, path) {
+    // 解码协议类型
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);  // 解码 Base64 字符串
+
+    // 初始化配置变量
+    const 别名 = FileName;  // 假设 FileName 是外部传入的文件名或别名
     let 地址 = 域名地址;
-    let 端口 = 443;  // 默认端口 443
+    let 端口 = 443;
 
     const 用户ID = UUID;
     const 加密方式 = 'none';
-    const 传输层协议 = 'ws';  // 默认使用 ws 协议
+    const 传输层协议 = 'ws';
     const 伪装域名 = 域名地址;
     const 路径 = path;
 
-    let 传输层安全 = ['tls', true];  // 默认使用 tls 安全协议
+    let 传输层安全 = ['tls', true];
     const SNI = 域名地址;
     const 指纹 = 'randomized';
 
-    // 根据域名地址包含 `.workers.dev` 来动态调整配置
+    // 根据域名地址修改配置
     if (域名地址.includes('.workers.dev')) {
         地址 = atob('dmlzYS5jbg==');  // 解码后是 'visa.cn'
         端口 = 80;  // 使用 80 端口
@@ -1289,6 +1294,7 @@ async function 配置信息(UUID, 域名地址, FileName, path) {
         指纹
     };
 }
+
 
 
 	const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079` + 'p' + `${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
