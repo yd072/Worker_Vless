@@ -353,38 +353,33 @@ async function 维列斯OverWSHandler(request) {
     });
 }
 
-// 在全局作用域中定义 connectAndWrite 函数
-async function connectAndWrite(address, port, socks = false) {
-    log(`Attempting to connect to ${address}:${port} using ${socks ? 'SOCKS5' : 'direct'} connection.`);
-    const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
-        : connect({
-            hostname: address,
-            port: port,
-        });
-    remoteSocket.value = tcpSocket;
-    const writer = tcpSocket.writable.getWriter();
-    await writer.write(rawClientData);
-    writer.releaseLock();
-    return tcpSocket;
-}
+async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
+	async function useSocks5Pattern(address) {
+		if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
+		return go2Socks5s.some(pattern => {
+			let regexPattern = pattern.replace(/\*/g, '.*');
+			let regex = new RegExp(`^${regexPattern}$`, 'i');
+			return regex.test(address);
+		});
+	}
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    async function useSocks5Pattern(address) {
-        if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
-        return go2Socks5s.some(pattern => {
-            let regexPattern = pattern.replace(/\*/g, '.*');
-            let regex = new RegExp(`^${regexPattern}$`, 'i');
-            return regex.test(address);
-        });
-    }
-
-    let shouldUseSocks = false;
-    if (go2Socks5s.length > 0 && enableSocks) {
-        shouldUseSocks = await useSocks5Pattern(addressRemote);
-    }
-    let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-}
+	async function connectAndWrite(address, port, socks = false) {
+		log(`connected to ${address}:${port}`);
+		//if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(address)) address = `${atob('d3d3Lg==')}${address}${atob('LmlwLjA5MDIyNy54eXo=')}`;
+		// 如果指定使用 SOCKS5 代理，则通过 SOCKS5 协议连接；否则直接连接
+		const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
+			: connect({
+				hostname: address,
+				port: port,
+			});
+		remoteSocket.value = tcpSocket;
+		//log(`connected to ${address}:${port}`);
+		const writer = tcpSocket.writable.getWriter();
+		// 首次写入，通常是 TLS 客户端 Hello 消息
+		await writer.write(rawClientData);
+		writer.releaseLock();
+		return tcpSocket;
+	}
 
 /**
  * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
