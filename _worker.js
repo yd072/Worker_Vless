@@ -1785,18 +1785,17 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 }
 
 async function 整理(内容) {
-	// 将制表符、双引号、单引号和换行符都替换为逗号
-	// 然后将连续的多个逗号替换为单个逗号
-	var 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',');
+    // 将制表符、双引号、单引号和换行符都替换为逗号
+    // 然后将连续的多个逗号替换为单个逗号
+    let 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',');
 
-	// 删除开头和结尾的逗号（如果有的话）
-	if (替换后的内容.charAt(0) == ',') 替换后的内容 = 替换后的内容.slice(1);
-	if (替换后的内容.charAt(替换后的内容.length - 1) == ',') 替换后的内容 = 替换后的内容.slice(0, 替换后的内容.length - 1);
+    // 删除开头和结尾的逗号（如果有的话）
+    替换后的内容 = 替换后的内容.replace(/^,|,$/g, '');
 
-	// 使用逗号分割字符串，得到地址数组
-	const 地址数组 = 替换后的内容.split(',');
+    // 使用逗号分割字符串，得到地址数组
+    const 地址数组 = 替换后的内容.split(',');
 
-	return 地址数组;
+    return 地址数组;
 }
 
 async function sendMessage(type, ip, add_data = "") {
