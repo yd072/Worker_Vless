@@ -1504,87 +1504,78 @@ function generateRandomIPFromCIDR(cidr) {
 }
 
 async function 整理优选列表(api) {
-	if (!api || api.length === 0) return [];
+    if (!api || api.length === 0) return [];
 
-	let newapi = "";
+    let newapi = "";
 
-	// 创建一个AbortController对象，用于控制fetch请求的取消
-	const controller = new AbortController();
+    // 创建一个AbortController对象，用于控制fetch请求的取消
+    const controller = new AbortController();
 
-	const timeout = setTimeout(() => {
-		controller.abort(); // 取消所有请求
-	}, 2000); // 2秒后触发
+    const timeout = setTimeout(() => {
+        controller.abort(); // 取消所有请求
+    }, 2000); // 2秒后触发
 
-	try {
-		// 使用Promise.allSettled等待所有API请求完成，无论成功或失败
-		// 对api数组进行遍历，对每个API地址发起fetch请求
-		const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
-			method: 'get',
-			headers: {
-				'Accept': 'text/html,application/xhtml+xml,application/xml;',
-				'User-Agent': atob('Q0YtV29ya2Vycy1lZGdldHVubmVsL2NtbGl1')
-			},
-			signal: controller.signal // 将AbortController的信号量添加到fetch请求中，以便于需要时可以取消请求
-		}).then(response => response.ok ? response.text() : Promise.reject())));
+    try {
+        // 使用Promise.allSettled等待所有API请求完成，无论成功或失败
+        const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
+            method: 'get',
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;',
+                'User-Agent': atob('Q0YtV29ya2Vycy1lZGdldHVubmVsL2NtbGl1')
+            },
+            signal: controller.signal
+        }).then(response => response.ok ? response.text() : Promise.reject())));
 
-		// 遍历所有响应
-		for (const [index, response] of responses.entries()) {
-			// 检查响应状态是否为'fulfilled'，即请求成功完成
-			if (response.status === 'fulfilled') {
-				// 获取响应的内容
-				const content = await response.value;
+        // 遍历所有响应
+        for (const [index, response] of responses.entries()) {
+            if (response.status === 'fulfilled') {
+                const content = await response.value;
+                const lines = content.split(/\r?\n/);
+                let 节点备注 = '';
+                let 测速端口 = '443';
 
-				const lines = content.split(/\r?\n/);
-				let 节点备注 = '';
-				let 测速端口 = '443';
+                if (lines[0].split(',').length > 3) {
+                    const idMatch = api[index].match(/id=([^&]*)/);
+                    if (idMatch) 节点备注 = idMatch[1];
 
-				if (lines[0].split(',').length > 3) {
-					const idMatch = api[index].match(/id=([^&]*)/);
-					if (idMatch) 节点备注 = idMatch[1];
+                    const portMatch = api[index].match(/port=([^&]*)/);
+                    if (portMatch) 测速端口 = portMatch[1];
 
-					const portMatch = api[index].match(/port=([^&]*)/);
-					if (portMatch) 测速端口 = portMatch[1];
+                    for (let i = 1; i < lines.length; i++) {
+                        const columns = lines[i].split(',')[0];
+                        if (columns) {
+                            newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
+                            if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
+                        }
+                    }
+                } else {
+                    if (api[index].includes('proxyip=true')) {
+                        proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
+                            const baseItem = item.split('#')[0] || item;
+                            if (baseItem.includes(':')) {
+                                const port = baseItem.split(':')[1];
+                                if (!httpsPorts.includes(port)) {
+                                    return baseItem;
+                                }
+                            } else {
+                                return `${baseItem}:443`;
+                            }
+                            return null;
+                        }).filter(Boolean));
+                    }
+                    newapi += content + '\n';
+                }
+            }
+        }
+    } catch (error) {
+        console.error(error);
+    } finally {
+        clearTimeout(timeout);
+    }
 
-					for (let i = 1; i < lines.length; i++) {
-						const columns = lines[i].split(',')[0];
-						if (columns) {
-							newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
-							if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
-						}
-					}
-				} else {
-					// 验证当前apiUrl是否带有'proxyip=true'
-					if (api[index].includes('proxyip=true')) {
-						// 如果URL带有'proxyip=true'，则将内容添加到proxyIPPool
-						proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
-							const baseItem = item.split('#')[0] || item;
-							if (baseItem.includes(':')) {
-								const port = baseItem.split(':')[1];
-								if (!httpsPorts.includes(port)) {
-									return baseItem;
-								}
-							} else {
-								return `${baseItem}:443`;
-							}
-							return null; // 不符合条件时返回 null
-						}).filter(Boolean)); // 过滤掉 null 值
-					}
-					// 将内容添加到newapi中
-					newapi += content + '\n';
-				}
-			}
-		}
-	} catch (error) {
-		console.error(error);
-	} finally {
-		// 无论成功或失败，最后都清除设置的超时定时器
-		clearTimeout(timeout);
-	}
+    const newAddressesapi = await 整理(newapi);
 
-	const newAddressesapi = await 整理(newapi);
-
-	// 返回处理后的结果
-	return newAddressesapi;
+    return newAddressesapi;
 }
 
 async function 整理测速结果(tls) {
