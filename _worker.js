@@ -1588,67 +1588,60 @@ async function 整理优选列表(api) {
 }
 
 async function 整理测速结果(tls) {
-	if (!addressescsv || addressescsv.length === 0) {
-		return [];
-	}
+    if (!addressescsv || addressescsv.length === 0) {
+        return [];
+    }
 
-	let newAddressescsv = [];
+    const newAddressescsv = [];
 
-	for (const csvUrl of addressescsv) {
-		try {
-			const response = await fetch(csvUrl);
+    for (const csvUrl of addressescsv) {
+        try {
+            const response = await fetch(csvUrl);
 
-			if (!response.ok) {
-				console.error('获取CSV地址时出错:', response.status, response.statusText);
-				continue;
-			}
+            if (!response.ok) {
+                console.error('获取CSV地址时出错:', response.status, response.statusText);
+                continue;
+            }
 
-			const text = await response.text();// 使用正确的字符编码解析文本内容
-			let lines;
-			if (text.includes('\r\n')) {
-				lines = text.split('\r\n');
-			} else {
-				lines = text.split('\n');
-			}
+            const text = await response.text();
+            const lines = text.includes('\r\n') ? text.split('\r\n') : text.split('\n');
 
-			// 检查CSV头部是否包含必需字段
-			const header = lines[0].split(',');
-			const tlsIndex = header.indexOf('TLS');
+            const header = lines[0].split(',');
+            const tlsIndex = header.indexOf('TLS');
 
-			const ipAddressIndex = 0;// IP地址在 CSV 头部的位置
-			const portIndex = 1;// 端口在 CSV 头部的位置
-			const dataCenterIndex = tlsIndex + remarkIndex; // 数据中心是 TLS 的后一个字段
+            if (tlsIndex === -1) {
+                console.error('CSV文件缺少必需的字段');
+                continue;
+            }
 
-			if (tlsIndex === -1) {
-				console.error('CSV文件缺少必需的字段');
-				continue;
-			}
+            const ipAddressIndex = 0;
+            const portIndex = 1;
+            const dataCenterIndex = tlsIndex + remarkIndex;
 
-			// 从第二行开始遍历CSV行
-			for (let i = 1; i < lines.length; i++) {
-				const columns = lines[i].split(',');
-				const speedIndex = columns.length - 1; // 最后一个字段
-				// 检查TLS是否为"TRUE"且速度大于DLS
-				if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
-					const ipAddress = columns[ipAddressIndex];
-					const port = columns[portIndex];
-					const dataCenter = columns[dataCenterIndex];
+            for (let i = 1; i < lines.length; i++) {
+                const columns = lines[i].split(',');
+                const speedIndex = columns.length - 1;
 
-					const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
-					newAddressescsv.push(formattedAddress);
-					if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() == 'true' && !httpsPorts.includes(port)) {
-						// 如果URL带有'proxyip=true'，则将内容添加到proxyIPPool
-						proxyIPPool.push(`${ipAddress}:${port}`);
-					}
-				}
-			}
-		} catch (error) {
-			console.error('获取CSV地址时出错:', error);
-			continue;
-		}
-	}
+                if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
+                    const ipAddress = columns[ipAddressIndex];
+                    const port = columns[portIndex];
+                    const dataCenter = columns[dataCenterIndex];
 
-	return newAddressescsv;
+                    const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
+                    newAddressescsv.push(formattedAddress);
+
+                    if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
+                        proxyIPPool.push(`${ipAddress}:${port}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('获取CSV地址时出错:', error);
+            continue;
+        }
+    }
+
+    return newAddressescsv;
 }
 
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
