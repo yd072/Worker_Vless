@@ -251,109 +251,121 @@ export default {
 };
 
 async function 维列斯OverWSHandler(request) {
+    try {
+        const webSocketPair = new WebSocketPair();
+        const [client, webSocket] = Object.values(webSocketPair);
+        webSocket.accept();
 
-	// @ts-ignore
-	const webSocketPair = new WebSocketPair();
-	const [client, webSocket] = Object.values(webSocketPair);
+        // 状态管理
+        let state = {
+            address: '',
+            portWithRandomLog: '',
+            remoteSocketWrapper: { value: null },
+            isDns: false
+        };
 
-	// 接受 WebSocket 连接
-	webSocket.accept();
+        // 优化日志函数
+        const log = (info, event = '') => {
+            const { address, portWithRandomLog } = state;
+            console.log(`[${address}:${portWithRandomLog}] ${info}`, event);
+        };
 
-	let address = '';
-	let portWithRandomLog = '';
-	// 日志函数，用于记录连接信息
-	const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
-		console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
-	};
-	// 获取早期数据头部，可能包含了一些初始化数据
-	const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+        // WebSocket 关闭事件处理
+        webSocket.addEventListener('close', () => {
+            if (state.remoteSocketWrapper.value) {
+                state.remoteSocketWrapper.value.close();
+            }
+            log('WebSocket 连接已关闭');
+        });
 
-	// 创建一个可读的 WebSocket 流，用于接收客户端数据
-	const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+        const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+        const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-	// 用于存储远程 Socket 的包装器
-	let remoteSocketWapper = {
-		value: null,
-	};
-	// 标记是否为 DNS 查询
-	let isDns = false;
+        await readableWebSocketStream.pipeTo(new WritableStream({
+            async write(chunk, controller) {
+                if (state.isDns) {
+                    return await handleDNSQuery(chunk, webSocket, null, log);
+                }
 
-	// WebSocket 数据流向远程服务器的管道
-	readableWebSocketStream.pipeTo(new WritableStream({
-		async write(chunk, controller) {
-			if (isDns) {
-				// 如果是 DNS 查询，调用 DNS 处理函数
-				return await handleDNSQuery(chunk, webSocket, null, log);
-			}
-			if (remoteSocketWapper.value) {
-				// 如果已有远程 Socket，直接写入数据
-				const writer = remoteSocketWapper.value.writable.getWriter()
-				await writer.write(chunk);
-				writer.releaseLock();
-				return;
-			}
+                if (state.remoteSocketWrapper.value) {
+                    const writer = state.remoteSocketWrapper.value.writable.getWriter();
+                    try {
+                        await writer.write(chunk);
+                    } finally {
+                        writer.releaseLock();
+                    }
+                    return;
+                }
 
-			// 处理 维列斯 协议头部
-			const {
-				hasError,
-				message,
-				addressType,
-				portRemote = 443,
-				addressRemote = '',
-				rawDataIndex,
-				维列斯Version = new Uint8Array([0, 0]),
-				isUDP,
-			} = process维列斯Header(chunk, userID);
-			// 设置地址和端口信息，用于日志
-			address = addressRemote;
-			portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
-			if (hasError) {
-				// 如果有错误，抛出异常
-				throw new Error(message);
-				return;
-			}
-			// 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
-			if (isUDP) {
-				if (portRemote === 53) {
-					isDns = true;
-				} else {
-					throw new Error('UDP 代理仅对 DNS（53 端口）启用');
-					return;
-				}
-			}
-			// 构建 维列斯 响应头部
-			const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
-			// 获取实际的客户端数据
-			const rawClientData = chunk.slice(rawDataIndex);
+                const {
+                    hasError,
+                    message,
+                    addressType,
+                    portRemote = 443,
+                    addressRemote = '',
+                    rawDataIndex,
+                    维列斯Version = new Uint8Array([0, 0]),
+                    isUDP,
+                } = process维列斯Header(chunk, userID);
 
-			if (isDns) {
-				// 如果是 DNS 查询，调用 DNS 处理函数
-				return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
-			}
-			// 处理 TCP 出站连接
-			if (!banHosts.includes(addressRemote)) {
-				log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-				handleTCPOutBound(remoteSocketWapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
-			} else {
-				throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
-			}
-		},
-		close() {
-			log(`readableWebSocketStream 已关闭`);
-		},
-		abort(reason) {
-			log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
-		},
-	})).catch((err) => {
-		log('readableWebSocketStream 管道错误', err);
-	});
+                state.address = addressRemote;
+                state.portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '}`;
 
-	// 返回一个 WebSocket 升级的响应
-	return new Response(null, {
-		status: 101,
-		// @ts-ignore
-		webSocket: client,
-	});
+                if (hasError) {
+                    throw new Error(message);
+                }
+
+                if (isUDP) {
+                    if (portRemote === 53) {
+                        state.isDns = true;
+                    } else {
+                        throw new Error('UDP 代理仅对 DNS（53 端口）启用');
+                    }
+                }
+
+                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
+                const rawClientData = chunk.slice(rawDataIndex);
+
+                if (state.isDns) {
+                    return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+                }
+
+                if (!banHosts.includes(addressRemote)) {
+                    log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
+                    await handleTCPOutBound(
+                        state.remoteSocketWrapper,
+                        addressType,
+                        addressRemote,
+                        portRemote,
+                        rawClientData,
+                        webSocket,
+                        维列斯ResponseHeader,
+                        log
+                    );
+                } else {
+                    throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
+                }
+            },
+            close() {
+                log(`readableWebSocketStream 已关闭`);
+            },
+            abort(reason) {
+                log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
+            },
+        })).catch((err) => {
+            log('readableWebSocketStream 管道错误', err);
+            webSocket.close(1011, err.message);
+        });
+
+        return new Response(null, {
+            status: 101,
+            webSocket: client,
+        });
+
+    } catch (error) {
+        console.error('维列斯处理器错误:', error);
+        return new Response('Internal Server Error', { status: 500 });
+    }
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
