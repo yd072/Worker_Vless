@@ -427,82 +427,152 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 	remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
+/**
+ * 创建 WebSocket 可读流
+ * @param {WebSocket} webSocketServer - WebSocket 服务器实例
+ * @param {string} earlyDataHeader - 早期数据头部
+ * @param {Function} log - 日志函数
+ * @returns {ReadableStream} 可读流
+ */
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
-	// 标记可读流是否已被取消
-	let readableStreamCancel = false;
+    // 流状态管理
+    const state = {
+        isCancelled: false,
+        messageQueue: [],
+        controller: null,
+        isProcessing: false
+    };
 
-	// 创建一个新的可读流
-	const stream = new ReadableStream({
-		// 当流开始时的初始化函数
-		start(controller) {
-			// 监听 WebSocket 的消息事件
-			webSocketServer.addEventListener('message', (event) => {
-				// 如果流已被取消，不再处理新消息
-				if (readableStreamCancel) {
-					return;
-				}
-				const message = event.data;
-				// 将消息加入流的队列中
-				controller.enqueue(message);
-			});
+    /**
+     * 处理消息队列
+     */
+    async function processMessageQueue() {
+        if (state.isProcessing || state.isCancelled) return;
+        
+        state.isProcessing = true;
+        try {
+            while (state.messageQueue.length > 0 && !state.isCancelled) {
+                const message = state.messageQueue.shift();
+                await enqueueMessage(message);
+            }
+        } finally {
+            state.isProcessing = false;
+        }
+    }
 
-			// 监听 WebSocket 的关闭事件
-			// 注意：这个事件意味着客户端关闭了客户端 -> 服务器的流
-			// 但是，服务器 -> 客户端的流仍然打开，直到在服务器端调用 close()
-			// WebSocket 协议要求在每个方向上都要发送单独的关闭消息，以完全关闭 Socket
-			webSocketServer.addEventListener('close', () => {
-				// 客户端发送了关闭信号，需要关闭服务器端
-				safeCloseWebSocket(webSocketServer);
-				// 如果流未被取消，则关闭控制器
-				if (readableStreamCancel) {
-					return;
-				}
-				controller.close();
-			});
+    /**
+     * 将消息加入控制器队列
+     */
+    async function enqueueMessage(message) {
+        if (state.isCancelled) return;
+        
+        try {
+            await state.controller.enqueue(message);
+        } catch (error) {
+            log('消息入队失败', error);
+            handleError(error);
+        }
+    }
 
-			// 监听 WebSocket 的错误事件
-			webSocketServer.addEventListener('error', (err) => {
-				log('WebSocket 服务器发生错误');
-				// 将错误传递给控制器
-				controller.error(err);
-			});
+    /**
+     * 处理错误
+     */
+    function handleError(error) {
+        if (state.isCancelled) return;
+        
+        log('发生错误', error);
+        if (state.controller) {
+            state.controller.error(error);
+        }
+        cleanup();
+    }
 
-			// 处理 WebSocket 0-RTT（零往返时间）的早期数据
-			// 0-RTT 允许在完全建立连接之前发送数据，提高了效率
-			const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
-			if (error) {
-				// 如果解码早期数据时出错，将错误传递给控制器
-				controller.error(error);
-			} else if (earlyData) {
-				// 如果有早期数据，将其加入流的队列中
-				controller.enqueue(earlyData);
-			}
-		},
+    /**
+     * 清理资源
+     */
+    function cleanup() {
+        state.isCancelled = true;
+        state.messageQueue = [];
+        safeCloseWebSocket(webSocketServer);
+    }
 
-		// 当使用者从流中拉取数据时调用
-		pull(controller) {
-			// 这里可以实现反压机制
-			// 如果 WebSocket 可以在流满时停止读取，我们就可以实现反压
-			// 参考：https://streams.spec.whatwg.org/#example-rs-push-backpressure
-		},
+    /**
+     * 处理早期数据
+     */
+    function handleEarlyData() {
+        const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
+        
+        if (error) {
+            handleError(error);
+            return false;
+        }
+        
+        if (earlyData) {
+            state.messageQueue.push(earlyData);
+            return true;
+        }
+        
+        return false;
+    }
 
-		// 当流被取消时调用
-		cancel(reason) {
-			// 流被取消的几种情况：
-			// 1. 当管道的 WritableStream 有错误时，这个取消函数会被调用，所以在这里处理 WebSocket 服务器的关闭
-			// 2. 如果 ReadableStream 被取消，所有 controller.close/enqueue 都需要跳过
-			// 3. 但是经过测试，即使 ReadableStream 被取消，controller.error 仍然有效
-			if (readableStreamCancel) {
-				return;
-			}
-			log(`可读流被取消，原因是 ${reason}`);
-			readableStreamCancel = true;
-			// 安全地关闭 WebSocket
-			safeCloseWebSocket(webSocketServer);
-		}
-	});
+    // 创建可读流
+    const stream = new ReadableStream({
+        start(controller) {
+            state.controller = controller;
 
-	return stream;
+            // 设置 WebSocket 事件监听器
+            webSocketServer.addEventListener('message', (event) => {
+                if (state.isCancelled) return;
+                state.messageQueue.push(event.data);
+                processMessageQueue();
+            });
+
+            webSocketServer.addEventListener('close', () => {
+                if (state.isCancelled) return;
+                log('WebSocket 连接关闭');
+                cleanup();
+                controller.close();
+            });
+
+            webSocketServer.addEventListener('error', (error) => {
+                handleError(error);
+            });
+
+            // 处理早期数据
+            if (handleEarlyData()) {
+                processMessageQueue();
+            }
+        },
+
+        pull(controller) {
+            // 实现基本的背压控制
+            if (state.messageQueue.length > 0) {
+                processMessageQueue();
+            }
+        },
+
+        cancel(reason) {
+            if (state.isCancelled) return;
+            
+            log(`流被取消: ${reason}`);
+            cleanup();
+        }
+    });
+
+    return stream;
+}
+
+/**
+ * 安全关闭 WebSocket 连接
+ */
+function safeCloseWebSocket(ws, code = 1000, reason = 'normal closure') {
+    try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.close(code, reason);
+        }
+    } catch (error) {
+        console.error('关闭 WebSocket 失败:', error);
+    }
 }
 
 // https://xtls.github.io/development/protocols/维列斯.html
