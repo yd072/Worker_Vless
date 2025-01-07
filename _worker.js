@@ -814,38 +814,161 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
 }
 
 /**
+ * Base64 编码常量
+ */
+const Base64Constants = {
+    URL_SAFE: {
+        FROM: /[-_]/g,
+        TO_PLUS: /\-/g,
+        TO_SLASH: /_/g,
+        PLUS: '+',
+        SLASH: '/'
+    },
+    PADDING: '=',
+    CHUNK_SIZE: 1024 // 处理大字符串时的分块大小
+};
+
+/**
  * 将 Base64 编码的字符串转换为 ArrayBuffer
+ * 支持标准 Base64 和 URL 安全的 Base64 变体（RFC 4648）
  * 
- * @param {string} base64Str Base64 编码的输入字符串
- * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
+ * @param {string} base64Str - Base64 编码的输入字符串
+ * @returns {{ 
+ *   earlyData: ArrayBuffer | undefined, 
+ *   error: Error | null,
+ *   byteLength?: number 
+ * }} 解码结果对象
  */
 function base64ToArrayBuffer(base64Str) {
-	// 如果输入为空，直接返回空结果
-	if (!base64Str) {
-		return { earlyData: undefined, error: null };
-	}
-	try {
-		// Go 语言使用了 URL 安全的 Base64 变体（RFC 4648）
-		// 这种变体使用 '-' 和 '_' 来代替标准 Base64 中的 '+' 和 '/'
-		// JavaScript 的 atob 函数不直接支持这种变体，所以我们需要先转换
-		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+    // 输入验证
+    if (!isValidInput(base64Str)) {
+        return createResult(undefined, null);
+    }
 
-		// 使用 atob 函数解码 Base64 字符串
-		// atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
-		const decode = atob(base64Str);
+    try {
+        // 标准化 Base64 字符串
+        const standardBase64 = normalizeBase64(base64Str);
+        
+        // 解码为二进制数据
+        const binaryData = decodeToBinary(standardBase64);
+        
+        // 转换为 ArrayBuffer
+        const arrayBuffer = binaryToArrayBuffer(binaryData);
 
-		// 将二进制字符串转换为 Uint8Array
-		// 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
-		const arryBuffer = Uint8Array.from(decode, (c) => c.charCodeAt(0));
-
-		// 返回 Uint8Array 的底层 ArrayBuffer
-		// 这是实际的二进制数据，可以用于网络传输或其他二进制操作
-		return { earlyData: arryBuffer.buffer, error: null };
-	} catch (error) {
-		// 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
-		return { earlyData: undefined, error };
-	}
+        return createResult(arrayBuffer, null, arrayBuffer.byteLength);
+    } catch (error) {
+        return createResult(undefined, enhanceError(error));
+    }
 }
+
+/**
+ * 验证输入的有效性
+ * @param {string} input - 输入字符串
+ * @returns {boolean} 是否有效
+ */
+function isValidInput(input) {
+    if (!input) return false;
+    if (typeof input !== 'string') return false;
+    // 检查是否包含有效的 Base64 字符
+    return /^[A-Za-z0-9\-_+/]*={0,2}$/.test(input);
+}
+
+/**
+ * 将 URL 安全的 Base64 转换为标准 Base64
+ * @param {string} base64Str - 输入的 Base64 字符串
+ * @returns {string} 标准化的 Base64 字符串
+ */
+function normalizeBase64(base64Str) {
+    const { TO_PLUS, TO_SLASH, PLUS, SLASH } = Base64Constants.URL_SAFE;
+    return base64Str
+        .replace(TO_PLUS, PLUS)
+        .replace(TO_SLASH, SLASH);
+}
+
+/**
+ * 将 Base64 字符串解码为二进制字符串
+ * @param {string} base64Str - 标准 Base64 字符串
+ * @returns {string} 二进制字符串
+ */
+function decodeToBinary(base64Str) {
+    try {
+        return atob(base64Str);
+    } catch (error) {
+        throw new Error(`Base64 解码失败: ${error.message}`);
+    }
+}
+
+/**
+ * 将二进制字符串转换为 ArrayBuffer
+ * @param {string} binaryStr - 二进制字符串
+ * @returns {ArrayBuffer} ArrayBuffer 实例
+ */
+function binaryToArrayBuffer(binaryStr) {
+    const length = binaryStr.length;
+    const buffer = new Uint8Array(length);
+
+    // 对于大字符串，使用分块处理以避免性能问题
+    if (length > Base64Constants.CHUNK_SIZE) {
+        return processLargeString(binaryStr, buffer);
+    }
+
+    // 处理小字符串
+    for (let i = 0; i < length; i++) {
+        buffer[i] = binaryStr.charCodeAt(i);
+    }
+
+    return buffer.buffer;
+}
+
+/**
+ * 分块处理大字符串
+ * @param {string} binaryStr - 二进制字符串
+ * @param {Uint8Array} buffer - 目标缓冲区
+ * @returns {ArrayBuffer} 处理后的 ArrayBuffer
+ */
+function processLargeString(binaryStr, buffer) {
+    const { CHUNK_SIZE } = Base64Constants;
+    const length = binaryStr.length;
+    
+    for (let i = 0; i < length; i += CHUNK_SIZE) {
+        const end = Math.min(i + CHUNK_SIZE, length);
+        for (let j = i; j < end; j++) {
+            buffer[j] = binaryStr.charCodeAt(j);
+        }
+    }
+
+    return buffer.buffer;
+}
+
+/**
+ * 创建结果对象
+ * @param {ArrayBuffer | undefined} data - 解码后的数据
+ * @param {Error | null} error - 错误对象
+ * @param {number} [byteLength] - 数据字节长度
+ * @returns {Object} 结果对象
+ */
+function createResult(data, error, byteLength) {
+    return {
+        earlyData: data,
+        error,
+        ...(byteLength && { byteLength })
+    };
+}
+
+/**
+ * 增强错误信息
+ * @param {Error} error - 原始错误
+ * @returns {Error} 增强后的错误
+ */
+function enhanceError(error) {
+    const enhancedError = new Error(`Base64 转换错误: ${error.message}`);
+    enhancedError.originalError = error;
+    return enhancedError;
+}
+
+// 导出函数
+export { base64ToArrayBuffer };
+
 
 /**
  * 这不是真正的 UUID 验证，而是一个简化的版本
