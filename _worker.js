@@ -643,16 +643,16 @@ function base64ToArrayBuffer(base64Str) {
 }
 
 /**
- * 这不是真正的 UUID 验证，而是一个简化的版本
+ * 验证字符串是否符合 UUID v4 格式
  * @param {string} uuid 要验证的 UUID 字符串
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
  */
 function isValidUUID(uuid) {
-	// 定义一个正则表达式来匹配 UUID 格式
-	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    // 定义正则表达式来匹配 UUID v4 格式
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-	// 使用正则表达式测试 UUID 字符串
-	return uuidRegex.test(uuid);
+    // 使用正则表达式测试 UUID 字符串
+    return uuidRegex.test(uuid);
 }
 
 // WebSocket 的两个重要状态常量
