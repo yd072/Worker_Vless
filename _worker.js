@@ -250,189 +250,110 @@ export default {
 	},
 };
 
-/** @typedef {Object} RemoteSocket
- * @property {WritableStream} writable
- * @property {ReadableStream} readable
- * @property {Function} close
- */
-
-/**
- * 维列斯协议的 WebSocket 处理函数
- * @param {Request} request
- */
 async function 维列斯OverWSHandler(request) {
-    // @ts-ignore
-    const webSocketPair = new WebSocketPair();
-    const [client, webSocket] = Object.values(webSocketPair);
 
-    // 接受 WebSocket 连接
-    webSocket.accept();
+	// @ts-ignore
+	const webSocketPair = new WebSocketPair();
+	const [client, webSocket] = Object.values(webSocketPair);
 
-    let address = '';
-    let portWithRandomLog = '';
-    
-    // 日志函数，用于记录连接信息
-    const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
-        const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}][${address}:${portWithRandomLog}] ${info}`, event || '');
-    };
+	// 接受 WebSocket 连接
+	webSocket.accept();
 
-    // 获取早期数据头部
-    const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+	let address = '';
+	let portWithRandomLog = '';
+	// 日志函数，用于记录连接信息
+	const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
+		console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+	};
+	// 获取早期数据头部，可能包含了一些初始化数据
+	const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
 
-    // 创建一个可读的 WebSocket 流
-    const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+	// 创建一个可读的 WebSocket 流，用于接收客户端数据
+	const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-    /** @type {{value: RemoteSocket | null}} */
-    let remoteSocketWapper = {
-        value: null,
-    };
-    
-    let isDns = false;
+	// 用于存储远程 Socket 的包装器
+	let remoteSocketWapper = {
+		value: null,
+	};
+	// 标记是否为 DNS 查询
+	let isDns = false;
 
-    // 设置连接超时
-    setupConnectionTimeout(webSocket);
+	// WebSocket 数据流向远程服务器的管道
+	readableWebSocketStream.pipeTo(new WritableStream({
+		async write(chunk, controller) {
+			if (isDns) {
+				// 如果是 DNS 查询，调用 DNS 处理函数
+				return await handleDNSQuery(chunk, webSocket, null, log);
+			}
+			if (remoteSocketWapper.value) {
+				// 如果已有远程 Socket，直接写入数据
+				const writer = remoteSocketWapper.value.writable.getWriter()
+				await writer.write(chunk);
+				writer.releaseLock();
+				return;
+			}
 
-    // 添加 WebSocket 关闭时的清理代码
-    webSocket.addEventListener('close', () => {
-        if (remoteSocketWapper.value) {
-            remoteSocketWapper.value.close();
-        }
-        log('WebSocket 连接已关闭');
-    });
+			// 处理 维列斯 协议头部
+			const {
+				hasError,
+				message,
+				addressType,
+				portRemote = 443,
+				addressRemote = '',
+				rawDataIndex,
+				维列斯Version = new Uint8Array([0, 0]),
+				isUDP,
+			} = process维列斯Header(chunk, userID);
+			// 设置地址和端口信息，用于日志
+			address = addressRemote;
+			portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
+			if (hasError) {
+				// 如果有错误，抛出异常
+				throw new Error(message);
+				return;
+			}
+			// 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
+			if (isUDP) {
+				if (portRemote === 53) {
+					isDns = true;
+				} else {
+					throw new Error('UDP 代理仅对 DNS（53 端口）启用');
+					return;
+				}
+			}
+			// 构建 维列斯 响应头部
+			const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
+			// 获取实际的客户端数据
+			const rawClientData = chunk.slice(rawDataIndex);
 
-    // 创建黑名单集合，提高查找效率
-    const banHostsSet = new Set(banHosts);
+			if (isDns) {
+				// 如果是 DNS 查询，调用 DNS 处理函数
+				return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+			}
+			// 处理 TCP 出站连接
+			if (!banHosts.includes(addressRemote)) {
+				log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
+				handleTCPOutBound(remoteSocketWapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
+			} else {
+				throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
+			}
+		},
+		close() {
+			log(`readableWebSocketStream 已关闭`);
+		},
+		abort(reason) {
+			log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
+		},
+	})).catch((err) => {
+		log('readableWebSocketStream 管道错误', err);
+	});
 
-    // WebSocket 数据流向远程服务器的管道
-    readableWebSocketStream.pipeTo(new WritableStream({
-        async write(chunk, controller) {
-            try {
-                if (isDns) {
-                    return await handleDNSQuery(chunk, webSocket, null, log);
-                }
-
-                if (remoteSocketWapper.value) {
-                    const writer = remoteSocketWapper.value.writable.getWriter()
-                    await writer.write(chunk);
-                    writer.releaseLock();
-                    return;
-                }
-
-                // 处理 维列斯 协议头部
-                const {
-                    hasError,
-                    message,
-                    addressType,
-                    portRemote = 443,
-                    addressRemote = '',
-                    rawDataIndex,
-                    维列斯Version = new Uint8Array([0, 0]),
-                    isUDP,
-                } = process维列斯Header(chunk, userID);
-
-                // 设置地址和端口信息
-                address = addressRemote;
-                portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '}`;
-
-                if (hasError) {
-                    log('协议错误', message);
-                    webSocket.close(1008, message);
-                    return;
-                }
-
-                // UDP 处理
-                if (isUDP) {
-                    if (portRemote === 53) {
-                        isDns = true;
-                    } else {
-                        log('UDP 请求被拒绝', `${addressRemote}:${portRemote}`);
-                        webSocket.close(1008, 'UDP 代理仅对 DNS（53 端口）启用');
-                        return;
-                    }
-                }
-
-                // 构建响应头部
-                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
-                const rawClientData = chunk.slice(rawDataIndex);
-
-                if (isDns) {
-                    return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
-                }
-
-                // TCP 连接处理
-                if (!banHostsSet.has(addressRemote)) {
-                    log(`处理 TCP 出站连接`, `${addressRemote}:${portRemote}`);
-                    await handleTCPOutBound(
-                        remoteSocketWapper,
-                        addressType,
-                        addressRemote,
-                        portRemote,
-                        rawClientData,
-                        webSocket,
-                        维列斯ResponseHeader,
-                        log
-                    );
-                } else {
-                    log('访问被拒绝', `${addressRemote}:${portRemote}`);
-                    webSocket.close(1008, `黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                }
-            } catch (error) {
-                log('数据处理错误', error.message);
-                webSocket.close(1011, '内部错误');
-            }
-        },
-        close() {
-            log(`readableWebSocketStream 已关闭`);
-        },
-        abort(reason) {
-            log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
-        },
-    })).catch((err) => {
-        log('readableWebSocketStream 管道错误', err.message);
-        webSocket.close(1011, '管道错误');
-    });
-
-    return new Response(null, {
-        status: 101,
-        // @ts-ignore
-        webSocket: client,
-    });
-}
-
-/**
- * 设置连接超时
- * @param {WebSocket} socket
- * @param {number} timeout
- */
-function setupConnectionTimeout(socket, timeout = 30000) {
-    const timer = setTimeout(() => {
-        socket.close(1001, '连接超时');
-    }, timeout);
-    
-    socket.addEventListener('close', () => {
-        clearTimeout(timer);
-    });
-}
-
-/**
- * 限制最大并发连接数
- * @param {number} maxConnections 最大连接数
- */
-function createConnectionLimiter(maxConnections = 100) {
-    let currentConnections = 0;
-    
-    return {
-        acquire() {
-            if (currentConnections >= maxConnections) {
-                throw new Error('已达到最大连接数限制');
-            }
-            currentConnections++;
-        },
-        release() {
-            currentConnections--;
-        }
-    };
+	// 返回一个 WebSocket 升级的响应
+	return new Response(null, {
+		status: 101,
+		// @ts-ignore
+		webSocket: client,
+	});
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
@@ -584,7 +505,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 	return stream;
 }
 
-	
 // https://xtls.github.io/development/protocols/维列斯.html
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
 
@@ -608,7 +528,7 @@ function process维列斯Header(维列斯Buffer, userID) {
 
 	let isValidUser = false;
 	let isUDP = false;
-	
+
 	// 验证用户 ID（接下来的 16 个字节）
 	function isUserIDValid(userID, userIDLow, buffer) {
 		const userIDArray = new Uint8Array(buffer.slice(1, 17));
@@ -734,7 +654,6 @@ function process维列斯Header(维列斯Buffer, userID) {
 	};
 }
 
-
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
 	// 将数据从远程服务器转发到 WebSocket
 	let remoteChunkCount = 0;
@@ -814,161 +733,38 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
 }
 
 /**
- * Base64 编码常量
- */
-const Base64Constants = {
-    URL_SAFE: {
-        FROM: /[-_]/g,
-        TO_PLUS: /\-/g,
-        TO_SLASH: /_/g,
-        PLUS: '+',
-        SLASH: '/'
-    },
-    PADDING: '=',
-    CHUNK_SIZE: 1024 // 处理大字符串时的分块大小
-};
-
-/**
  * 将 Base64 编码的字符串转换为 ArrayBuffer
- * 支持标准 Base64 和 URL 安全的 Base64 变体（RFC 4648）
  * 
- * @param {string} base64Str - Base64 编码的输入字符串
- * @returns {{ 
- *   earlyData: ArrayBuffer | undefined, 
- *   error: Error | null,
- *   byteLength?: number 
- * }} 解码结果对象
+ * @param {string} base64Str Base64 编码的输入字符串
+ * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
  */
 function base64ToArrayBuffer(base64Str) {
-    // 输入验证
-    if (!isValidInput(base64Str)) {
-        return createResult(undefined, null);
-    }
+	// 如果输入为空，直接返回空结果
+	if (!base64Str) {
+		return { earlyData: undefined, error: null };
+	}
+	try {
+		// Go 语言使用了 URL 安全的 Base64 变体（RFC 4648）
+		// 这种变体使用 '-' 和 '_' 来代替标准 Base64 中的 '+' 和 '/'
+		// JavaScript 的 atob 函数不直接支持这种变体，所以我们需要先转换
+		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
 
-    try {
-        // 标准化 Base64 字符串
-        const standardBase64 = normalizeBase64(base64Str);
-        
-        // 解码为二进制数据
-        const binaryData = decodeToBinary(standardBase64);
-        
-        // 转换为 ArrayBuffer
-        const arrayBuffer = binaryToArrayBuffer(binaryData);
+		// 使用 atob 函数解码 Base64 字符串
+		// atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
+		const decode = atob(base64Str);
 
-        return createResult(arrayBuffer, null, arrayBuffer.byteLength);
-    } catch (error) {
-        return createResult(undefined, enhanceError(error));
-    }
+		// 将二进制字符串转换为 Uint8Array
+		// 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
+		const arryBuffer = Uint8Array.from(decode, (c) => c.charCodeAt(0));
+
+		// 返回 Uint8Array 的底层 ArrayBuffer
+		// 这是实际的二进制数据，可以用于网络传输或其他二进制操作
+		return { earlyData: arryBuffer.buffer, error: null };
+	} catch (error) {
+		// 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
+		return { earlyData: undefined, error };
+	}
 }
-
-/**
- * 验证输入的有效性
- * @param {string} input - 输入字符串
- * @returns {boolean} 是否有效
- */
-function isValidInput(input) {
-    if (!input) return false;
-    if (typeof input !== 'string') return false;
-    // 检查是否包含有效的 Base64 字符
-    return /^[A-Za-z0-9\-_+/]*={0,2}$/.test(input);
-}
-
-/**
- * 将 URL 安全的 Base64 转换为标准 Base64
- * @param {string} base64Str - 输入的 Base64 字符串
- * @returns {string} 标准化的 Base64 字符串
- */
-function normalizeBase64(base64Str) {
-    const { TO_PLUS, TO_SLASH, PLUS, SLASH } = Base64Constants.URL_SAFE;
-    return base64Str
-        .replace(TO_PLUS, PLUS)
-        .replace(TO_SLASH, SLASH);
-}
-
-/**
- * 将 Base64 字符串解码为二进制字符串
- * @param {string} base64Str - 标准 Base64 字符串
- * @returns {string} 二进制字符串
- */
-function decodeToBinary(base64Str) {
-    try {
-        return atob(base64Str);
-    } catch (error) {
-        throw new Error(`Base64 解码失败: ${error.message}`);
-    }
-}
-
-/**
- * 将二进制字符串转换为 ArrayBuffer
- * @param {string} binaryStr - 二进制字符串
- * @returns {ArrayBuffer} ArrayBuffer 实例
- */
-function binaryToArrayBuffer(binaryStr) {
-    const length = binaryStr.length;
-    const buffer = new Uint8Array(length);
-
-    // 对于大字符串，使用分块处理以避免性能问题
-    if (length > Base64Constants.CHUNK_SIZE) {
-        return processLargeString(binaryStr, buffer);
-    }
-
-    // 处理小字符串
-    for (let i = 0; i < length; i++) {
-        buffer[i] = binaryStr.charCodeAt(i);
-    }
-
-    return buffer.buffer;
-}
-
-/**
- * 分块处理大字符串
- * @param {string} binaryStr - 二进制字符串
- * @param {Uint8Array} buffer - 目标缓冲区
- * @returns {ArrayBuffer} 处理后的 ArrayBuffer
- */
-function processLargeString(binaryStr, buffer) {
-    const { CHUNK_SIZE } = Base64Constants;
-    const length = binaryStr.length;
-    
-    for (let i = 0; i < length; i += CHUNK_SIZE) {
-        const end = Math.min(i + CHUNK_SIZE, length);
-        for (let j = i; j < end; j++) {
-            buffer[j] = binaryStr.charCodeAt(j);
-        }
-    }
-
-    return buffer.buffer;
-}
-
-/**
- * 创建结果对象
- * @param {ArrayBuffer | undefined} data - 解码后的数据
- * @param {Error | null} error - 错误对象
- * @param {number} [byteLength] - 数据字节长度
- * @returns {Object} 结果对象
- */
-function createResult(data, error, byteLength) {
-    return {
-        earlyData: data,
-        error,
-        ...(byteLength && { byteLength })
-    };
-}
-
-/**
- * 增强错误信息
- * @param {Error} error - 原始错误
- * @returns {Error} 增强后的错误
- */
-function enhanceError(error) {
-    const enhancedError = new Error(`Base64 转换错误: ${error.message}`);
-    enhancedError.originalError = error;
-    return enhancedError;
-}
-
-// 导出函数
-export { base64ToArrayBuffer };
-
 
 /**
  * 这不是真正的 UUID 验证，而是一个简化的版本
@@ -982,6 +778,10 @@ function isValidUUID(uuid) {
 	// 使用正则表达式测试 UUID 字符串
 	return uuidRegex.test(uuid);
 }
+
+// WebSocket 的两个重要状态常量
+const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
+const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
 
 function safeCloseWebSocket(socket) {
 	try {
@@ -1004,27 +804,25 @@ for (let i = 0; i < 256; ++i) {
 	byteToHex.push((i + 256).toString(16).slice(1));
 }
 
+/**
+ * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
+ * 这是一个底层函数，直接操作字节，不做任何验证
+ * @param {Uint8Array} arr 包含 UUID 字节的数组
+ * @param {number} offset 数组中 UUID 开始的位置，默认为 0
+ * @returns {string} UUID 字符串
+ */
 function unsafeStringify(arr, offset = 0) {
-  // 预先分配足够长度的数组
-  const parts = new Array(36);
-  
-  for (let i = 0; i < 16; i++) {
-    const hex = byteToHex[arr[offset + i]];
-    // 根据 UUID 格式确定位置
-    const pos = i < 4 ? i : 
-               i < 6 ? i + 1 :
-               i < 8 ? i + 2 :
-               i < 10 ? i + 3 : i + 4;
-    
-    parts[pos * 2] = hex[0];
-    parts[pos * 2 + 1] = hex[1];
-  }
-  
-  // 添加连字符
-  parts[8] = parts[13] = parts[18] = parts[23] = '-';
-  
-  return parts.join('');
+	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
+	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
+	// toLowerCase() 确保整个 UUID 是小写的
+	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
+		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
+		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
+		byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
+		byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
+		byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
+
 /**
  * 将字节数组转换为 UUID 字符串，并验证其有效性
  * 这是一个安全的函数，它确保返回的 UUID 格式正确
