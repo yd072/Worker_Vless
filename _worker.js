@@ -815,57 +815,55 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
+ * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
  * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
- * @param {(string)=> void} log - 日志记录函数
+ * @param {(string) => void} log - 日志记录函数
  */
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-	// 无论客户端发送到哪个 DNS 服务器，我们总是使用硬编码的服务器
-	// 因为有些 DNS 服务器不支持 DNS over TCP
-	try {
-		// 选用 Google 的 DNS 服务器（注：后续可能会改为 Cloudflare 的 1.1.1.1）
-		const dnsServer = '8.8.4.4'; // 在 Cloudflare 修复连接自身 IP 的 bug 后，将改为 1.1.1.1
-		const dnsPort = 53; // DNS 服务的标准端口
+    // 无论客户端发送到哪个 DNS 服务器，我们总是使用硬编码的服务器
+    try {
+        // 选用 Google 的 DNS 服务器（注：后续可能会改为 Cloudflare 的 1.1.1.1）
+        const dnsServer = '8.8.4.4'; // 在 Cloudflare 修复连接自身 IP 的 bug 后，将改为 1.1.1.1
+        const dnsPort = 53; // DNS 服务的标准端口
 
-		let 维列斯Header = 维列斯ResponseHeader; // 保存 维列斯 响应头部，用于后续发送
+        let 维列斯Header = 维列斯ResponseHeader; // 保存 维列斯 响应头部，用于后续发送
 
-		// 与指定的 DNS 服务器建立 TCP 连接
-		const tcpSocket = connect({
-			hostname: dnsServer,
-			port: dnsPort,
-		});
+        // 与指定的 DNS 服务器建立 TCP 连接
+        const tcpSocket = connect({
+            hostname: dnsServer,
+            port: dnsPort,
+        });
 
-		log(`连接到 ${dnsServer}:${dnsPort}`); // 记录连接信息
-		const writer = tcpSocket.writable.getWriter();
-		await writer.write(udpChunk); // 将客户端的 DNS 查询数据发送给 DNS 服务器
-		writer.releaseLock(); // 释放写入器，允许其他部分使用
+        log(`连接到 ${dnsServer}:${dnsPort}`); // 记录连接信息
+        const writer = tcpSocket.writable.getWriter();
+        await writer.write(udpChunk); // 将客户端的 DNS 查询数据发送给 DNS 服务器
+        writer.releaseLock(); // 释放写入器，允许其他部分使用
 
-		// 将从 DNS 服务器接收到的响应数据通过 WebSocket 发送回客户端
-		await tcpSocket.readable.pipeTo(new WritableStream({
-			async write(chunk) {
-				if (webSocket.readyState === WS_READY_STATE_OPEN) {
-					if (维列斯Header) {
-						// 如果有 维列斯 头部，则将其与 DNS 响应数据合并后发送
-						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-						维列斯Header = null; // 头部只发送一次，之后置为 null
-					} else {
-						// 否则直接发送 DNS 响应数据
-						webSocket.send(chunk);
-					}
-				}
-			},
-			close() {
-				log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`); // 记录连接关闭信息
-			},
-			abort(reason) {
-				console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason); // 记录异常中断原因
-			},
-		}));
-	} catch (error) {
-		// 捕获并记录任何可能发生的错误
-		console.error(
-			`handleDNSQuery 函数发生异常，错误信息: ${error.message}`
-		);
-	}
+        // 将从 DNS 服务器接收到的响应数据通过 WebSocket 发送回客户端
+        await tcpSocket.readable.pipeTo(new WritableStream({
+            async write(chunk) {
+                if (webSocket.readyState === WS_READY_STATE_OPEN) {
+                    if (维列斯Header) {
+                        // 如果有 维列斯 头部，则将其与 DNS 响应数据合并后发送
+                        webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
+                        维列斯Header = null; // 头部只发送一次，之后置为 null
+                    } else {
+                        // 否则直接发送 DNS 响应数据
+                        webSocket.send(chunk);
+                    }
+                }
+            },
+            close() {
+                log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`); // 记录连接关闭信息
+            },
+            abort(reason) {
+                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason); // 记录异常中断原因
+            },
+        }));
+    } catch (error) {
+        // 捕获并记录任何可能发生的错误
+        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
+    }
 }
 
 /**
