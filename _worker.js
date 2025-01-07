@@ -353,6 +353,20 @@ async function 维列斯OverWSHandler(request) {
     });
 }
 
+async function connectAndWrite(address, port, socks = false) {
+    log(`Attempting to connect to ${address}:${port} using ${socks ? 'SOCKS5' : 'direct'} connection.`);
+    const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
+        : connect({
+            hostname: address,
+            port: port,
+        });
+    remoteSocket.value = tcpSocket;
+    const writer = tcpSocket.writable.getWriter();
+    await writer.write(rawClientData);
+    writer.releaseLock();
+    return tcpSocket;
+}
+
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
 	async function useSocks5Pattern(address) {
 		if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
