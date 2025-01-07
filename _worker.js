@@ -971,48 +971,48 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
  *   - "username:password@hostname:port" （带认证）
  *   - "hostname:port" （不需认证）
  *   - "username:password@[ipv6]:port" （IPv6 地址需要用方括号括起来）
+ * @returns {Object} 包含解析后的用户名、密码、主机名和端口号
  */
 function socks5AddressParser(address) {
-	// 使用 "@" 分割地址，分为认证部分和服务器地址部分
-	// reverse() 是为了处理没有认证信息的情况，确保 latter 总是包含服务器地址
-	let [latter, former] = address.split("@").reverse();
-	let username, password, hostname, port;
+    // 使用 "@" 分割地址，分为认证部分和服务器地址部分
+    // reverse() 是为了处理没有认证信息的情况，确保 latter 总是包含服务器地址
+    let [latter, former] = address.split("@").reverse();
+    let username, password, hostname, port;
 
-	// 如果存在 former 部分，说明提供了认证信息
-	if (former) {
-		const formers = former.split(":");
-		if (formers.length !== 2) {
-			throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
-		}
-		[username, password] = formers;
-	}
+    // 如果存在 former 部分，说明提供了认证信息
+    if (former) {
+        const formers = former.split(":");
+        if (formers.length !== 2) {
+            throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
+        }
+        [username, password] = formers;
+    }
 
-	// 解析服务器地址部分
-	const latters = latter.split(":");
-	// 从末尾提取端口号（因为 IPv6 地址中也包含冒号）
-	port = Number(latters.pop());
-	if (isNaN(port)) {
-		throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
-	}
+    // 解析服务器地址部分
+    const latters = latter.split(":");
+    // 从末尾提取端口号（因为 IPv6 地址中也包含冒号）
+    port = Number(latters.pop());
+    if (isNaN(port)) {
+        throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
+    }
 
-	// 剩余部分就是主机名（可能是域名、IPv4 或 IPv6 地址）
-	hostname = latters.join(":");
+    // 剩余部分就是主机名（可能是域名、IPv4 或 IPv6 地址）
+    hostname = latters.join(":");
 
-	// 处理 IPv6 地址的特殊情况
-	// IPv6 地址包含多个冒号，所以必须用方括号括起来，如 [2001:db8::1]
-	const regex = /^\[.*\]$/;
-	if (hostname.includes(":") && !regex.test(hostname)) {
-		throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
-	}
+    // 处理 IPv6 地址的特殊情况
+    // IPv6 地址包含多个冒号，所以必须用方括号括起来，如 [2001:db8::1]
+    const ipv6Regex = /^\[.*\]$/;
+    if (hostname.includes(":") && !ipv6Regex.test(hostname)) {
+        throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
+    }
 
-	//if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(hostname)) hostname = `${atob('d3d3Lg==')}${hostname}${atob('LmlwLjA5MDIyNy54eXo=')}`;
-	// 返回解析后的结果
-	return {
-		username,  // 用户名，如果没有则为 undefined
-		password,  // 密码，如果没有则为 undefined
-		hostname,  // 主机名，可以是域名、IPv4 或 IPv6 地址
-		port,	 // 端口号，已转换为数字类型
-	}
+    // 返回解析后的结果
+    return {
+        username,  // 用户名，如果没有则为 undefined
+        password,  // 密码，如果没有则为 undefined
+        hostname,  // 主机名，可以是域名、IPv4 或 IPv6 地址
+        port,      // 端口号，已转换为数字类型
+    };
 }
 
 /**
