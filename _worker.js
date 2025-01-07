@@ -1867,17 +1867,22 @@ function 生成动态UUID(密钥) {
 }
 
 async function 迁移地址列表(env, txt = 'ADD.txt') {
-	const 旧数据 = await env.KV.get(`/${txt}`);
-	const 新数据 = await env.KV.get(txt);
+    try {
+        const 旧数据 = await env.KV.get(`/${txt}`);
+        const 新数据 = await env.KV.get(txt);
 
-	if (旧数据 && !新数据) {
-		// 写入新位置
-		await env.KV.put(txt, 旧数据);
-		// 删除旧数据
-		await env.KV.delete(`/${txt}`);
-		return true;
-	}
-	return false;
+        if (旧数据 && !新数据) {
+            // 写入新位置
+            await env.KV.put(txt, 旧数据);
+            // 删除旧数据
+            await env.KV.delete(`/${txt}`);
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('迁移地址列表时发生错误:', error);
+        return false;
+    }
 }
 
 async function KV(request, env, txt = 'ADD.txt') {
