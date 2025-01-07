@@ -1022,20 +1022,27 @@ function socks5AddressParser(address) {
  * @param {string} content 需要处理的内容
  * @param {string} userID 真实的用户ID
  * @param {string} hostName 真实的主机名
+ * @param {string} fakeUserID 伪装的用户ID
+ * @param {string} fakeHostName 伪装的主机名
  * @param {boolean} isBase64 内容是否是Base64编码的
  * @returns {string} 恢复真实信息后的内容
  */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
-	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
+    if (isBase64) {
+        content = atob(content);  // 如果内容是Base64编码的，先解码
+    }
 
-	// 使用正则表达式全局替换（'g'标志）
-	// 将所有出现的假用户ID和假主机名替换为真实的值
-	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
-		.replace(new RegExp(fakeHostName, 'g'), hostName);
+    // 使用正则表达式全局替换（'g'标志）
+    // 将所有出现的假用户ID和假主机名替换为真实的值
+    const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // 转义正则表达式中的特殊字符
+    content = content.replace(new RegExp(escapeRegExp(fakeUserID), 'g'), userID)
+                     .replace(new RegExp(escapeRegExp(fakeHostName), 'g'), hostName);
 
-	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+    if (isBase64) {
+        content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+    }
 
-	return content;
+    return content;
 }
 
 /**
