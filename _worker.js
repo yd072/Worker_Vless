@@ -384,160 +384,276 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		return tcpSocket;
 	}
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    async function retry() {
-        const tcpSocket = await connectAndWrite(
-            enableSocks ? addressRemote : getProxyIP(),
-            portRemote,
-            enableSocks
-        );
+	/**
+	 * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
+	 * 这可能是因为某些网络问题导致的连接失败
+	 */
+	async function retry() {
+		if (enableSocks) {
+			// 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
+			tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+		} else {
+			// 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
+			if (!proxyIP || proxyIP == '') {
+				proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+			} else if (proxyIP.includes(']:')) {
+				portRemote = proxyIP.split(']:')[1] || portRemote;
+				proxyIP = proxyIP.split(']:')[0] || proxyIP;
+			} else if (proxyIP.split(':').length === 2) {
+				portRemote = proxyIP.split(':')[1] || portRemote;
+				proxyIP = proxyIP.split(':')[0] || proxyIP;
+			}
+			if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+			tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
+		}
+		// 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
+		tcpSocket.closed.catch(error => {
+			console.log('retry tcpSocket closed error', error);
+		}).finally(() => {
+			safeCloseWebSocket(webSocket);
+		})
+		// 建立从远程 Socket 到 WebSocket 的数据流
+		remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+	}
 
-        tcpSocket.closed.catch(error => {
-            console.log('retry tcpSocket closed error', error);
-        }).finally(() => {
-            safeCloseWebSocket(webSocket);
-        });
+	let useSocks = false;
+	if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
+	// 首次尝试连接远程服务器
+	let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
 
-        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-    }
-
-    function getProxyIP() {
-        if (!proxyIP || proxyIP === '') {
-            return atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
-        }
-        const [ip, port] = proxyIP.includes(']:') ? proxyIP.split(']:') : proxyIP.split(':');
-        portRemote = port || portRemote;
-        return ip || addressRemote;
-    }
-
-    let useSocks = go2Socks5s.length > 0 && enableSocks && await useSocks5Pattern(addressRemote);
-    let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
-
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
+	// 当远程 Socket 就绪时，将其传递给 WebSocket
+	// 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
+	// 如果连接失败或无数据，retry 函数将被调用进行重试
+	remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
-    let readableStreamCancel = false;
+	// 标记可读流是否已被取消
+	let readableStreamCancel = false;
 
-    const stream = new ReadableStream({
-        start(controller) {
-            webSocketServer.addEventListener('message', (event) => {
-                if (!readableStreamCancel) {
-                    controller.enqueue(event.data);
-                }
-            });
+	// 创建一个新的可读流
+	const stream = new ReadableStream({
+		// 当流开始时的初始化函数
+		start(controller) {
+			// 监听 WebSocket 的消息事件
+			webSocketServer.addEventListener('message', (event) => {
+				// 如果流已被取消，不再处理新消息
+				if (readableStreamCancel) {
+					return;
+				}
+				const message = event.data;
+				// 将消息加入流的队列中
+				controller.enqueue(message);
+			});
 
-            webSocketServer.addEventListener('close', () => {
-                safeCloseWebSocket(webSocketServer);
-                if (!readableStreamCancel) {
-                    controller.close();
-                }
-            });
+			// 监听 WebSocket 的关闭事件
+			// 注意：这个事件意味着客户端关闭了客户端 -> 服务器的流
+			// 但是，服务器 -> 客户端的流仍然打开，直到在服务器端调用 close()
+			// WebSocket 协议要求在每个方向上都要发送单独的关闭消息，以完全关闭 Socket
+			webSocketServer.addEventListener('close', () => {
+				// 客户端发送了关闭信号，需要关闭服务器端
+				safeCloseWebSocket(webSocketServer);
+				// 如果流未被取消，则关闭控制器
+				if (readableStreamCancel) {
+					return;
+				}
+				controller.close();
+			});
 
-            webSocketServer.addEventListener('error', (err) => {
-                log('WebSocket 服务器发生错误');
-                controller.error(err);
-            });
+			// 监听 WebSocket 的错误事件
+			webSocketServer.addEventListener('error', (err) => {
+				log('WebSocket 服务器发生错误');
+				// 将错误传递给控制器
+				controller.error(err);
+			});
 
-            const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
-            if (error) {
-                controller.error(error);
-            } else if (earlyData) {
-                controller.enqueue(earlyData);
-            }
-        },
+			// 处理 WebSocket 0-RTT（零往返时间）的早期数据
+			// 0-RTT 允许在完全建立连接之前发送数据，提高了效率
+			const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
+			if (error) {
+				// 如果解码早期数据时出错，将错误传递给控制器
+				controller.error(error);
+			} else if (earlyData) {
+				// 如果有早期数据，将其加入流的队列中
+				controller.enqueue(earlyData);
+			}
+		},
 
-        pull(controller) {
-            // 实现反压机制
-        },
+		// 当使用者从流中拉取数据时调用
+		pull(controller) {
+			// 这里可以实现反压机制
+			// 如果 WebSocket 可以在流满时停止读取，我们就可以实现反压
+			// 参考：https://streams.spec.whatwg.org/#example-rs-push-backpressure
+		},
 
-        cancel(reason) {
-            if (!readableStreamCancel) {
-                log(`可读流被取消，原因是 ${reason}`);
-                readableStreamCancel = true;
-                safeCloseWebSocket(webSocketServer);
-            }
-        }
-    });
+		// 当流被取消时调用
+		cancel(reason) {
+			// 流被取消的几种情况：
+			// 1. 当管道的 WritableStream 有错误时，这个取消函数会被调用，所以在这里处理 WebSocket 服务器的关闭
+			// 2. 如果 ReadableStream 被取消，所有 controller.close/enqueue 都需要跳过
+			// 3. 但是经过测试，即使 ReadableStream 被取消，controller.error 仍然有效
+			if (readableStreamCancel) {
+				return;
+			}
+			log(`可读流被取消，原因是 ${reason}`);
+			readableStreamCancel = true;
+			// 安全地关闭 WebSocket
+			safeCloseWebSocket(webSocketServer);
+		}
+	});
 
-    return stream;
+	return stream;
 }
 
+// https://xtls.github.io/development/protocols/维列斯.html
+// https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
+
+/**
+ * 解析 维列斯 协议的头部数据
+ * @param { ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
+ * @param {string} userID 用于验证的用户 ID
+ * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
+ */
 function process维列斯Header(维列斯Buffer, userID) {
-    if (维列斯Buffer.byteLength < 24) {
-        return { hasError: true, message: 'invalid data' };
-    }
+	// 检查数据长度是否足够（至少需要 24 字节）
+	if (维列斯Buffer.byteLength < 24) {
+		return {
+			hasError: true,
+			message: 'invalid data',
+		};
+	}
 
-    const version = new Uint8Array(维列斯Buffer.slice(0, 1));
-    const isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
+	// 解析 维列斯 协议版本（第一个字节）
+	const version = new Uint8Array(维列斯Buffer.slice(0, 1));
 
-    if (!isValidUser) {
-        return { hasError: true, message: `invalid user ${(new Uint8Array(维列斯Buffer.slice(1, 17)))}` };
-    }
+	let isValidUser = false;
+	let isUDP = false;
 
-    const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
-    const command = new Uint8Array(维列斯Buffer.slice(18 + optLength, 19 + optLength))[0];
-    const isUDP = command === 2;
+	// 验证用户 ID（接下来的 16 个字节）
+	function isUserIDValid(userID, userIDLow, buffer) {
+		const userIDArray = new Uint8Array(buffer.slice(1, 17));
+		const userIDString = stringify(userIDArray);
+		return userIDString === userID || userIDString === userIDLow;
+	}
 
-    if (![1, 2].includes(command)) {
-        return { hasError: true, message: `command ${command} is not support, command 01-tcp,02-udp,03-mux` };
-    }
+	// 使用函数验证
+	isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
 
-    const portIndex = 19 + optLength;
-    const portRemote = new DataView(维列斯Buffer.slice(portIndex, portIndex + 2)).getUint16(0);
-    const addressInfo = parseAddress(维列斯Buffer, portIndex + 2);
+	// 如果用户 ID 无效，返回错误
+	if (!isValidUser) {
+		return {
+			hasError: true,
+			message: `invalid user ${(new Uint8Array(维列斯Buffer.slice(1, 17)))}`,
+		};
+	}
 
-    if (addressInfo.hasError) {
-        return addressInfo;
-    }
+	// 获取附加选项的长度（第 17 个字节）
+	const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
+	// 暂时跳过附加选项
 
-    return {
-        hasError: false,
-        addressRemote: addressInfo.addressValue,
-        addressType: addressInfo.addressType,
-        portRemote,
-        rawDataIndex: addressInfo.rawDataIndex,
-        维列斯Version: version,
-        isUDP,
-    };
+	// 解析命令（紧跟在选项之后的 1 个字节）
+	// 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
+	const command = new Uint8Array(
+		维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
+	)[0];
+
+	// 0x01 TCP
+	// 0x02 UDP
+	// 0x03 MUX
+	if (command === 1) {
+		// TCP 命令，不需特殊处理
+	} else if (command === 2) {
+		// UDP 命令
+		isUDP = true;
+	} else {
+		// 不支持的命令
+		return {
+			hasError: true,
+			message: `command ${command} is not support, command 01-tcp,02-udp,03-mux`,
+		};
+	}
+
+	// 解析远程端口（大端序，2 字节）
+	const portIndex = 18 + optLength + 1;
+	const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
+	// port is big-Endian in raw data etc 80 == 0x005d
+	const portRemote = new DataView(portBuffer).getUint16(0);
+
+	// 解析地址类型和地址
+	let addressIndex = portIndex + 2;
+	const addressBuffer = new Uint8Array(
+		维列斯Buffer.slice(addressIndex, addressIndex + 1)
+	);
+
+	// 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
+	const addressType = addressBuffer[0];
+	let addressLength = 0;
+	let addressValueIndex = addressIndex + 1;
+	let addressValue = '';
+
+	switch (addressType) {
+		case 1:
+			// IPv4 地址
+			addressLength = 4;
+			// 将 4 个字节转为点分十进制格式
+			addressValue = new Uint8Array(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+			).join('.');
+			break;
+		case 2:
+			// 域名
+			// 第一个字节是域名长度
+			addressLength = new Uint8Array(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
+			)[0];
+			addressValueIndex += 1;
+			// 解码域名
+			addressValue = new TextDecoder().decode(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+			);
+			break;
+		case 3:
+			// IPv6 地址
+			addressLength = 16;
+			const dataView = new DataView(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+			);
+			// 每 2 字节构成 IPv6 地址的一部分
+			const ipv6 = [];
+			for (let i = 0; i < 8; i++) {
+				ipv6.push(dataView.getUint16(i * 2).toString(16));
+			}
+			addressValue = ipv6.join(':');
+			// seems no need add [] for ipv6
+			break;
+		default:
+			// 无效的地址类型
+			return {
+				hasError: true,
+				message: `invild addressType is ${addressType}`,
+			};
+	}
+
+	// 确保地址不为空
+	if (!addressValue) {
+		return {
+			hasError: true,
+			message: `addressValue is empty, addressType is ${addressType}`,
+		};
+	}
+
+	// 返回解析结果
+	return {
+		hasError: false,
+		addressRemote: addressValue,  // 解析后的远程地址
+		addressType,				 // 地址类型
+		portRemote,				 // 远程端口
+		rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
+		维列斯Version: version,	  // 维列斯 协议版本
+		isUDP,					 // 是否是 UDP 请求
+	};
 }
 
-function parseAddress(buffer, startIndex) {
-    const addressType = new Uint8Array(buffer.slice(startIndex, startIndex + 1))[0];
-    let addressLength, addressValue;
-
-    switch (addressType) {
-        case 1:
-            addressLength = 4;
-            addressValue = new Uint8Array(buffer.slice(startIndex + 1, startIndex + 1 + addressLength)).join('.');
-            break;
-        case 2:
-            addressLength = new Uint8Array(buffer.slice(startIndex + 1, startIndex + 2))[0];
-            addressValue = new TextDecoder().decode(buffer.slice(startIndex + 2, startIndex + 2 + addressLength));
-            break;
-        case 3:
-            addressLength = 16;
-            addressValue = Array.from(new DataView(buffer.slice(startIndex + 1, startIndex + 1 + addressLength)))
-                .map((_, i) => buffer.getUint16(i * 2).toString(16))
-                .join(':');
-            break;
-        default:
-            return { hasError: true, message: `invalid addressType is ${addressType}` };
-    }
-
-    if (!addressValue) {
-        return { hasError: true, message: `addressValue is empty, addressType is ${addressType}` };
-    }
-
-    return { addressValue, addressType, rawDataIndex: startIndex + 1 + addressLength };
-}
-
-function isUserIDValid(userID, userIDLow, buffer) {
-    const userIDArray = new Uint8Array(buffer.slice(1, 17));
-    const userIDString = stringify(userIDArray);
-    return userIDString === userID || userIDString === userIDLow;
-}
-	
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
 	// 将数据从远程服务器转发到 WebSocket
 	let remoteChunkCount = 0;
@@ -1813,265 +1929,212 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 }
 
 async function KV(request, env, txt = 'ADD.txt') {
-	try {
-		// POST请求处理
-		if (request.method === "POST") {
-			if (!env.KV) return new Response("未绑定KV空间", { status: 400 });
-			try {
-				const content = await request.text();
-				await env.KV.put(txt, content);
-				return new Response("保存成功");
-			} catch (error) {
-				console.error('保存KV时发生错误:', error);
-				return new Response("保存失败: " + error.message, { status: 500 });
-			}
-		}
+    try {
+        if (request.method === "POST") {
+            if (!env.KV) return new Response("未绑定KV空间", { status: 400 });
+            try {
+                const content = await request.text();
+                await env.KV.put(txt, content);
+                return new Response("保存成功");
+            } catch (error) {
+                console.error('保存KV时发生错误:', error);
+                return new Response("保存失败: " + error.message, { status: 500 });
+            }
+        }
 
-		// GET请求部分
-		let content = '';
-		let hasKV = !!env.KV;
+        let content = '';
+        const hasKV = !!env.KV;
 
-		if (hasKV) {
-			try {
-				content = await env.KV.get(txt) || '';
-			} catch (error) {
-				console.error('读取KV时发生错误:', error);
-				content = '读取数据时发生错误: ' + error.message;
-			}
-		}
+        if (hasKV) {
+            try {
+                content = await env.KV.get(txt) || '';
+            } catch (error) {
+                console.error('读取KV时发生错误:', error);
+                content = '读取数据时发生错误: ' + error.message;
+            }
+        }
 
-		const html = `
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<title>优选订阅列表</title>
-				<meta charset="utf-8">
-				<meta name="viewport" content="width=device-width, initial-scale=1">
-				<style>
-					body {
-						margin: 0;
-						padding: 15px; /* 调整padding */
-						box-sizing: border-box;
-						font-size: 13px; /* 设置全局字体大小 */
-					}
-					.editor-container {
-						width: 100%;
-						max-width: 100%;
-						margin: 0 auto;
-					}
-					.editor {
-						width: 100%;
-						height: 520px; /* 调整高度 */
-						margin: 15px 0; /* 调整margin */
-						padding: 10px; /* 调整padding */
-						box-sizing: border-box;
-						border: 1px solid #ccc;
-						border-radius: 4px;
-						font-size: 13px;
-						line-height: 1.5;
-						overflow-y: auto;
-						resize: none;
-					}
-					.save-container {
-						margin-top: 8px; /* 调整margin */
-						display: flex;
-						align-items: center;
-						gap: 10px; /* 调整gap */
-					}
-					.save-btn, .back-btn {
-						padding: 6px 15px; /* 调整padding */
-						color: white;
-						border: none;
-						border-radius: 4px;
-						cursor: pointer;
-					}
-					.save-btn {
-						background: #4CAF50;
-					}
-					.save-btn:hover {
-						background: #45a049;
-					}
-					.back-btn {
-						background: #666;
-					}
-					.back-btn:hover {
-						background: #555;
-					}
-					.save-status {
-						color: #666;
-					}
-					.notice-content {
-						display: none;
-						margin-top: 10px;
-						font-size: 13px;
-						color: #333;
-					}
-				</style>
-			</head>
-			<body>
-				################################################################<br>
-				${FileName} 优选订阅列表:<br>
-				---------------------------------------------------------------<br>
-				&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
-				<div id="noticeContent" class="notice-content">
-					${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOUUlOUMlRTYlOTglQUYlRTUlOEYlOEQlRTQlQkIlQTNJUCVFRiVCQyU4QyVFNSU4RiVBRiVFNCVCRCU5QyVFNCVCOCVCQVBST1hZSVAlRTclOUElODQlRTglQUYlOUQlRUYlQkMlOEMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwcm94eWlwJTNEdHJ1ZSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzQ3N0cm9uZyUzRSUzRnByb3h5aXAlM0R0cnVlJTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJTI3aHR0cHMlM0ElMkYlMkZnaXRodWIuY29tJTJGWElVMiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QlMjclM0VDbG91ZGZsYXJlU3BlZWRUZXN0JTNDJTJGYSUzRSUyMCVFNyU5QSU4NCUyMGNzdiUyMCVFNyVCQiU5MyVFNiU5RSU5QyVFNiU5NiU4NyVFNCVCQiVCNiVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NiciUzRSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCLSUyMCVFNSVBNiU4MiVFOSU5QyU4MCVFNiU4QyU4NyVFNSVBRSU5QTIwNTMlRTclQUIlQUYlRTUlOEYlQTMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwb3J0JTNEMjA1MyUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0Zwb3J0JTNEMjA1MyUzQyUyRnN0cm9uZyUzRSUzQ2JyJTNFJTNDYnIlM0UKJTA5JTA5JTA5JTA5JTA5JTI2bmJzcCUzQiUyNm5ic3AlM0ItJTIwJUU1JUE2JTgyJUU5JTlDJTgwJUU2JThDJTg3JUU1JUFFJTlBJUU4JThBJTgyJUU3JTgyJUI5JUU1JUE0JTg3JUU2JUIzJUE4JUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0ZpZCUzRENGJUU0JUJDJTk4JUU5JTgwJTg5JTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQi0lMjAlRTUlQTYlODIlRTklOUMlODAlRTYlOEMlODclRTUlQUUlOUElRTUlQTQlOUElRTQlQjglQUElRTUlOEYlODIlRTYlOTUlQjAlRTUlODglOTklRTklOUMlODAlRTglQTYlODElRTQlQkQlQkYlRTclOTQlQTglMjclMjYlMjclRTUlODElOUElRTklOTclQjQlRTklOUElOTQlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QuY3N2JTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUzQ3N0cm9uZyUzRSUyNiUzQyUyRnN0cm9uZyUzRXBvcnQlM0QyMDUzJTNDYnIlM0U='))}
-				</div>
-				<div class="editor-container">
-					${hasKV ? `
-					<textarea class="editor" 
-						placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
-						id="content">${content}</textarea>
-					<div class="save-container">
-						<button class="back-btn" onclick="goBack()">返回配置页</button>
-						<button class="save-btn" onclick="saveContent(this)">保存</button>
-						<span class="save-status" id="saveStatus"></span>
-					</div>
-					<br>
-					################################################################<br>
-					${cmad}
-					` : '<p>未绑定KV空间</p>'}
-				</div>
-		
-				<script>
-				if (document.querySelector('.editor')) {
-					let timer;
-					const textarea = document.getElementById('content');
-					const originalContent = textarea.value;
-		
-					function goBack() {
-						const currentUrl = window.location.href;
-						const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
-						window.location.href = parentUrl;
-					}
-		
-					function replaceFullwidthColon() {
-						const text = textarea.value;
-						textarea.value = text.replace(/：/g, ':');
-					}
-					
-					function saveContent(button) {
-						try {
-							const updateButtonText = (step) => {
-								button.textContent = \`保存中: \${step}\`;
-							};
-							// 检测是否为iOS设备
-							const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-							
-							// 仅在非iOS设备上执行replaceFullwidthColon
-							if (!isIOS) {
-								replaceFullwidthColon();
-							}
-							updateButtonText('开始保存');
-							button.disabled = true;
-							// 获取textarea内容和原始内容
-							const textarea = document.getElementById('content');
-							if (!textarea) {
-								throw new Error('找不到文本编辑区域');
-							}
-							updateButtonText('获取内容');
-							let newContent;
-							let originalContent;
-							try {
-								newContent = textarea.value || '';
-								originalContent = textarea.defaultValue || '';
-							} catch (e) {
-								console.error('获取内容错误:', e);
-								throw new Error('无法获取编辑内容');
-							}
-							updateButtonText('准备状态更新函数');
-							const updateStatus = (message, isError = false) => {
-								const statusElem = document.getElementById('saveStatus');
-								if (statusElem) {
-									statusElem.textContent = message;
-									statusElem.style.color = isError ? 'red' : '#666';
-								}
-							};
-							updateButtonText('准备按钮重置函数');
-							const resetButton = () => {
-								button.textContent = '保存';
-								button.disabled = false;
-							};
-							if (newContent !== originalContent) {
-								updateButtonText('发送保存请求');
-								fetch(window.location.href, {
-									method: 'POST',
-									body: newContent,
-									headers: {
-										'Content-Type': 'text/plain;charset=UTF-8'
-									},
-									cache: 'no-cache'
-								})
-								.then(response => {
-									updateButtonText('检查响应状态');
-									if (!response.ok) {
-										throw new Error(\`HTTP error! status: \${response.status}\`);
-									}
-									updateButtonText('更新保存状态');
-									const now = new Date().toLocaleString();
-									document.title = \`编辑已保存 \${now}\`;
-									updateStatus(\`已保存 \${now}\`);
-								})
-								.catch(error => {
-									updateButtonText('处理错误');
-									console.error('Save error:', error);
-									updateStatus(\`保存失败: \${error.message}\`, true);
-								})
-								.finally(() => {
-									resetButton();
-								});
-							} else {
-								updateButtonText('检查内容变化');
-								updateStatus('内容未变化');
-								resetButton();
-							}
-						} catch (error) {
-							console.error('保存过程出错:', error);
-							button.textContent = '保存';
-							button.disabled = false;
-							const statusElem = document.getElementById('saveStatus');
-							if (statusElem) {
-								statusElem.textContent = \`错误: \${error.message}\`;
-								statusElem.style.color = 'red';
-							}
-						}
-					}
-		
-					textarea.addEventListener('blur', saveContent);
-					textarea.addEventListener('input', () => {
-						clearTimeout(timer);
-						timer = setTimeout(saveContent, 5000);
-					});
-				}
-		
-				function toggleNotice() {
-					const noticeContent = document.getElementById('noticeContent');
-					const noticeToggle = document.getElementById('noticeToggle');
-					if (noticeContent.style.display === 'none' || noticeContent.style.display === '') {
-						noticeContent.style.display = 'block';
-						noticeToggle.textContent = '注意事项∧';
-					} else {
-						noticeContent.style.display = 'none';
-						noticeToggle.textContent = '注意事项∨';
-					}
-				}
-		
-				// 初始化 noticeContent 的 display 属性
-				document.addEventListener('DOMContentLoaded', () => {
-					document.getElementById('noticeContent').style.display = 'none';
-				});
-				</script>
-			</body>
-			</html>
-		`;
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>优选订阅列表</title>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body { margin: 0; padding: 15px; box-sizing: border-box; font-size: 13px; }
+                    .editor-container { width: 100%; max-width: 100%; margin: 0 auto; }
+                    .editor { width: 100%; height: 520px; margin: 15px 0; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; line-height: 1.5; overflow-y: auto; resize: none; }
+                    .save-container { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+                    .save-btn, .back-btn { padding: 6px 15px; color: white; border: none; border-radius: 4px; cursor: pointer; }
+                    .save-btn { background: #4CAF50; }
+                    .save-btn:hover { background: #45a049; }
+                    .back-btn { background: #666; }
+                    .back-btn:hover { background: #555; }
+                    .save-status { color: #666; }
+                    .notice-content { display: none; margin-top: 10px; font-size: 13px; color: #333; }
+                </style>
+            </head>
+            <body>
+                ################################################################<br>
+                ${FileName} 优选订阅列表:<br>
+                ---------------------------------------------------------------<br>
+                &nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
+                <div id="noticeContent" class="notice-content">
+                    ${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOUUlOUMlRTYlOTglQUYlRTUlOEYlOEQlRTQlQkIlQTNJUCVFRiVCQyU4QyVFNSU4RiVBRiVFNCVCRCU5QyVFNCVCOCVCQVBST1hZSVAlRTclOUElODQlRTglQUYlOUQlRUYlQkMlOEMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwcm94eWlwJTNEdHJ1ZSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzQ3N0cm9uZyUzRSUzRnByb3h5aXAlM0R0cnVlJTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJTI3aHR0cHMlM0ElMkYlMkZnaXRodWIuY29tJTJGWElVMiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QlMjclM0VDbG91ZGZsYXJlU3BlZWRUZXN0JTNDJTJGYSUzRSUyMCVFNyU5QSU4NCUyMGNzdiUyMCVFNyVCQiU5MyVFNiU5RSU5QyVFNiU5NiU4NyVFNCVCQiVCNiVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NiciUzRSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCLSUyMCVFNSVBNiU4MiVFOSU5QyU4MCVFNiU4QyU4NyVFNSVBRSU5QTIwNTMlRTclQUIlQUYlRTUlOEYlQTMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwb3J0JTNEMjA1MyUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0Zwb3J0JTNEMjA1MyUzQyUyRnN0cm9uZyUzRSUzQ2JyJTNFJTNDYnIlM0UKJTA5JTA5JTA5JTA5JTA5JTI2bmJzcCUzQiUyNm5ic3AlM0ItJTIwJUU1JUE2JTgyJUU5JTlDJTgwJUU2JThDJTg3JUU1JUFFJTlBJUU4JThBJTgyJUU3JTgyJUI5JUU1JUE0JTg3JUU2JUIzJUE4JUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0ZpZCUzRENGJUU0JUJDJTk4JUU5JTgwJTg5JTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQi0lMjAlRTUlQTYlODIlRTklOUMlODAlRTYlOEMlODclRTUlQUUlOUElRTUlQTQlOUElRTQlQjglQUElRTUlOEYlODIlRTYlOTUlQjAlRTUlODglOTklRTklOUMlODAlRTglQTYlODElRTQlQkQlQkYlRTclOTQlQTglMjclMjYlMjclRTUlODElOUElRTklOTclQjQlRTklOUElOTQlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QuY3N2JTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUzQ3N0cm9uZyUzRSUyNiUzQyUyRnN0cm9uZyUzRXBvcnQlM0QyMDUzJTNDYnIlM0U='))}
+                </div>
+                <div class="editor-container">
+                    ${hasKV ? `
+                    <textarea class="editor" 
+                        placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
+                        id="content">${content}</textarea>
+                    <div class="save-container">
+                        <button class="back-btn" onclick="goBack()">返回配置页</button>
+                        <button class="save-btn" onclick="saveContent(this)">保存</button>
+                        <span class="save-status" id="saveStatus"></span>
+                    </div>
+                    <br>
+                    ################################################################<br>
+                    ${cmad}
+                    ` : '<p>未绑定KV空间</p>'}
+                </div>
+        
+                <script>
+                if (document.querySelector('.editor')) {
+                    let timer;
+                    const textarea = document.getElementById('content');
+                    const originalContent = textarea.value;
+        
+                    function goBack() {
+                        const currentUrl = window.location.href;
+                        const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
+                        window.location.href = parentUrl;
+                    }
+        
+                    function replaceFullwidthColon() {
+                        const text = textarea.value;
+                        textarea.value = text.replace(/：/g, ':');
+                    }
+                    
+                    function saveContent(button) {
+                        try {
+                            const updateButtonText = (step) => {
+                                button.textContent = \`保存中: \${step}\`;
+                            };
+                            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                            
+                            if (!isIOS) {
+                                replaceFullwidthColon();
+                            }
+                            updateButtonText('开始保存');
+                            button.disabled = true;
+                            const textarea = document.getElementById('content');
+                            if (!textarea) {
+                                throw new Error('找不到文本编辑区域');
+                            }
+                            updateButtonText('获取内容');
+                            let newContent;
+                            let originalContent;
+                            try {
+                                newContent = textarea.value || '';
+                                originalContent = textarea.defaultValue || '';
+                            } catch (e) {
+                                console.error('获取内容错误:', e);
+                                throw new Error('无法获取编辑内容');
+                            }
+                            updateButtonText('准备状态更新函数');
+                            const updateStatus = (message, isError = false) => {
+                                const statusElem = document.getElementById('saveStatus');
+                                if (statusElem) {
+                                    statusElem.textContent = message;
+                                    statusElem.style.color = isError ? 'red' : '#666';
+                                }
+                            };
+                            updateButtonText('准备按钮重置函数');
+                            const resetButton = () => {
+                                button.textContent = '保存';
+                                button.disabled = false;
+                            };
+                            if (newContent !== originalContent) {
+                                updateButtonText('发送保存请求');
+                                fetch(window.location.href, {
+                                    method: 'POST',
+                                    body: newContent,
+                                    headers: {
+                                        'Content-Type': 'text/plain;charset=UTF-8'
+                                    },
+                                    cache: 'no-cache'
+                                })
+                                .then(response => {
+                                    updateButtonText('检查响应状态');
+                                    if (!response.ok) {
+                                        throw new Error(\`HTTP error! status: \${response.status}\`);
+                                    }
+                                    updateButtonText('更新保存状态');
+                                    const now = new Date().toLocaleString();
+                                    document.title = \`编辑已保存 \${now}\`;
+                                    updateStatus(\`已保存 \${now}\`);
+                                })
+                                .catch(error => {
+                                    updateButtonText('处理错误');
+                                    console.error('Save error:', error);
+                                    updateStatus(\`保存失败: \${error.message}\`, true);
+                                })
+                                .finally(() => {
+                                    resetButton();
+                                });
+                            } else {
+                                updateButtonText('检查内容变化');
+                                updateStatus('内容未变化');
+                                resetButton();
+                            }
+                        } catch (error) {
+                            console.error('保存过程出错:', error);
+                            button.textContent = '保存';
+                            button.disabled = false;
+                            const statusElem = document.getElementById('saveStatus');
+                            if (statusElem) {
+                                statusElem.textContent = \`错误: \${error.message}\`;
+                                statusElem.style.color = 'red';
+                            }
+                        }
+                    }
+        
+                    textarea.addEventListener('blur', saveContent);
+                    textarea.addEventListener('input', () => {
+                        clearTimeout(timer);
+                        timer = setTimeout(saveContent, 5000);
+                    });
+                }
+        
+                function toggleNotice() {
+                    const noticeContent = document.getElementById('noticeContent');
+                    const noticeToggle = document.getElementById('noticeToggle');
+                    if (noticeContent.style.display === 'none' || noticeContent.style.display === '') {
+                        noticeContent.style.display = 'block';
+                        noticeToggle.textContent = '注意事项∧';
+                    } else {
+                        noticeContent.style.display = 'none';
+                        noticeToggle.textContent = '注意事项∨';
+                    }
+                }
+        
+                document.addEventListener('DOMContentLoaded', () => {
+                    document.getElementById('noticeContent').style.display = 'none';
+                });
+                </script>
+            </body>
+            </html>
+        `;
 
-		return new Response(html, {
-			headers: { "Content-Type": "text/html;charset=utf-8" }
-		});
-	} catch (error) {
-		console.error('处理请求时发生错误:', error);
-		return new Response("服务器错误: " + error.message, {
-			status: 500,
-			headers: { "Content-Type": "text/plain;charset=utf-8" }
-		});
-	}
+        return new Response(html, {
+            headers: { "Content-Type": "text/html;charset=utf-8" }
+        });
+    } catch (error) {
+        console.error('处理请求时发生错误:', error);
+        return new Response("服务器错误: " + error.message, {
+            status: 500,
+            headers: { "Content-Type": "text/plain;charset=utf-8" }
+        });
+    }
 }
