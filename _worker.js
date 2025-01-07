@@ -589,104 +589,26 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
 
 /**
- * 维列斯协议常量
- */
-const 维列斯Protocol = {
-    MIN_LENGTH: 24,
-    VERSION_LENGTH: 1,
-    USER_ID_START: 1,
-    USER_ID_LENGTH: 16,
-    COMMAND: {
-        TCP: 1,
-        UDP: 2,
-        MUX: 3
-    }
-};
-
-/**
  * 解析 维列斯 协议的头部数据
- * @param {ArrayBuffer} 维列斯Buffer - 维列斯 协议的原始头部数据
- * @param {string} userID - 用于验证的用户 ID
- * @returns {Object} 解析结果
- * @throws {Error} 当数据格式无效时抛出错误
+ * @param { ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
+ * @param {string} userID 用于验证的用户 ID
+ * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
  */
 function process维列斯Header(维列斯Buffer, userID) {
-    try {
-        // 参数验证
-        if (!维列斯Buffer || !userID) {
-            return createError('缺少必要参数');
-        }
+	// 检查数据长度是否足够（至少需要 24 字节）
+	if (维列斯Buffer.byteLength < 24) {
+		return {
+			hasError: true,
+			message: 'invalid data',
+		};
+	}
 
-        // 检查数据长度
-        if (维列斯Buffer.byteLength < 维列斯Protocol.MIN_LENGTH) {
-            return createError(`数据长度不足: ${维列斯Buffer.byteLength} < ${维列斯Protocol.MIN_LENGTH}`);
-        }
+	// 解析 维列斯 协议版本（第一个字节）
+	const version = new Uint8Array(维列斯Buffer.slice(0, 1));
 
-        // 解析协议版本
-        const version = new Uint8Array(维列斯Buffer.slice(0, 维列斯Protocol.VERSION_LENGTH));
-        
-        // 验证版本号（如果需要）
-        if (version[0] === 0) {
-            return createError('无效的协议版本');
-        }
-
-        let isValidUser = false;
-        let isUDP = false;
-
-        // 后续代码...
-    } catch (error) {
-        return createError(`协议解析错误: ${error.message}`);
-    }
-}
-
-/**
- * 创建错误响应对象
- * @param {string} message - 错误信息
- * @returns {Object} 错误响应对象
- */
-function createError(message) {
-    return {
-        hasError: true,
-        message: message || 'Unknown error'
-    };
-}
-
-/**
- * 验证用户 ID
- * @param {ArrayBuffer} buffer - 包含用户 ID 的缓冲区
- * @param {string} userID - 预期的用户 ID
- * @param {string} [userIDLow] - 可选的次要用户 ID
- * @returns {boolean} 验证是否通过
- */
-function validateUserID(buffer, userID, userIDLow) {
-    try {
-        const userIDArray = new Uint8Array(buffer.slice(
-            维列斯Protocol.USER_ID_START,
-            维列斯Protocol.USER_ID_START + 维列斯Protocol.USER_ID_LENGTH
-        ));
-        const userIDString = stringify(userIDArray);
-        return userIDString === userID || (userIDLow && userIDString === userIDLow);
-    } catch (error) {
-        console.error('用户 ID 验证错误:', error);
-        return false;
-    }
-}
-
-/**
- * 将 Uint8Array 转换为字符串
- * @param {Uint8Array} array - 要转换的数组
- * @returns {string} 转换后的字符串
- */
-function stringify(array) {
-    try {
-        return Array.from(array)
-            .map(byte => byte.toString(16).padStart(2, '0'))
-            .join('');
-    } catch (error) {
-        console.error('字符串转换错误:', error);
-        return '';
-    }
-}
+	let isValidUser = false;
+	let isUDP = false;
+	
 	// 验证用户 ID（接下来的 16 个字节）
 	function isUserIDValid(userID, userIDLow, buffer) {
 		const userIDArray = new Uint8Array(buffer.slice(1, 17));
