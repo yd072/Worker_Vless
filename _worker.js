@@ -387,8 +387,10 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
  */
 async function retry() {
     if (enableSocks) {
+        // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
+        // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
         if (!proxyIP || proxyIP === '') {
             proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
         } else {
@@ -404,12 +406,27 @@ async function retry() {
         }
         tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
+    // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
     tcpSocket.closed.catch(error => {
         console.log('retry tcpSocket closed error', error);
     }).finally(() => {
         safeCloseWebSocket(webSocket);
     });
+    // 建立从远程 Socket 到 WebSocket 的数据流
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+}
+
+let shouldUseSocks = false;
+if (go2Socks5s.length > 0 && enableSocks) {
+    shouldUseSocks = await useSocks5Pattern(addressRemote);
+}
+// 首次尝试连接远程服务器
+let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
+
+// 当远程 Socket 就绪时，将其传递给 WebSocket
+// 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
+// 如果连接失败或无数据，retry 函数将被调用进行重试
+remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 	
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
