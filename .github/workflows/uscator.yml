@@ -52,23 +52,19 @@ jobs:
           --string-array-encoding 'rc4' \
           --string-array-threshold 1 \
           --transform-object-keys true \
-          --unicode-escape-sequence true
-
-      - name: Check for changes
-        id: changes
-        run: |
-          git diff --exit-code _worker.js || echo "changes"
+          --unicode-escape-sequence true \
+          --seed $(date +%s) \
+          --rotate-string-array true \
+          --shuffle-string-array true
 
       - name: Commit changes
-        if: steps.changes.outputs.changes == 'changes'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add _worker.js
-          git commit -m "Obfuscate _worker.js"
+          git commit -m "Obfuscate _worker.js with unique output"
 
       - name: Push changes
-        if: steps.changes.outputs.changes == 'changes'
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
