@@ -1236,8 +1236,7 @@ function generateRandomIPFromCIDR(cidr) {
     return randomIP.join('.');
 }
 
-				return randomIP.join('.');
-			}
+
 			addresses = addresses.concat('127.0.0.1:1234#CFnat');
 			if (hostName.includes(".workers.dev")) {
 				addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
