@@ -1,9 +1,7 @@
-
 import { connect } from 'cloudflare:sockets';
 
 let userID = '';
 let proxyIP = '';
-//let sub = '';
 let subConverter = 'SUBAPI.fxxk.dedyn.io';
 let subConfig = "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_MultiMode.ini";
 let subProtocol = 'https';
@@ -13,14 +11,14 @@ let parsedSocks5Address = {};
 let enableSocks = false;
 
 let noTLS = 'false';
-const expire = 4102329600;//2099-12-31
-let proxyIPs;
-let socks5s;
+const expire = 4102329600; // 2099-12-31
+let proxyIPs = [];
+let socks5s = [];
 let go2Socks5s = [
-	'*ttvnw.net',
-	'*tapecontent.net',
-	'*cloudatacdn.com',
-	'*.loadshare.org',
+    '*ttvnw.net',
+    '*tapecontent.net',
+    '*cloudatacdn.com',
+    '*.loadshare.org',
 ];
 let addresses = [];
 let addressesapi = [];
@@ -28,23 +26,35 @@ let addressesnotls = [];
 let addressesnotlsapi = [];
 let addressescsv = [];
 let DLS = 8;
-let remarkIndex = 1;//CSV备注所在列偏移量
+let remarkIndex = 1; // CSV备注所在列偏移量
 let FileName = atob('ZWRnZXR1bm5lbA==');
-let BotToken;
-let ChatID;
+let BotToken = '';
+let ChatID = '';
 let proxyhosts = [];
 let proxyhostsURL = '';
 let RproxyIP = 'false';
 let httpsPorts = ["2053", "2083", "2087", "2096", "8443"];
 let 有效时间 = 7;
 let 更新时间 = 3;
-let userIDLow;
-let userIDTime = "";
+let userIDLow = '';
+let userIDTime = '';
 let proxyIPPool = [];
 let path = '/?ed=2560';
-let 动态UUID;
+let 动态UUID = '';
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
+
+// 确保在使用字符串方法前进行类型检查
+function safeReplace(str, pattern, replacement) {
+    if (typeof str === 'string') {
+        return str.replace(pattern, replacement);
+    }
+    console.warn('Attempted to replace on a non-string:', str);
+    return str;
+}
+
+// 示例使用
+socks5Address = safeReplace(socks5Address, /somePattern/g, 'replacement');
 export default {
     async fetch(request, env, ctx) {
         try {
