@@ -983,234 +983,26 @@ function isValidUUID(uuid) {
 	return uuidRegex.test(uuid);
 }
 
-/**
- * 常量定义
- */
-const Constants = {
-    WS: {
-        STATES: {
-            CONNECTING: 0,
-            OPEN: 1,
-            CLOSING: 2,
-            CLOSED: 3
-        },
-        CLOSE_CODES: {
-            NORMAL: 1000,
-            GOING_AWAY: 1001,
-            PROTOCOL_ERROR: 1002,
-            UNSUPPORTED: 1003,
-            NO_STATUS: 1005,
-            ABNORMAL: 1006
-        }
-    },
-    UUID: {
-        VERSION: 4,
-        VARIANTS: ['8', '9', 'a', 'b'],
-        PATTERN: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    },
-    HEX: {
-        PATTERN: /^[0-9a-fA-F]+$/,
-        BYTE_LENGTH: 256
-    }
-};
-
-/**
- * WebSocket 工具类
- */
-class WebSocketUtils {
-    /**
-     * 安全关闭 WebSocket 连接
-     * @param {WebSocket} socket - WebSocket 实例
-     * @param {number} [code=1000] - 关闭代码
-     * @param {string} [reason='Normal closure'] - 关闭原因
-     * @returns {boolean} 是否成功关闭
-     */
-    static safeClose(socket, code = Constants.WS.CLOSE_CODES.NORMAL, reason = 'Normal closure') {
-        try {
-            if (!this.isValid(socket)) {
-                return false;
-            }
-
-            if (this.canClose(socket)) {
-                socket.close(code, reason);
-                return true;
-            }
-
-            return false;
-        } catch (error) {
-            console.error('WebSocket 关闭错误:', error);
-            return false;
-        }
-    }
-
-    /**
-     * 检查 WebSocket 是否有效
-     * @param {WebSocket} socket - WebSocket 实例
-     * @returns {boolean} 是否有效
-     */
-    static isValid(socket) {
-        return socket && typeof socket.readyState === 'number';
-    }
-
-    /**
-     * 检查 WebSocket 是否可以关闭
-     * @param {WebSocket} socket - WebSocket 实例
-     * @returns {boolean} 是否可以关闭
-     */
-    static canClose(socket) {
-        const { OPEN, CLOSING } = Constants.WS.STATES;
-        return socket.readyState === OPEN || socket.readyState === CLOSING;
-    }
+function safeCloseWebSocket(socket) {
+	try {
+		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
+		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
+		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
+			socket.close();
+		}
+	} catch (error) {
+		// 记录任何可能发生的错误，虽然按照规范不应该有错误
+		console.error('safeCloseWebSocket error', error);
+	}
 }
 
-/**
- * UUID 工具类
- */
-class UUIDUtils {
-    /**
-     * 验证 UUID 字符串
-     * @param {string} uuid - UUID 字符串
-     * @returns {boolean} 是否有效
-     */
-    static isValid(uuid) {
-        if (!uuid || typeof uuid !== 'string') {
-            return false;
-        }
-        return Constants.UUID.PATTERN.test(uuid);
-    }
-
-    /**
-     * 获取 UUID 版本
-     * @param {string} uuid - UUID 字符串
-     * @returns {number|null} UUID 版本或 null
-     */
-    static getVersion(uuid) {
-        if (!this.isValid(uuid)) {
-            return null;
-        }
-        return parseInt(uuid.charAt(14), 16);
-    }
-
-    /**
-     * 获取 UUID 变体
-     * @param {string} uuid - UUID 字符串
-     * @returns {string|null} UUID 变体或 null
-     */
-    static getVariant(uuid) {
-        if (!this.isValid(uuid)) {
-            return null;
-        }
-        return uuid.charAt(19).toLowerCase();
-    }
+// 预计算 0-255 每个字节的十六进制表示
+const byteToHex = [];
+for (let i = 0; i < 256; ++i) {
+	// (i + 256).toString(16) 确保总是得到两位数的十六进制
+	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
+	byteToHex.push((i + 256).toString(16).slice(1));
 }
-
-/**
- * 十六进制工具类
- */
-class HexUtils {
-    /**
-     * 字节到十六进制的映射表
-     * @type {string[]}
-     */
-    static #byteToHexMap = (() => {
-        const map = new Array(Constants.HEX.BYTE_LENGTH);
-        for (let i = 0; i < Constants.HEX.BYTE_LENGTH; ++i) {
-            map[i] = (i + 0x100).toString(16).slice(1);
-        }
-        return map;
-    })();
-
-    /**
-     * 将字节转换为十六进制字符串
-     * @param {number} byte - 字节值
-     * @returns {string} 十六进制字符串
-     */
-    static byteToHex(byte) {
-        return this.#byteToHexMap[byte & 0xFF] || '00';
-    }
-
-    /**
-     * 将字节数组转换为十六进制字符串
-     * @param {Uint8Array|number[]} bytes - 字节数组
-     * @returns {string} 十六进制字符串
-     */
-    static bytesToHex(bytes) {
-        if (!bytes || !bytes.length) {
-            return '';
-        }
-        return Array.from(bytes, byte => this.byteToHex(byte)).join('');
-    }
-
-    /**
-     * 将十六进制字符串转换为字节数组
-     * @param {string} hex - 十六进制字符串
-     * @returns {Uint8Array} 字节数组
-     */
-    static hexToBytes(hex) {
-        if (!this.isValidHex(hex)) {
-            throw new Error('无效的十六进制字符串');
-        }
-
-        const bytes = new Uint8Array(hex.length / 2);
-        for (let i = 0; i < hex.length; i += 2) {
-            bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-        }
-        return bytes;
-    }
-
-    /**
-     * 验证十六进制字符串
-     * @param {string} hex - 十六进制字符串
-     * @returns {boolean} 是否有效
-     */
-    static isValidHex(hex) {
-        return typeof hex === 'string' && 
-               hex.length % 2 === 0 && 
-               Constants.HEX.PATTERN.test(hex);
-    }
-}
-
-/**
- * Base64 工具类
- */
-class Base64Utils {
-    /**
-     * 将 Base64 字符串转换为 ArrayBuffer
-     * @param {string} base64Str - Base64 字符串
-     * @returns {{ earlyData: ArrayBuffer|undefined, error: Error|null }} 结果对象
-     */
-    static toArrayBuffer(base64Str) {
-        if (!base64Str) {
-            return { earlyData: undefined, error: null };
-        }
-
-        try {
-            // 转换 URL 安全的 Base64
-            base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
-
-            const binaryStr = atob(base64Str);
-            const bytes = new Uint8Array(binaryStr.length);
-
-            for (let i = 0; i < binaryStr.length; i++) {
-                bytes[i] = binaryStr.charCodeAt(i);
-            }
-
-            return { earlyData: bytes.buffer, error: null };
-        } catch (error) {
-            return { earlyData: undefined, error };
-        }
-    }
-}
-
-// 导出
-export {
-    Constants,
-    WebSocketUtils,
-    UUIDUtils,
-    HexUtils,
-    Base64Utils
-};
-
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
