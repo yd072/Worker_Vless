@@ -1069,44 +1069,56 @@ async function 双重哈希(文本) {
     return 第二次十六进制.toLowerCase();
 }
 
+/**
+ * 代理URL函数
+ * 通过从代理网址列表中随机选择一个网址来构建新的请求
+ * 
+ * @param {string} 代理网址 - 用于代理的基础网址
+ * @param {URL} 目标网址 - 目标网址对象
+ * @returns {Promise<Response>} 返回新的响应对象
+ */
 async function 代理URL(代理网址, 目标网址) {
-	const 网址列表 = await 整理(代理网址);
-	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+    try {
+        const 网址列表 = await 整理(代理网址);
+        const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-	// 解析目标 URL
-	let 解析后的网址 = new URL(完整网址);
-	console.log(解析后的网址);
-	// 提取并可能修改 URL 组件
-	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-	let 主机名 = 解析后的网址.hostname;
-	let 路径名 = 解析后的网址.pathname;
-	let 查询参数 = 解析后的网址.search;
+        // 解析目标 URL
+        let 解析后的网址 = new URL(完整网址);
+        console.log(解析后的网址);
 
-	// 处理路径名
-	if (路径名.charAt(路径名.length - 1) == '/') {
-		路径名 = 路径名.slice(0, -1);
-	}
-	路径名 += 目标网址.pathname;
+        // 提取并可能修改 URL 组件
+        let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
+        let 主机名 = 解析后的网址.hostname;
+        let 路径名 = 解析后的网址.pathname;
+        let 查询参数 = 解析后的网址.search;
 
-	// 构建新的 URL
-	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+        // 处理路径名
+        if (路径名.charAt(路径名.length - 1) === '/') {
+            路径名 = 路径名.slice(0, -1);
+        }
+        路径名 += 目标网址.pathname;
 
-	// 反向代理请求
-	let 响应 = await fetch(新网址);
+        // 构建新的 URL
+        let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
 
-	// 创建新的响应
-	let 新响应 = new Response(响应.body, {
-		status: 响应.status,
-		statusText: 响应.statusText,
-		headers: 响应.headers
-	});
+        // 反向代理请求
+        let 响应 = await fetch(新网址);
 
-	// 添加自定义头部，包含 URL 信息
-	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
-	//新响应.headers.set('X-Original-URL', 完整网址);
-	新响应.headers.set('X-New-URL', 新网址);
+        // 创建新的响应
+        let 新响应 = new Response(响应.body, {
+            status: 响应.status,
+            statusText: 响应.statusText,
+            headers: 响应.headers
+        });
 
-	return 新响应;
+        // 添加自定义头部，包含 URL 信息
+        新响应.headers.set('X-New-URL', 新网址);
+
+        return 新响应;
+    } catch (error) {
+        console.error('代理URL函数发生异常:', error);
+        throw error;
+    }
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
