@@ -1004,25 +1004,27 @@ for (let i = 0; i < 256; ++i) {
 	byteToHex.push((i + 256).toString(16).slice(1));
 }
 
-/**
- * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
- * 这是一个底层函数，直接操作字节，不做任何验证
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} UUID 字符串
- */
 function unsafeStringify(arr, offset = 0) {
-	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
-	// toLowerCase() 确保整个 UUID 是小写的
-	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
-		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
-		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
-		byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
-		byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
-		byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
+  // 预先分配足够长度的数组
+  const parts = new Array(36);
+  
+  for (let i = 0; i < 16; i++) {
+    const hex = byteToHex[arr[offset + i]];
+    // 根据 UUID 格式确定位置
+    const pos = i < 4 ? i : 
+               i < 6 ? i + 1 :
+               i < 8 ? i + 2 :
+               i < 10 ? i + 3 : i + 4;
+    
+    parts[pos * 2] = hex[0];
+    parts[pos * 2 + 1] = hex[1];
+  }
+  
+  // 添加连字符
+  parts[8] = parts[13] = parts[18] = parts[23] = '-';
+  
+  return parts.join('');
 }
-
 /**
  * 将字节数组转换为 UUID 字符串，并验证其有效性
  * 这是一个安全的函数，它确保返回的 UUID 格式正确
