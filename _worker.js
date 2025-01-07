@@ -865,45 +865,117 @@ async function sendResponse(chunk, webSocket, 维列斯ResponseHeader, log) {
 }
 
 /**
+ * SOCKS5 代理连接实现
+ */
+
+// SOCKS5 协议常量
+const SOCKS5_CONSTANTS = {
+    VERSION: 0x05,
+    AUTH: {
+        NO_AUTH: 0x00,
+        USER_PASS: 0x02,
+        NO_ACCEPTABLE: 0xff
+    },
+    ADDR_TYPE: {
+        IPv4: 0x01,
+        DOMAIN: 0x03,
+        IPv6: 0x04
+    },
+    CMD: {
+        CONNECT: 0x01
+    },
+    RESPONSE: {
+        SUCCESS: 0x00
+    },
+    TIMEOUT: 5000
+};
+
+// SOCKS5 错误代码映射
+const SOCKS5_ERRORS = {
+    0x01: '一般性失败',
+    0x02: '规则集不允许连接',
+    0x03: '网络不可达',
+    0x04: '主机不可达',
+    0x05: '连接被拒绝',
+    0x06: 'TTL 过期',
+    0x07: '命令不支持',
+    0x08: '地址类型不支持'
+};
+
+/**
  * 建立 SOCKS5 代理连接
  * @param {number} addressType 目标地址类型（1: IPv4, 2: 域名, 3: IPv6）
  * @param {string} addressRemote 目标地址（可以是 IP 或域名）
  * @param {number} portRemote 目标端口
  * @param {function} log 日志记录函数
- * @returns {Promise<Socket|null>} 返回建立的 socket 连接或 null
  */
 async function socks5Connect(addressType, addressRemote, portRemote, log = console.log) {
-    const { username, password, hostname, port } = parsedSocks5Address;
     let socket = null;
     let writer = null;
     let reader = null;
 
     try {
+        // 参数验证
+        validateParams(addressType, addressRemote, portRemote);
+        const { username, password, hostname, port } = parsedSocks5Address;
+
         // 建立连接
-        socket = await connect({
-            hostname,
-            port,
-            timeout: 5000 // 添加超时设置
-        });
+        socket = await connectWithTimeout(hostname, port);
+        log(`成功连接到 SOCKS5 代理服务器 ${hostname}:${port}`);
 
         writer = socket.writable.getWriter();
         reader = socket.readable.getReader();
 
-        // 进行握手认证
-        await performHandshake(writer, reader, username, password, log);
+        // 1. 发送握手消息
+        const socksGreeting = new Uint8Array([
+            SOCKS5_CONSTANTS.VERSION,
+            2, // 支持的认证方法数
+            SOCKS5_CONSTANTS.AUTH.NO_AUTH,
+            SOCKS5_CONSTANTS.AUTH.USER_PASS
+        ]);
+        await writer.write(socksGreeting);
+        log('已发送 SOCKS5 握手消息');
 
-        // 发送连接请求
-        await sendConnectionRequest(
-            writer,
-            addressType,
-            addressRemote,
-            portRemote,
-            log
-        );
+        // 2. 处理认证响应
+        const authResponse = (await reader.read()).value;
+        if (authResponse[0] !== SOCKS5_CONSTANTS.VERSION) {
+            throw new Error(`SOCKS5 版本错误: ${authResponse[0]}`);
+        }
+        if (authResponse[1] === SOCKS5_CONSTANTS.AUTH.NO_ACCEPTABLE) {
+            throw new Error('服务器不接受任何认证方法');
+        }
 
-        // 处理连接响应
-        await handleConnectionResponse(reader, log);
+        // 3. 如果需要用户名密码认证
+        if (authResponse[1] === SOCKS5_CONSTANTS.AUTH.USER_PASS) {
+            if (!username || !password) {
+                throw new Error('需要用户名和密码进行认证');
+            }
+            await performAuth(writer, reader, username, password, log);
+        }
 
+        // 4. 发送连接请求
+        const encoder = new TextEncoder();
+        const DSTADDR = formatAddress(addressType, addressRemote, encoder);
+        const connectRequest = new Uint8Array([
+            SOCKS5_CONSTANTS.VERSION,
+            SOCKS5_CONSTANTS.CMD.CONNECT,
+            0x00,
+            ...DSTADDR,
+            portRemote >> 8,
+            portRemote & 0xff
+        ]);
+
+        await writer.write(connectRequest);
+        log('已发送连接请求');
+
+        // 5. 处理连接响应
+        const connectResponse = (await reader.read()).value;
+        if (connectResponse[1] !== SOCKS5_CONSTANTS.RESPONSE.SUCCESS) {
+            const errorMsg = SOCKS5_ERRORS[connectResponse[1]] || '未知错误';
+            throw new Error(`连接失败: ${errorMsg}`);
+        }
+
+        log('SOCKS5 连接已成功建立');
         return socket;
 
     } catch (error) {
@@ -924,45 +996,61 @@ async function socks5Connect(addressType, addressRemote, portRemote, log = conso
 }
 
 /**
- * 执行 SOCKS5 握手认证
+ * 验证参数
  */
-async function performHandshake(writer, reader, username, password, log) {
-    const socksGreeting = new Uint8Array([
-        SOCKS5_CONSTANTS.VERSION,
-        2, // 支持的认证方法数
-        SOCKS5_CONSTANTS.AUTH.NO_AUTH,
-        SOCKS5_CONSTANTS.AUTH.USER_PASS
-    ]);
-
-    await writer.write(socksGreeting);
-    log('已发送 SOCKS5 问候消息');
-
-    const response = (await reader.read()).value;
-    
-    if (response[0] !== SOCKS5_CONSTANTS.VERSION) {
-        throw new Error(`SOCKS5 服务器版本错误: ${response[0]}`);
+function validateParams(addressType, addressRemote, portRemote) {
+    // 验证端口
+    if (!portRemote || portRemote <= 0 || portRemote > 65535) {
+        throw new Error('无效的端口号');
     }
 
-    if (response[1] === SOCKS5_CONSTANTS.AUTH.NO_ACCEPTABLE) {
-        throw new Error('服务器不接受任何认证方法');
+    // 验证地址类型和地址格式
+    switch (addressType) {
+        case 1: // IPv4
+            if (!isValidIPv4(addressRemote)) {
+                throw new Error('无效的 IPv4 地址');
+            }
+            break;
+        case 2: // 域名
+            if (!isValidDomain(addressRemote)) {
+                throw new Error('无效的域名');
+            }
+            break;
+        case 3: // IPv6
+            if (!isValidIPv6(addressRemote)) {
+                throw new Error('无效的 IPv6 地址');
+            }
+            break;
+        default:
+            throw new Error(`不支持的地址类型: ${addressType}`);
     }
+}
 
-    if (response[1] === SOCKS5_CONSTANTS.AUTH.USER_PASS) {
-        await performUserPassAuth(writer, reader, username, password, log);
-    }
+/**
+ * 带超时的连接函数
+ */
+async function connectWithTimeout(hostname, port) {
+    const connectPromise = connect({
+        hostname,
+        port
+    });
+
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+            reject(new Error('连接超时'));
+        }, SOCKS5_CONSTANTS.TIMEOUT);
+    });
+
+    return Promise.race([connectPromise, timeoutPromise]);
 }
 
 /**
  * 执行用户名密码认证
  */
-async function performUserPassAuth(writer, reader, username, password, log) {
-    if (!username || !password) {
-        throw new Error('需要用户名和密码进行认证');
-    }
-
+async function performAuth(writer, reader, username, password, log) {
     const encoder = new TextEncoder();
     const authRequest = new Uint8Array([
-        0x01,
+        0x01, // 认证协议版本
         username.length,
         ...encoder.encode(username),
         password.length,
@@ -970,9 +1058,9 @@ async function performUserPassAuth(writer, reader, username, password, log) {
     ]);
 
     await writer.write(authRequest);
-    const response = (await reader.read()).value;
+    const authResponse = (await reader.read()).value;
 
-    if (response[0] !== 0x01 || response[1] !== 0x00) {
+    if (authResponse[0] !== 0x01 || authResponse[1] !== 0x00) {
         throw new Error('认证失败');
     }
 
@@ -980,42 +1068,22 @@ async function performUserPassAuth(writer, reader, username, password, log) {
 }
 
 /**
- * 发送连接请求
+ * 格式化地址数据
  */
-async function sendConnectionRequest(writer, addressType, addressRemote, portRemote, log) {
-    const encoder = new TextEncoder();
-    const DSTADDR = formatDestAddress(addressType, addressRemote, encoder);
-    
-    const request = new Uint8Array([
-        SOCKS5_CONSTANTS.VERSION,
-        SOCKS5_CONSTANTS.CMD.CONNECT,
-        0x00,
-        ...DSTADDR,
-        portRemote >> 8,
-        portRemote & 0xff
-    ]);
-
-    await writer.write(request);
-    log('已发送 SOCKS5 连接请求');
-}
-
-/**
- * 格式化目标地址
- */
-function formatDestAddress(addressType, addressRemote, encoder) {
+function formatAddress(addressType, addressRemote, encoder) {
     switch (addressType) {
-        case 1:
+        case 1: // IPv4
             return new Uint8Array([
                 SOCKS5_CONSTANTS.ADDR_TYPE.IPv4,
                 ...addressRemote.split('.').map(Number)
             ]);
-        case 2:
+        case 2: // 域名
             return new Uint8Array([
                 SOCKS5_CONSTANTS.ADDR_TYPE.DOMAIN,
                 addressRemote.length,
                 ...encoder.encode(addressRemote)
             ]);
-        case 3:
+        case 3: // IPv6
             return new Uint8Array([
                 SOCKS5_CONSTANTS.ADDR_TYPE.IPv6,
                 ...addressRemote.split(':').flatMap(x => [
@@ -1023,24 +1091,39 @@ function formatDestAddress(addressType, addressRemote, encoder) {
                     parseInt(x.slice(2), 16)
                 ])
             ]);
-        default:
-            throw new Error(`不支持的地址类型: ${addressType}`);
     }
 }
 
 /**
- * 处理连接响应
+ * 验证 IPv4 地址
  */
-async function handleConnectionResponse(reader, log) {
-    const response = (await reader.read()).value;
-    
-    if (response[1] !== SOCKS5_CONSTANTS.RESPONSE.SUCCESS) {
-        const errorMsg = SOCKS5_ERRORS[response[1]] || '未知错误';
-        throw new Error(`SOCKS5 连接失败: ${errorMsg}`);
-    }
-
-    log('SOCKS5 连接已成功建立');
+function isValidIPv4(ip) {
+    const pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!pattern.test(ip)) return false;
+    return ip.split('.').every(num => {
+        const n = parseInt(num);
+        return n >= 0 && n <= 255;
+    });
 }
+
+/**
+ * 验证域名
+ */
+function isValidDomain(domain) {
+    const pattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](?:\.[a-zA-Z]{2,})+$/;
+    return pattern.test(domain);
+}
+
+/**
+ * 验证 IPv6 地址
+ */
+function isValidIPv6(ip) {
+    const pattern = /^(?:[A-F0-9]{1,4}:){7}[A-F0-9]{1,4}$/i;
+    return pattern.test(ip);
+}
+
+// 导出函数
+export { socks5Connect };
 
 /**
  * SOCKS5 代理地址解析器
