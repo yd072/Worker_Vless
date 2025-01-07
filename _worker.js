@@ -971,11 +971,24 @@ export { base64ToArrayBuffer };
 
 
 /**
+ * 这不是真正的 UUID 验证，而是一个简化的版本
+ * @param {string} uuid 要验证的 UUID 字符串
+ * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
+ */
+function isValidUUID(uuid) {
+	// 定义一个正则表达式来匹配 UUID 格式
+	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+	// 使用正则表达式测试 UUID 字符串
+	return uuidRegex.test(uuid);
+}
+
+/**
  * 常量定义
  */
 const Constants = {
     WS: {
-        READY_STATE: {
+        STATES: {
             CONNECTING: 0,
             OPEN: 1,
             CLOSING: 2,
@@ -985,55 +998,26 @@ const Constants = {
             NORMAL: 1000,
             GOING_AWAY: 1001,
             PROTOCOL_ERROR: 1002,
-            UNSUPPORTED: 1003
+            UNSUPPORTED: 1003,
+            NO_STATUS: 1005,
+            ABNORMAL: 1006
         }
     },
     UUID: {
         VERSION: 4,
-        VARIANT: ['8', '9', 'a', 'b']
+        VARIANTS: ['8', '9', 'a', 'b'],
+        PATTERN: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     },
     HEX: {
-        CHARS: '0123456789abcdef',
+        PATTERN: /^[0-9a-fA-F]+$/,
         BYTE_LENGTH: 256
     }
 };
 
 /**
- * UUID 验证器
- * 支持 UUID v4 格式验证
+ * WebSocket 工具类
  */
-class UUIDValidator {
-    static #uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-    /**
-     * 验证 UUID 字符串
-     * @param {string} uuid - 要验证的 UUID
-     * @returns {boolean} 验证结果
-     */
-    static isValid(uuid) {
-        if (!uuid || typeof uuid !== 'string') {
-            return false;
-        }
-        return UUIDValidator.#uuidRegex.test(uuid);
-    }
-
-    /**
-     * 获取 UUID 版本
-     * @param {string} uuid - UUID 字符串
-     * @returns {number|null} UUID 版本或 null（如果无效）
-     */
-    static getVersion(uuid) {
-        if (!UUIDValidator.isValid(uuid)) {
-            return null;
-        }
-        return parseInt(uuid.charAt(14), 16);
-    }
-}
-
-/**
- * WebSocket 安全管理器
- */
-class WebSocketManager {
+class WebSocketUtils {
     /**
      * 安全关闭 WebSocket 连接
      * @param {WebSocket} socket - WebSocket 实例
@@ -1043,17 +1027,15 @@ class WebSocketManager {
      */
     static safeClose(socket, code = Constants.WS.CLOSE_CODES.NORMAL, reason = 'Normal closure') {
         try {
-            if (!socket) {
+            if (!this.isValid(socket)) {
                 return false;
             }
 
-            const { OPEN, CLOSING } = Constants.WS.READY_STATE;
-            
-            if (socket.readyState === OPEN || socket.readyState === CLOSING) {
+            if (this.canClose(socket)) {
                 socket.close(code, reason);
                 return true;
             }
-            
+
             return false;
         } catch (error) {
             console.error('WebSocket 关闭错误:', error);
@@ -1062,12 +1044,63 @@ class WebSocketManager {
     }
 
     /**
-     * 检查 WebSocket 是否处于活动状态
+     * 检查 WebSocket 是否有效
      * @param {WebSocket} socket - WebSocket 实例
-     * @returns {boolean} 是否活动
+     * @returns {boolean} 是否有效
      */
-    static isActive(socket) {
-        return socket && socket.readyState === Constants.WS.READY_STATE.OPEN;
+    static isValid(socket) {
+        return socket && typeof socket.readyState === 'number';
+    }
+
+    /**
+     * 检查 WebSocket 是否可以关闭
+     * @param {WebSocket} socket - WebSocket 实例
+     * @returns {boolean} 是否可以关闭
+     */
+    static canClose(socket) {
+        const { OPEN, CLOSING } = Constants.WS.STATES;
+        return socket.readyState === OPEN || socket.readyState === CLOSING;
+    }
+}
+
+/**
+ * UUID 工具类
+ */
+class UUIDUtils {
+    /**
+     * 验证 UUID 字符串
+     * @param {string} uuid - UUID 字符串
+     * @returns {boolean} 是否有效
+     */
+    static isValid(uuid) {
+        if (!uuid || typeof uuid !== 'string') {
+            return false;
+        }
+        return Constants.UUID.PATTERN.test(uuid);
+    }
+
+    /**
+     * 获取 UUID 版本
+     * @param {string} uuid - UUID 字符串
+     * @returns {number|null} UUID 版本或 null
+     */
+    static getVersion(uuid) {
+        if (!this.isValid(uuid)) {
+            return null;
+        }
+        return parseInt(uuid.charAt(14), 16);
+    }
+
+    /**
+     * 获取 UUID 变体
+     * @param {string} uuid - UUID 字符串
+     * @returns {string|null} UUID 变体或 null
+     */
+    static getVariant(uuid) {
+        if (!this.isValid(uuid)) {
+            return null;
+        }
+        return uuid.charAt(19).toLowerCase();
     }
 }
 
@@ -1075,30 +1108,36 @@ class WebSocketManager {
  * 十六进制工具类
  */
 class HexUtils {
-    static #byteToHex = new Array(Constants.HEX.BYTE_LENGTH);
-    
-    static {
-        // 预计算字节到十六进制的映射
+    /**
+     * 字节到十六进制的映射表
+     * @type {string[]}
+     */
+    static #byteToHexMap = (() => {
+        const map = new Array(Constants.HEX.BYTE_LENGTH);
         for (let i = 0; i < Constants.HEX.BYTE_LENGTH; ++i) {
-            this.#byteToHex[i] = (i + 0x100).toString(16).slice(1);
+            map[i] = (i + 0x100).toString(16).slice(1);
         }
-    }
+        return map;
+    })();
 
     /**
      * 将字节转换为十六进制字符串
-     * @param {number} byte - 要转换的字节
+     * @param {number} byte - 字节值
      * @returns {string} 十六进制字符串
      */
     static byteToHex(byte) {
-        return this.#byteToHex[byte & 0xFF] || '00';
+        return this.#byteToHexMap[byte & 0xFF] || '00';
     }
 
     /**
      * 将字节数组转换为十六进制字符串
-     * @param {Uint8Array} bytes - 字节数组
+     * @param {Uint8Array|number[]} bytes - 字节数组
      * @returns {string} 十六进制字符串
      */
     static bytesToHex(bytes) {
+        if (!bytes || !bytes.length) {
+            return '';
+        }
         return Array.from(bytes, byte => this.byteToHex(byte)).join('');
     }
 
@@ -1108,7 +1147,7 @@ class HexUtils {
      * @returns {Uint8Array} 字节数组
      */
     static hexToBytes(hex) {
-        if (typeof hex !== 'string' || hex.length % 2) {
+        if (!this.isValidHex(hex)) {
             throw new Error('无效的十六进制字符串');
         }
 
@@ -1118,14 +1157,58 @@ class HexUtils {
         }
         return bytes;
     }
+
+    /**
+     * 验证十六进制字符串
+     * @param {string} hex - 十六进制字符串
+     * @returns {boolean} 是否有效
+     */
+    static isValidHex(hex) {
+        return typeof hex === 'string' && 
+               hex.length % 2 === 0 && 
+               Constants.HEX.PATTERN.test(hex);
+    }
+}
+
+/**
+ * Base64 工具类
+ */
+class Base64Utils {
+    /**
+     * 将 Base64 字符串转换为 ArrayBuffer
+     * @param {string} base64Str - Base64 字符串
+     * @returns {{ earlyData: ArrayBuffer|undefined, error: Error|null }} 结果对象
+     */
+    static toArrayBuffer(base64Str) {
+        if (!base64Str) {
+            return { earlyData: undefined, error: null };
+        }
+
+        try {
+            // 转换 URL 安全的 Base64
+            base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+
+            const binaryStr = atob(base64Str);
+            const bytes = new Uint8Array(binaryStr.length);
+
+            for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+            }
+
+            return { earlyData: bytes.buffer, error: null };
+        } catch (error) {
+            return { earlyData: undefined, error };
+        }
+    }
 }
 
 // 导出
 export {
     Constants,
-    UUIDValidator,
-    WebSocketManager,
-    HexUtils
+    WebSocketUtils,
+    UUIDUtils,
+    HexUtils,
+    Base64Utils
 };
 
 
