@@ -506,37 +506,24 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 
 /**
  * 解析 维列斯 协议的头部数据
- * @param {ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
+ * @param { ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
  * @param {string} userID 用于验证的用户 ID
  * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
  */
 function process维列斯Header(维列斯Buffer, userID) {
-    // 检查数据长度是否足够（至少需要 24 字节）
-    if (维列斯Buffer.byteLength < 24) {
-        return {
-            hasError: true,
-            message: '数据长度不足，无法解析维列斯协议头部',
-        };
-    }
+	// 检查数据长度是否足够（至少需要 24 字节）
+	if (维列斯Buffer.byteLength < 24) {
+		return {
+			hasError: true,
+			message: 'invalid data',
+		};
+	}
 
-    // 解析 维列斯 协议版本（第一个字节）
-    const 维列斯Version = new Uint8Array(维列斯Buffer.slice(0, 1));
+	// 解析 维列斯 协议版本（第一个字节）
+	const version = new Uint8Array(维列斯Buffer.slice(0, 1));
 
-    let isValidUser = false;
-    let isUDP = false;
-
-    // 这里可以添加更多的解析逻辑，例如验证用户 ID，解析地址和端口等
-    // ...
-
-    return {
-        hasError: false,
-        message: '',
-        维列斯Version,
-        isValidUser,
-        isUDP,
-        // 其他解析结果
-    };
-}
+	let isValidUser = false;
+	let isUDP = false;
 
 	// 验证用户 ID（接下来的 16 个字节）
 	function isUserIDValid(userID, userIDLow, buffer) {
