@@ -723,57 +723,145 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
+ * @param {WebSocket} webSocket - WebSocket 连接实例
+ * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯协议的响应头部数据
  * @param {(string)=> void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-	// 无论客户端发送到哪个 DNS 服务器，我们总是使用硬编码的服务器
-	// 因为有些 DNS 服务器不支持 DNS over TCP
-	try {
-		// 选用 Google 的 DNS 服务器（注：后续可能会改为 Cloudflare 的 1.1.1.1）
-		const dnsServer = '8.8.4.4'; // 在 Cloudflare 修复连接自身 IP 的 bug 后，将改为 1.1.1.1
-		const dnsPort = 53; // DNS 服务的标准端口
+async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log = console.log) {
+    // 参数验证
+    if (!udpChunk || !(udpChunk instanceof ArrayBuffer)) {
+        throw new Error('无效的 DNS 查询数据');
+    }
+    if (!webSocket || webSocket.readyState !== WS_READY_STATE_OPEN) {
+        throw new Error('WebSocket 连接无效');
+    }
+    if (udpChunk.byteLength > DNS_CONFIG.MAX_QUERY_LENGTH) {
+        throw new Error('DNS 查询数据超出长度限制');
+    }
 
-		let 维列斯Header = 维列斯ResponseHeader; // 保存 维列斯 响应头部，用于后续发送
+    // 初始化缓存（实际应用中应该是单例的）
+    const dnsCache = new DNSCache();
+    
+    // 检查缓存
+    const cachedResponse = dnsCache.get(udpChunk);
+    if (cachedResponse) {
+        await sendResponse(cachedResponse, webSocket, 维列斯ResponseHeader, log);
+        return;
+    }
 
-		// 与指定的 DNS 服务器建立 TCP 连接
-		const tcpSocket = connect({
-			hostname: dnsServer,
-			port: dnsPort,
-		});
+    let retryCount = 0;
+    let lastError = null;
 
-		log(`连接到 ${dnsServer}:${dnsPort}`); // 记录连接信息
-		const writer = tcpSocket.writable.getWriter();
-		await writer.write(udpChunk); // 将客户端的 DNS 查询数据发送给 DNS 服务器
-		writer.releaseLock(); // 释放写入器，允许其他部分使用
+    while (retryCount < DNS_CONFIG.MAX_RETRIES) {
+        try {
+            const dnsServer = retryCount === 0 ? 
+                DNS_CONFIG.PRIMARY_SERVER : DNS_CONFIG.BACKUP_SERVER;
 
-		// 将从 DNS 服务器接收到的响应数据通过 WebSocket 发送回客户端
-		await tcpSocket.readable.pipeTo(new WritableStream({
-			async write(chunk) {
-				if (webSocket.readyState === WS_READY_STATE_OPEN) {
-					if (维列斯Header) {
-						// 如果有 维列斯 头部，则将其与 DNS 响应数据合并后发送
-						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-						维列斯Header = null; // 头部只发送一次，之后置为 null
-					} else {
-						// 否则直接发送 DNS 响应数据
-						webSocket.send(chunk);
-					}
-				}
-			},
-			close() {
-				log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`); // 记录连接关闭信息
-			},
-			abort(reason) {
-				console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason); // 记录异常中断原因
-			},
-		}));
-	} catch (error) {
-		// 捕获并记录任何可能发生的错误
-		console.error(
-			`handleDNSQuery 函数发生异常，错误信息: ${error.message}`
-		);
-	}
+            const response = await queryDNSServer(
+                dnsServer, 
+                udpChunk, 
+                webSocket, 
+                维列斯ResponseHeader, 
+                log
+            );
+
+            // 缓存响应
+            dnsCache.set(udpChunk, response);
+            return;
+
+        } catch (error) {
+            lastError = error;
+            retryCount++;
+            log(`DNS 查询重试 ${retryCount}/${DNS_CONFIG.MAX_RETRIES}`);
+        }
+    }
+
+    throw new Error(`DNS 查询失败，已重试 ${retryCount} 次。最后错误: ${lastError.message}`);
+}
+
+/**
+ * 向 DNS 服务器发送查询
+ */
+async function queryDNSServer(dnsServer, udpChunk, webSocket, 维列斯ResponseHeader, log) {
+    let tcpSocket = null;
+    let timeoutId = null;
+
+    try {
+        tcpSocket = connect({
+            hostname: dnsServer,
+            port: DNS_CONFIG.PORT,
+        });
+
+        // 设置超时
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => {
+                reject(new Error('DNS 查询超时'));
+            }, DNS_CONFIG.TIMEOUT);
+        });
+
+        log(`连接到 ${dnsServer}:${DNS_CONFIG.PORT}`);
+
+        const writer = tcpSocket.writable.getWriter();
+        await writer.write(udpChunk);
+        writer.releaseLock();
+
+        let response = null;
+        
+        // 处理响应
+        await Promise.race([
+            tcpSocket.readable.pipeTo(new WritableStream({
+                async write(chunk) {
+                    response = chunk;
+                    await sendResponse(chunk, webSocket, 维列斯ResponseHeader, log);
+                },
+                close() {
+                    log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
+                },
+                abort(reason) {
+                    console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
+                },
+            })),
+            timeoutPromise
+        ]);
+
+        return response;
+
+    } catch (error) {
+        console.error(`DNS 查询失败: ${error.message}`, {
+            dnsServer,
+            timestamp: new Date().toISOString(),
+            error
+        });
+        throw error;
+
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+        if (tcpSocket) {
+            try {
+                tcpSocket.close();
+            } catch (error) {
+                console.error('关闭 TCP 连接失败', error);
+            }
+        }
+    }
+}
+
+/**
+ * 发送响应给客户端
+ */
+async function sendResponse(chunk, webSocket, 维列斯ResponseHeader, log) {
+    if (webSocket.readyState === WS_READY_STATE_OPEN) {
+        if (维列斯ResponseHeader) {
+            webSocket.send(await new Blob([维列斯ResponseHeader, chunk]).arrayBuffer());
+            维列斯ResponseHeader = null;
+        } else {
+            webSocket.send(chunk);
+        }
+    } else {
+        log('WebSocket 连接已关闭，无法发送响应');
+    }
 }
 
 /**
