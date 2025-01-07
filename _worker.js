@@ -755,43 +755,40 @@ const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态，可以发送
 const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
 
 function safeCloseWebSocket(socket) {
-	try {
-		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
-		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
-		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-			socket.close();
-		}
-	} catch (error) {
-		// 记录任何可能发生的错误，虽然按照规范不应该有错误
-		console.error('safeCloseWebSocket error', error);
-	}
+    try {
+        // 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
+        if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
+            socket.close();
+        }
+    } catch (error) {
+        // 记录任何可能发生的错误
+        console.error('safeCloseWebSocket error', error);
+    }
 }
 
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
+    // 确保总是得到两位数的十六进制
+    byteToHex.push((i + 256).toString(16).slice(1));
 }
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
- * 这是一个底层函数，直接操作字节，不做任何验证
  * @param {Uint8Array} arr 包含 UUID 字节的数组
  * @param {number} offset 数组中 UUID 开始的位置，默认为 0
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
-	// toLowerCase() 确保整个 UUID 是小写的
-	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
-		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
-		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
-		byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
-		byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
-		byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
+    // 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
+    return (
+        byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
+        byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
+        byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
+        byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
+        byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
+        byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]
+    ).toLowerCase();
 }
 
 /**
