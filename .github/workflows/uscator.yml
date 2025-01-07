@@ -19,24 +19,13 @@ jobs:
         with:
           node-version: "16"
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
       - name: Install dependencies
         run: |
           npm install -g javascript-obfuscator
 
       - name: Check if 节点订阅.js exists
         run: |
-          if [ ! -f "节点订阅.js" ]; then
-            echo "节点订阅.js not found, exiting."
-            exit 1
-          fi
+          ls -alh 节点订阅.js
 
       - name: Obfuscate code
         run: |
@@ -56,19 +45,16 @@ jobs:
 
       - name: Check if _worker.js was generated
         run: |
-          if [ ! -f "_worker.js" ]; then
-            echo "_worker.js not generated, exiting."
-            exit 1
-          fi
+          ls -alh _worker.js
 
       - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git diff --quiet && echo "No changes to commit" || git add _worker.js && git commit -m "Obfuscate _worker.js"
+          git add _worker.js || echo "No changes to commit"
+          git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
 
       - name: Push changes
-        if: success() && steps.commit.outputs.changes
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
