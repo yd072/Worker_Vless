@@ -609,179 +609,131 @@ function process维列斯Header(维列斯Buffer, userID) {
 	let isValidUser = false;
 	let isUDP = false;
 	
-/**
- * 维列斯协议常量
- */
-const 维列斯Protocol = {
-    OFFSETS: {
-        USER_ID_START: 1,
-        USER_ID_LENGTH: 16,
-        OPTIONS_LENGTH: 17,
-        COMMAND_OFFSET: 18
-    },
-    COMMANDS: {
-        TCP: 1,
-        UDP: 2,
-        MUX: 3
-    },
-    ADDRESS_TYPES: {
-        IPv4: 1,
-        DOMAIN: 2,
-        IPv6: 3
-    }
-};
+	// 验证用户 ID（接下来的 16 个字节）
+	function isUserIDValid(userID, userIDLow, buffer) {
+		const userIDArray = new Uint8Array(buffer.slice(1, 17));
+		const userIDString = stringify(userIDArray);
+		return userIDString === userID || userIDString === userIDLow;
+	}
 
-/**
- * 验证用户 ID
- */
-function validateUser(维列斯Buffer, userID, userIDLow) {
-    const { USER_ID_START, USER_ID_LENGTH } = 维列斯Protocol.OFFSETS;
-    const userIDArray = new Uint8Array(维列斯Buffer.slice(USER_ID_START, USER_ID_START + USER_ID_LENGTH));
-    const userIDString = stringify(userIDArray);
-    return userIDString === userID || userIDString === userIDLow;
+	// 使用函数验证
+	isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
+
+	// 如果用户 ID 无效，返回错误
+	if (!isValidUser) {
+		return {
+			hasError: true,
+			message: `invalid user ${(new Uint8Array(维列斯Buffer.slice(1, 17)))}`,
+		};
+	}
+
+	// 获取附加选项的长度（第 17 个字节）
+	const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
+	// 暂时跳过附加选项
+
+	// 解析命令（紧跟在选项之后的 1 个字节）
+	// 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
+	const command = new Uint8Array(
+		维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
+	)[0];
+
+	// 0x01 TCP
+	// 0x02 UDP
+	// 0x03 MUX
+	if (command === 1) {
+		// TCP 命令，不需特殊处理
+	} else if (command === 2) {
+		// UDP 命令
+		isUDP = true;
+	} else {
+		// 不支持的命令
+		return {
+			hasError: true,
+			message: `command ${command} is not support, command 01-tcp,02-udp,03-mux`,
+		};
+	}
+
+	// 解析远程端口（大端序，2 字节）
+	const portIndex = 18 + optLength + 1;
+	const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
+	// port is big-Endian in raw data etc 80 == 0x005d
+	const portRemote = new DataView(portBuffer).getUint16(0);
+
+	// 解析地址类型和地址
+	let addressIndex = portIndex + 2;
+	const addressBuffer = new Uint8Array(
+		维列斯Buffer.slice(addressIndex, addressIndex + 1)
+	);
+
+	// 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
+	const addressType = addressBuffer[0];
+	let addressLength = 0;
+	let addressValueIndex = addressIndex + 1;
+	let addressValue = '';
+
+	switch (addressType) {
+		case 1:
+			// IPv4 地址
+			addressLength = 4;
+			// 将 4 个字节转为点分十进制格式
+			addressValue = new Uint8Array(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+			).join('.');
+			break;
+		case 2:
+			// 域名
+			// 第一个字节是域名长度
+			addressLength = new Uint8Array(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
+			)[0];
+			addressValueIndex += 1;
+			// 解码域名
+			addressValue = new TextDecoder().decode(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+			);
+			break;
+		case 3:
+			// IPv6 地址
+			addressLength = 16;
+			const dataView = new DataView(
+				维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+			);
+			// 每 2 字节构成 IPv6 地址的一部分
+			const ipv6 = [];
+			for (let i = 0; i < 8; i++) {
+				ipv6.push(dataView.getUint16(i * 2).toString(16));
+			}
+			addressValue = ipv6.join(':');
+			// seems no need add [] for ipv6
+			break;
+		default:
+			// 无效的地址类型
+			return {
+				hasError: true,
+				message: `invild addressType is ${addressType}`,
+			};
+	}
+
+	// 确保地址不为空
+	if (!addressValue) {
+		return {
+			hasError: true,
+			message: `addressValue is empty, addressType is ${addressType}`,
+		};
+	}
+
+	// 返回解析结果
+	return {
+		hasError: false,
+		addressRemote: addressValue,  // 解析后的远程地址
+		addressType,				 // 地址类型
+		portRemote,				 // 远程端口
+		rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
+		维列斯Version: version,	  // 维列斯 协议版本
+		isUDP,					 // 是否是 UDP 请求
+	};
 }
 
-/**
- * 解析命令和选项
- */
-function parseCommandAndOptions(维列斯Buffer, optLength) {
-    const commandIndex = 维列斯Protocol.OFFSETS.COMMAND_OFFSET + optLength;
-    const command = new Uint8Array(维列斯Buffer.slice(commandIndex, commandIndex + 1))[0];
-    
-    if (!Object.values(维列斯Protocol.COMMANDS).includes(command)) {
-        throw new Error(`不支持的命令: ${command}`);
-    }
-    
-    return {
-        command,
-        isUDP: command === 维列斯Protocol.COMMANDS.UDP,
-        nextIndex: commandIndex + 1
-    };
-}
-
-/**
- * 解析地址信息
- */
-function parseAddress(维列斯Buffer, startIndex) {
-    const addressType = new Uint8Array(维列斯Buffer.slice(startIndex, startIndex + 1))[0];
-    let addressLength = 0;
-    let addressValueIndex = startIndex + 1;
-    let addressValue = '';
-
-    switch (addressType) {
-        case 维列斯Protocol.ADDRESS_TYPES.IPv4:
-            ({ addressValue, addressLength } = parseIPv4(维列斯Buffer, addressValueIndex));
-            break;
-            
-        case 维列斯Protocol.ADDRESS_TYPES.DOMAIN:
-            ({ addressValue, addressLength, addressValueIndex } = parseDomain(维列斯Buffer, addressValueIndex));
-            break;
-            
-        case 维列斯Protocol.ADDRESS_TYPES.IPv6:
-            ({ addressValue, addressLength } = parseIPv6(维列斯Buffer, addressValueIndex));
-            break;
-            
-        default:
-            throw new Error(`无效的地址类型: ${addressType}`);
-    }
-
-    if (!addressValue) {
-        throw new Error(`地址解析失败: ${addressType}`);
-    }
-
-    return {
-        addressType,
-        addressValue,
-        addressLength,
-        nextIndex: addressValueIndex + addressLength
-    };
-}
-
-/**
- * 解析 IPv4 地址
- */
-function parseIPv4(buffer, startIndex) {
-    const addressLength = 4;
-    const addressValue = new Uint8Array(buffer.slice(startIndex, startIndex + addressLength))
-        .join('.');
-    return { addressValue, addressLength };
-}
-
-/**
- * 解析域名
- */
-function parseDomain(buffer, startIndex) {
-    const lengthByte = new Uint8Array(buffer.slice(startIndex, startIndex + 1))[0];
-    const addressValueIndex = startIndex + 1;
-    const addressValue = new TextDecoder().decode(
-        buffer.slice(addressValueIndex, addressValueIndex + lengthByte)
-    );
-    return { 
-        addressValue, 
-        addressLength: lengthByte,
-        addressValueIndex 
-    };
-}
-
-/**
- * 解析 IPv6 地址
- */
-function parseIPv6(buffer, startIndex) {
-    const addressLength = 16;
-    const dataView = new DataView(buffer.slice(startIndex, startIndex + addressLength));
-    const ipv6 = Array.from({ length: 8 }, (_, i) => 
-        dataView.getUint16(i * 2).toString(16)
-    ).join(':');
-    return { addressValue: ipv6, addressLength };
-}
-
-/**
- * 主解析函数
- */
-function process维列斯Header(维列斯Buffer, userID) {
-    try {
-        // 验证用户
-        if (!validateUser(维列斯Buffer, userID, userIDLow)) {
-            return createError(`无效用户: ${new Uint8Array(维列斯Buffer.slice(1, 17))}`);
-        }
-
-        // 获取选项长度
-        const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
-
-        // 解析命令
-        const { command, isUDP, nextIndex } = parseCommandAndOptions(维列斯Buffer, optLength);
-
-        // 解析端口
-        const portBuffer = 维列斯Buffer.slice(nextIndex, nextIndex + 2);
-        const portRemote = new DataView(portBuffer).getUint16(0);
-
-        // 解析地址
-        const addressResult = parseAddress(维列斯Buffer, nextIndex + 2);
-
-        return {
-            hasError: false,
-            addressRemote: addressResult.addressValue,
-            addressType: addressResult.addressType,
-            portRemote,
-            rawDataIndex: addressResult.nextIndex,
-            维列斯Version: new Uint8Array(维列斯Buffer.slice(0, 1)),
-            isUDP
-        };
-
-    } catch (error) {
-        return createError(error.message);
-    }
-}
-
-/**
- * 创建错误响应
- */
-function createError(message) {
-    return {
-        hasError: true,
-        message
-    };
-}
 
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
 	// 将数据从远程服务器转发到 WebSocket
