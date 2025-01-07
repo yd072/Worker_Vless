@@ -971,42 +971,163 @@ export { base64ToArrayBuffer };
 
 
 /**
- * 这不是真正的 UUID 验证，而是一个简化的版本
- * @param {string} uuid 要验证的 UUID 字符串
- * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
+ * 常量定义
  */
-function isValidUUID(uuid) {
-	// 定义一个正则表达式来匹配 UUID 格式
-	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const Constants = {
+    WS: {
+        READY_STATE: {
+            CONNECTING: 0,
+            OPEN: 1,
+            CLOSING: 2,
+            CLOSED: 3
+        },
+        CLOSE_CODES: {
+            NORMAL: 1000,
+            GOING_AWAY: 1001,
+            PROTOCOL_ERROR: 1002,
+            UNSUPPORTED: 1003
+        }
+    },
+    UUID: {
+        VERSION: 4,
+        VARIANT: ['8', '9', 'a', 'b']
+    },
+    HEX: {
+        CHARS: '0123456789abcdef',
+        BYTE_LENGTH: 256
+    }
+};
 
-	// 使用正则表达式测试 UUID 字符串
-	return uuidRegex.test(uuid);
+/**
+ * UUID 验证器
+ * 支持 UUID v4 格式验证
+ */
+class UUIDValidator {
+    static #uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    /**
+     * 验证 UUID 字符串
+     * @param {string} uuid - 要验证的 UUID
+     * @returns {boolean} 验证结果
+     */
+    static isValid(uuid) {
+        if (!uuid || typeof uuid !== 'string') {
+            return false;
+        }
+        return UUIDValidator.#uuidRegex.test(uuid);
+    }
+
+    /**
+     * 获取 UUID 版本
+     * @param {string} uuid - UUID 字符串
+     * @returns {number|null} UUID 版本或 null（如果无效）
+     */
+    static getVersion(uuid) {
+        if (!UUIDValidator.isValid(uuid)) {
+            return null;
+        }
+        return parseInt(uuid.charAt(14), 16);
+    }
 }
 
-// WebSocket 的两个重要状态常量
-const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
-const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
+/**
+ * WebSocket 安全管理器
+ */
+class WebSocketManager {
+    /**
+     * 安全关闭 WebSocket 连接
+     * @param {WebSocket} socket - WebSocket 实例
+     * @param {number} [code=1000] - 关闭代码
+     * @param {string} [reason='Normal closure'] - 关闭原因
+     * @returns {boolean} 是否成功关闭
+     */
+    static safeClose(socket, code = Constants.WS.CLOSE_CODES.NORMAL, reason = 'Normal closure') {
+        try {
+            if (!socket) {
+                return false;
+            }
 
-function safeCloseWebSocket(socket) {
-	try {
-		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
-		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
-		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-			socket.close();
-		}
-	} catch (error) {
-		// 记录任何可能发生的错误，虽然按照规范不应该有错误
-		console.error('safeCloseWebSocket error', error);
-	}
+            const { OPEN, CLOSING } = Constants.WS.READY_STATE;
+            
+            if (socket.readyState === OPEN || socket.readyState === CLOSING) {
+                socket.close(code, reason);
+                return true;
+            }
+            
+            return false;
+        } catch (error) {
+            console.error('WebSocket 关闭错误:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 检查 WebSocket 是否处于活动状态
+     * @param {WebSocket} socket - WebSocket 实例
+     * @returns {boolean} 是否活动
+     */
+    static isActive(socket) {
+        return socket && socket.readyState === Constants.WS.READY_STATE.OPEN;
+    }
 }
 
-// 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
+/**
+ * 十六进制工具类
+ */
+class HexUtils {
+    static #byteToHex = new Array(Constants.HEX.BYTE_LENGTH);
+    
+    static {
+        // 预计算字节到十六进制的映射
+        for (let i = 0; i < Constants.HEX.BYTE_LENGTH; ++i) {
+            this.#byteToHex[i] = (i + 0x100).toString(16).slice(1);
+        }
+    }
+
+    /**
+     * 将字节转换为十六进制字符串
+     * @param {number} byte - 要转换的字节
+     * @returns {string} 十六进制字符串
+     */
+    static byteToHex(byte) {
+        return this.#byteToHex[byte & 0xFF] || '00';
+    }
+
+    /**
+     * 将字节数组转换为十六进制字符串
+     * @param {Uint8Array} bytes - 字节数组
+     * @returns {string} 十六进制字符串
+     */
+    static bytesToHex(bytes) {
+        return Array.from(bytes, byte => this.byteToHex(byte)).join('');
+    }
+
+    /**
+     * 将十六进制字符串转换为字节数组
+     * @param {string} hex - 十六进制字符串
+     * @returns {Uint8Array} 字节数组
+     */
+    static hexToBytes(hex) {
+        if (typeof hex !== 'string' || hex.length % 2) {
+            throw new Error('无效的十六进制字符串');
+        }
+
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < hex.length; i += 2) {
+            bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+        }
+        return bytes;
+    }
 }
+
+// 导出
+export {
+    Constants,
+    UUIDValidator,
+    WebSocketManager,
+    HexUtils
+};
+
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
