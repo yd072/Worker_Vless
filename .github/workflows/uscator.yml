@@ -54,13 +54,6 @@ jobs:
           --transform-object-keys true \
           --unicode-escape-sequence true
 
-      - name: Check if _worker.js was generated
-        run: |
-          if [ ! -f "_worker.js" ]; then
-            echo "_worker.js not generated, exiting."
-            exit 1
-          fi
-
       - name: Check for changes
         id: changes
         run: |
