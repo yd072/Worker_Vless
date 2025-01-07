@@ -656,28 +656,27 @@ function isValidUUID(uuid) {
 }
 
 // WebSocket 的两个重要状态常量
-const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
-const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
+const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态
+const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
 
+/**
+ * 安全关闭 WebSocket
+ * @param {WebSocket} socket 要关闭的 WebSocket 实例
+ */
 function safeCloseWebSocket(socket) {
-	try {
-		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
-		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
-		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-			socket.close();
-		}
-	} catch (error) {
-		// 记录任何可能发生的错误，虽然按照规范不应该有错误
-		console.error('safeCloseWebSocket error', error);
-	}
+    try {
+        // 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
+        if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
+            socket.close();
+        }
+    } catch (error) {
+        // 记录任何可能发生的错误
+        console.error('safeCloseWebSocket error', error);
+    }
 }
 
 // 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-	// (i + 256).toString(16) 确保总是得到两位数的十六进制
-	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
-	byteToHex.push((i + 256).toString(16).slice(1));
+const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 }
 
 /**
