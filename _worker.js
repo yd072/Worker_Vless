@@ -435,70 +435,15 @@ function createConnectionLimiter(maxConnections = 100) {
     };
 }
 
-/**
- * 处理 TCP 出站连接
- * @param {Object} remoteSocket - 远程 Socket 包装器
- * @param {string} addressType - 地址类型
- * @param {string} addressRemote - 远程地址
- * @param {number} portRemote - 远程端口
- * @param {Uint8Array} rawClientData - 原始客户端数据
- * @param {WebSocket} webSocket - WebSocket 实例
- * @param {Uint8Array} 维列斯ResponseHeader - 响应头
- * @param {Function} log - 日志函数
- */
-async function handleTCPOutBound(
-    remoteSocket, 
-    addressType, 
-    addressRemote, 
-    portRemote, 
-    rawClientData, 
-    webSocket, 
-    维列斯ResponseHeader, 
-    log
-) {
-    // 缓存解码后的常用值
-    const ALL_IN = atob('YWxsIGlu');
-    const WILDCARD = atob('Kg==');
-    
-    // 使用 Map 缓存编译后的正则表达式
-    const regexCache = new Map();
-
-    /**
-     * 检查地址是否使用 Socks5 模式
-     * @param {string} address - 要检查的地址
-     * @returns {boolean} - 是否使用 Socks5
-     */
-    async function useSocks5Pattern(address) {
-        // 快速路径：检查通配符
-        if (go2Socks5s.includes(ALL_IN) || go2Socks5s.includes(WILDCARD)) {
-            return true;
-        }
-
-        // 遍历模式匹配
-        return go2Socks5s.some(pattern => {
-            // 从缓存获取正则表达式
-            let regex = regexCache.get(pattern);
-            if (!regex) {
-                // 如果缓存中没有，创建新的正则表达式并缓存
-                const regexPattern = pattern.replace(/\*/g, '.*');
-                regex = new RegExp(`^${regexPattern}$`, 'i');
-                regexCache.set(pattern, regex);
-            }
-            return regex.test(address);
-        });
-    }
-
-    try {
-        const useSocks5 = await useSocks5Pattern(addressRemote);
-        // TODO: 实现后续的 TCP 连接逻辑
-        
-        return useSocks5;
-    } catch (error) {
-        log('TCP 出站连接错误', error.message);
-        webSocket.close(1011, 'TCP 连接失败');
-        throw error;
-    }
-}
+async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
+	async function useSocks5Pattern(address) {
+		if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
+		return go2Socks5s.some(pattern => {
+			let regexPattern = pattern.replace(/\*/g, '.*');
+			let regex = new RegExp(`^${regexPattern}$`, 'i');
+			return regex.test(address);
+		});
+	}
 
 	async function connectAndWrite(address, port, socks = false) {
 		log(`connected to ${address}:${port}`);
