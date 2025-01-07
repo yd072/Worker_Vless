@@ -1213,18 +1213,28 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			];
 
 			// 生成符合给定 CIDR 范围的随机 IP 地址
-			function generateRandomIPFromCIDR(cidr) {
-				const [base, mask] = cidr.split('/');
-				const baseIP = base.split('.').map(Number);
-				const subnetMask = 32 - parseInt(mask, 10);
-				const maxHosts = Math.pow(2, subnetMask) - 1;
-				const randomHost = Math.floor(Math.random() * maxHosts);
+function generateRandomIPFromCIDR(cidr) {
+    const [base, mask] = cidr.split('/');
+    const baseIP = base.split('.').map(Number);
+    const subnetMask = 32 - parseInt(mask, 10);
+    const maxHosts = Math.pow(2, subnetMask) - 1;
+    const randomHost = Math.floor(Math.random() * maxHosts);
 
-				const randomIP = baseIP.map((octet, index) => {
-					if (index < 2) return octet;
-					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-					return (octet & (255 << subnetMask)) + (randomHost & 255);
-				});
+    const randomIP = baseIP.map((octet, index) => {
+        if (index < 3) {
+            // 对前三个字节进行处理
+            if (index === 2) {
+                // 第三个字节需要考虑子网掩码
+                return (octet & (255 << (8 - (subnetMask % 8)))) + ((randomHost >> 8) & 255);
+            }
+            return octet;
+        }
+        // 最后一个字节
+        return (octet & (255 << subnetMask)) + (randomHost & 255);
+    });
+
+    return randomIP.join('.');
+}
 
 				return randomIP.join('.');
 			}
