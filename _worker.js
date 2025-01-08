@@ -794,13 +794,11 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
     const { username, password, hostname, port } = parsedSocks5Address;
 
     try {
-        // 连接到 SOCKS5 代理服务器
         const socket = connect({
-            hostname, // SOCKS5 服务器的主机名
-            port,     // SOCKS5 服务器的端口
+            hostname,
+            port,
         });
 
-        // 发送 SOCKS5 问候消息
         const socksGreeting = new Uint8Array([5, 2, 0, 2]);
         const writer = socket.writable.getWriter();
         await writer.write(socksGreeting);
@@ -810,7 +808,6 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
         const encoder = new TextEncoder();
         let res = (await reader.read()).value;
 
-        // 检查 SOCKS5 服务器响应
         if (res[0] !== 0x05) {
             log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
             return;
@@ -820,7 +817,6 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
             return;
         }
 
-        // 处理用户名/密码认证
         if (res[1] === 0x02) {
             log("SOCKS5 服务器需要认证");
             if (!username || !password) {
@@ -828,11 +824,11 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
                 return;
             }
             const authRequest = new Uint8Array([
-                1,                    // 认证子协议版本
-                username.length,      // 用户名长度
-                ...encoder.encode(username), // 用户名
-                password.length,      // 密码长度
-                ...encoder.encode(password)  // 密码
+                1,
+                username.length,
+                ...encoder.encode(username),
+                password.length,
+                ...encoder.encode(password)
             ]);
             await writer.write(authRequest);
             res = (await reader.read()).value;
@@ -842,17 +838,19 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
             }
         }
 
-        // 构建并发送 SOCKS5 请求
         let DSTADDR;
         switch (addressType) {
-            case 1: // IPv4
+            case 1:
                 DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
                 break;
-            case 2: // 域名
+            case 2:
                 DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
                 break;
-            case 3: // IPv6
-                DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]);
+            case 3:
+                DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => {
+                    const part = parseInt(x, 16);
+                    return [(part >> 8) & 0xff, part & 0xff];
+                })]);
                 break;
             default:
                 log(`无效的地址类型: ${addressType}`);
@@ -866,7 +864,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
         if (res[1] === 0x00) {
             log("SOCKS5 连接已建立");
         } else {
-            log("SOCKS5 连接建立失败");
+            log(`SOCKS5 连接建立失败，错误码: ${res[1]}`);
             return;
         }
 
@@ -881,21 +879,13 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
 
 /**
  * SOCKS5 代理地址解析器
- * 此函数用于解析 SOCKS5 代理地址字符串，提取出用户名、密码、主机名和端口号
- * 
- * @param {string} address SOCKS5 代理地址，格式可以是：
- *   - "username:password@hostname:port" （带认证）
- *   - "hostname:port" （不需认证）
- *   - "username:password@[ipv6]:port" （IPv6 地址需要用方括号括起来）
+ * @param {string} address SOCKS5 代理地址
  * @returns {Object} 包含解析后的用户名、密码、主机名和端口号
  */
 function socks5AddressParser(address) {
-    // 使用 "@" 分割地址，分为认证部分和服务器地址部分
-    // reverse() 是为了处理没有认证信息的情况，确保 latter 总是包含服务器地址
     let [latter, former] = address.split("@").reverse();
     let username, password, hostname, port;
 
-    // 如果存在 former 部分，说明提供了认证信息
     if (former) {
         const formers = former.split(":");
         if (formers.length !== 2) {
@@ -904,30 +894,24 @@ function socks5AddressParser(address) {
         [username, password] = formers;
     }
 
-    // 解析服务器地址部分
     const latters = latter.split(":");
-    // 从末尾提取端口号（因为 IPv6 地址中也包含冒号）
     port = Number(latters.pop());
     if (isNaN(port)) {
         throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
     }
 
-    // 剩余部分就是主机名（可能是域名、IPv4 或 IPv6 地址）
     hostname = latters.join(":");
 
-    // 处理 IPv6 地址的特殊情况
-    // IPv6 地址包含多个冒号，所以必须用方括号括起来，如 [2001:db8::1]
     const ipv6Regex = /^\[.*\]$/;
     if (hostname.includes(":") && !ipv6Regex.test(hostname)) {
         throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
     }
 
-    // 返回解析后的结果
     return {
-        username,  // 用户名，如果没有则为 undefined
-        password,  // 密码，如果没有则为 undefined
-        hostname,  // 主机名，可以是域名、IPv4 或 IPv6 地址
-        port,      // 端口号，已转换为数字类型
+        username,
+        password,
+        hostname,
+        port,
     };
 }
 
