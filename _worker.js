@@ -1040,14 +1040,6 @@ async function 双重哈希(文本) {
     }
 }
 
-/**
- * 代理URL函数
- * 通过从代理网址列表中随机选择一个网址来构建新的请求
- * 
- * @param {string} 代理网址 - 用于代理的基础网址
- * @param {URL} 目标网址 - 目标网址对象
- * @returns {Promise<Response>} 返回新的响应对象
- */
 async function 代理URL(代理网址, 目标网址) {
     try {
         const 网址列表 = await 整理(代理网址);
@@ -1067,7 +1059,12 @@ async function 代理URL(代理网址, 目标网址) {
         if (!路径名.endsWith('/')) {
             路径名 += '/';
         }
-        路径名 += 目标网址.pathname.replace(/^\//, '');
+
+        // 确保目标网址路径没有以斜杠开头
+        let 目标路径 = 目标网址.pathname.replace(/^\//, '');
+
+        // 拼接路径
+        路径名 += 目标路径;
 
         // 构建新的 URL
         const 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
