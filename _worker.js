@@ -1712,10 +1712,8 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
         const 新数据 = await env.KV.get(txt);
 
         if (旧数据 && !新数据) {
-            // 写入新位置
-            await env.KV.put(txt, 旧数据);
-            // 删除旧数据
-            await env.KV.delete(`/${txt}`);
+            await env.KV.put(txt, 旧数据); // 写入新位置
+            await env.KV.delete(`/${txt}`); // 删除旧数据
             return true;
         }
         return false;
