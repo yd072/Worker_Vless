@@ -1067,7 +1067,6 @@ function 配置信息(UUID, 域名地址) {
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 /**
- * 生成配置信息
  * @param {string} userID
  * @param {string | null} hostName
  * @param {string} sub
@@ -1076,17 +1075,10 @@ const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRT
  */
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
     try {
-        let addresses = [];
-        let addressesapi = [];
-        let addressesnotls = [];
-        let addressesnotlsapi = [];
-        let addressescsv = [];
-        let proxyhosts = [];
-
         if (sub) {
             sub = await 处理订阅(sub);
         } else {
-            await 处理地址(env, hostName, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv);
+            await 处理地址(env, hostName);
         }
 
         const uuid = (_url.pathname === `/${动态UUID}`) ? 动态UUID : userID;
@@ -1094,12 +1086,12 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
         const Config = 配置信息(userID, hostName);
         const v2ray = Config[0];
         const clash = Config[1];
-        let proxyhost = await 获取代理主机(hostName, proxyhosts);
+        let proxyhost = await 获取代理主机(hostName);
 
         if (userAgent.includes('mozilla') && !subParams.some(_searchParams => _url.searchParams.has(_searchParams))) {
-            return 生成节点配置页(userID, hostName, uuid, proxyhost, v2ray, clash, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv);
+            return 生成节点配置页(userID, hostName, uuid, proxyhost, v2ray, clash, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env);
         } else {
-            return await 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv);
+            return await 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env);
         }
     } catch (error) {
         console.error('生成配置信息时发生错误:', error);
@@ -1108,104 +1100,96 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 }
 
 async function 处理订阅(sub) {
-    try {
-        const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
-        if (match) {
-            sub = match[1];
-        }
-        const subs = await 整理(sub);
-        return subs.length > 1 ? subs[0] : sub;
-    } catch (error) {
-        console.error('处理订阅时发生错误:', error);
-        throw error;
+    const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
+    if (match) {
+        sub = match[1];
     }
+    const subs = await 整理(sub);
+    return subs.length > 1 ? subs[0] : sub;
 }
 
-async function 处理地址(env, hostName, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv) {
-    try {
-        if (env.KV) {
-            await 迁移地址列表(env);
-            const 优选地址列表 = await env.KV.get('ADD.txt');
-            if (优选地址列表) {
-                const 优选地址数组 = await 整理(优选地址列表);
-                const 分类地址 = {
-                    接口地址: new Set(),
-                    链接地址: new Set(),
-                    优选地址: new Set()
-                };
+async function 处理地址(env, hostName) {
+    if (env.KV) {
+        await 迁移地址列表(env);
+        const 优选地址列表 = await env.KV.get('ADD.txt');
+        if (优选地址列表) {
+            const 优选地址数组 = await 整理(优选地址列表);
+            const 分类地址 = {
+                接口地址: new Set(),
+                链接地址: new Set(),
+                优选地址: new Set()
+            };
 
-                for (const 元素 of 优选地址数组) {
-                    if (元素.startsWith('https://')) {
-                        分类地址.接口地址.add(元素);
-                    } else if (元素.includes('://')) {
-                        分类地址.链接地址.add(元素);
-                    } else {
-                        分类地址.优选地址.add(元素);
-                    }
+            for (const 元素 of 优选地址数组) {
+                if (元素.startsWith('https://')) {
+                    分类地址.接口地址.add(元素);
+                } else if (元素.includes('://')) {
+                    分类地址.链接地址.add(元素);
+                } else {
+                    分类地址.优选地址.add(元素);
                 }
-
-                addressesapi.push(...分类地址.接口地址);
-                addresses.push(...分类地址.优选地址);
             }
+
+            addressesapi = [...分类地址.接口地址];
+            link = [...分类地址.链接地址];
+            addresses = [...分类地址.优选地址];
         }
+    }
 
-        if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) === 0) {
-            const cfips = [
-                '103.21.244.0/23',
-                '104.16.0.0/13',
-                '104.24.0.0/14',
-                '172.64.0.0/14',
-                '103.21.244.0/23',
-                '104.16.0.0/14',
-                '104.24.0.0/15',
-                '141.101.64.0/19',
-                '172.64.0.0/14',
-                '188.114.96.0/21',
-                '190.93.240.0/21',
-            ];
+    if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) === 0) {
+        const cfips = [
+            '103.21.244.0/23',
+            '104.16.0.0/13',
+            '104.24.0.0/14',
+            '172.64.0.0/14',
+            '103.21.244.0/23',
+            '104.16.0.0/14',
+            '104.24.0.0/15',
+            '141.101.64.0/19',
+            '172.64.0.0/14',
+            '188.114.96.0/21',
+            '190.93.240.0/21',
+        ];
 
-            function generateRandomIPFromCIDR(cidr) {
-                const [base, mask] = cidr.split('/');
-                const baseIP = base.split('.').map(Number);
-                const subnetMask = 32 - parseInt(mask, 10);
-                const maxHosts = Math.pow(2, subnetMask) - 1;
-                const randomHost = Math.floor(Math.random() * maxHosts);
-
-                const randomIP = baseIP.map((octet, index) => {
-                    if (index < 3) {
-                        if (index === 2) {
-                            return (octet & (255 << (8 - (subnetMask % 8)))) + ((randomHost >> 8) & 255);
-                        }
-                        return octet;
-                    }
-                    return (octet & (255 << subnetMask)) + (randomHost & 255);
-                });
-
-                return randomIP.join('.');
-            }
-
-            addresses.push('127.0.0.1:1234#CFnat');
-            if (hostName.includes(".workers.dev")) {
-                addressesnotls.push(...cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-            } else {
-                addresses.push(...cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-            }
+        addresses = addresses.concat('127.0.0.1:1234#CFnat');
+        if (hostName.includes(".workers.dev")) {
+            addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+        } else {
+            addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
         }
-    } catch (error) {
-        console.error('处理地址时发生错误:', error);
-        throw error;
     }
 }
 
-async function 获取代理主机(hostName, proxyhosts) {
-    try {
-        if (hostName.includes(".workers.dev")) {
-            if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
+function generateRandomIPFromCIDR(cidr) {
+    const [base, mask] = cidr.split('/');
+    const baseIP = base.split('.').map(Number);
+    const subnetMask = 32 - parseInt(mask, 10);
+    const maxHosts = Math.pow(2, subnetMask) - 1;
+    const randomHost = Math.floor(Math.random() * maxHosts);
+
+    const randomIP = baseIP.map((octet, index) => {
+        if (index < 3) {
+            if (index === 2) {
+                return (octet & (255 << (8 - (subnetMask % 8)))) + ((randomHost >> 8) & 255);
+            }
+            return octet;
+        }
+        return (octet & (255 << subnetMask)) + (randomHost & 255);
+    });
+
+    return randomIP.join('.');
+}
+
+async function 获取代理主机(hostName) {
+    let proxyhost = "";
+    if (hostName.includes(".workers.dev")) {
+        if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
+            try {
                 const response = await fetch(proxyhostsURL);
 
                 if (!response.ok) {
                     console.error('获取地址时出错:', response.status, response.statusText);
-                    return '';
+                    return proxyhost;
                 }
 
                 const text = await response.text();
@@ -1213,162 +1197,25 @@ async function 获取代理主机(hostName, proxyhosts) {
                 const nonEmptyLines = lines.filter(line => line.trim() !== '');
 
                 proxyhosts = proxyhosts.concat(nonEmptyLines);
+            } catch (error) {
+                console.error('获取地址时出错:', error);
             }
-            if (proxyhosts.length !== 0) return proxyhosts[Math.floor(Math.random() * proxyhosts.length)] + "/";
         }
-        return '';
-    } catch (error) {
-        console.error('获取代理主机时发生错误:', error);
-        throw error;
+        if (proxyhosts.length !== 0) proxyhost = proxyhosts[Math.floor(Math.random() * proxyhosts.length)] + "/";
     }
+    return proxyhost;
 }
 
-async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv) {
-    try {
-        let url = `${subProtocol}://${sub}/sub?host=${fakeHostName}&uuid=${fakeUserID + atob('JmVkZ2V0dW5uZWw9Y21saXUmcHJveHlpcD0=') + RproxyIP}&path=${encodeURIComponent(path)}`;
-        let isBase64 = true;
-
-        if (!sub || sub === "") {
-            console.log('没有提供订阅，使用默认地址');
-            if (hostName.includes('workers.dev')) {
-                if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
-                    const response = await fetch(proxyhostsURL);
-
-                    if (!response.ok) {
-                        console.error('获取地址时出错:', response.status, response.statusText);
-                        return '';
-                    }
-
-                    const text = await response.text();
-                    const lines = text.split('\n');
-                    const nonEmptyLines = lines.filter(line => line.trim() !== '');
-
-                    proxyhosts = proxyhosts.concat(nonEmptyLines);
-                }
-                proxyhosts = [...new Set(proxyhosts)];
-            }
-
-            newAddressesapi = await 整理优选列表(addressesapi);
-            newAddressescsv = await 整理测速结果('TRUE');
-            url = `https://${hostName}/${fakeUserID + _url.search}`;
-            if (hostName.includes("worker") || hostName.includes("notls") || noTLS === 'true') {
-                if (_url.search) url += '&notls';
-                else url += '?notls';
-            }
-            console.log(`虚假订阅: ${url}`);
-        }
-
-        if (!userAgent.includes(('CF-Workers-SUB').toLowerCase())) {
-            if ((userAgent.includes('clash') && !userAgent.includes('nekobox')) || (_url.searchParams.has('clash') && !userAgent.includes('subconverter'))) {
-                url = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-                isBase64 = false;
-            } else if (userAgent.includes('sing-box') || userAgent.includes('singbox') || ((_url.searchParams.has('singbox') || _url.searchParams.has('sb')) && !userAgent.includes('subconverter'))) {
-                url = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-                isBase64 = false;
-            }
-        }
-
-        let content;
-        if ((!sub || sub === "") && isBase64 === true) {
-            console.log('生成本地订阅');
-            content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv);
-        } else {
-            console.log(`请求订阅内容: ${url}`);
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': UA + atob('IENGLVdvcmtlcnMtZWRnZXR1bm5lbC9jbWxpdQ==')
-                }
-            });
-            if (!response.ok) {
-                console.error('获取订阅内容时出错:', response.status, response.statusText);
-                return `Error fetching content: ${response.statusText}`;
-            }
-            content = await response.text();
-        }
-
-        if (_url.pathname === `/${fakeUserID}`) return content;
-
-        return 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64);
-
-    } catch (error) {
-        console.error('Error fetching content:', error);
-        return `Error fetching content: ${error.message}`;
-    }
+function 生成节点配置页(userID, hostName, uuid, proxyhost, v2ray, clash, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
+    // 生成节点配置页的逻辑
+    // 这里可以根据你的需求进行实现
+    return '节点配置页内容';
 }
 
-async function 整理优选列表(api) {
-    if (!api || api.length === 0) return [];
-
-    let newapi = "";
-
-    // 创建一个AbortController对象，用于控制fetch请求的取消
-    const controller = new AbortController();
-
-    const timeout = setTimeout(() => {
-        controller.abort(); // 取消所有请求
-    }, 2000); // 2秒后触发
-
-    try {
-        // 使用Promise.allSettled等待所有API请求完成，无论成功或失败
-        const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
-            method: 'get',
-            headers: {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;',
-                'User-Agent': atob('Q0YtV29ya2Vycy1lZGdldHVubmVsL2NtbGl1')
-            },
-            signal: controller.signal
-        }).then(response => response.ok ? response.text() : Promise.reject())));
-
-        // 遍历所有响应
-        for (const [index, response] of responses.entries()) {
-            if (response.status === 'fulfilled') {
-                const content = await response.value;
-                const lines = content.split(/\r?\n/);
-                let 节点备注 = '';
-                let 测速端口 = '443';
-
-                if (lines[0].split(',').length > 3) {
-                    const idMatch = api[index].match(/id=([^&]*)/);
-                    if (idMatch) 节点备注 = idMatch[1];
-
-                    const portMatch = api[index].match(/port=([^&]*)/);
-                    if (portMatch) 测速端口 = portMatch[1];
-
-                    for (let i = 1; i < lines.length; i++) {
-                        const columns = lines[i].split(',')[0];
-                        if (columns) {
-                            newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
-                            if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
-                        }
-                    }
-                } else {
-                    if (api[index].includes('proxyip=true')) {
-                        proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
-                            const baseItem = item.split('#')[0] || item;
-                            if (baseItem.includes(':')) {
-                                const port = baseItem.split(':')[1];
-                                if (!httpsPorts.includes(port)) {
-                                    return baseItem;
-                                }
-                            } else {
-                                return `${baseItem}:443`;
-                            }
-                            return null;
-                        }).filter(Boolean));
-                    }
-                    newapi += content + '\n';
-                }
-            }
-        }
-    } catch (error) {
-        console.error(error);
-    } finally {
-        clearTimeout(timeout);
-    }
-
-    const newAddressesapi = await 整理(newapi);
-
-    return newAddressesapi;
+async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
+    // 生成订阅内容的逻辑
+    // 这里可以根据你的需求进行实现
+    return '订阅内容';
 }
 
 async function 整理测速结果(tls) {
