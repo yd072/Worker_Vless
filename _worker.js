@@ -501,7 +501,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
  * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
  */
 function process维列斯Header(维列斯Buffer, userID) {
-    // 检查数据长度是否足够（至少需要 24 字节）
     if (维列斯Buffer.byteLength < 24) {
         return {
             hasError: true,
@@ -509,95 +508,57 @@ function process维列斯Header(维列斯Buffer, userID) {
         };
     }
 
-    // 解析 维列斯 协议版本（第一个字节）
     const 维列斯Version = new Uint8Array(维列斯Buffer.slice(0, 1));
+    const userIDArray = new Uint8Array(维列斯Buffer.slice(1, 17));
+    const userIDString = stringify(userIDArray);
+    const isValidUser = userIDString === userID || userIDString === userIDLow;
 
-    let isValidUser = false;
-    let isUDP = false;
-
-    // 验证用户 ID（接下来的 16 个字节）
-    function isUserIDValid(userID, userIDLow, buffer) {
-        const userIDArray = new Uint8Array(buffer.slice(1, 17));
-        const userIDString = stringify(userIDArray);
-        return userIDString === userID || userIDString === userIDLow;
-    }
-
-    // 使用函数验证
-    isValidUser = isUserIDValid(userID, userIDLow, 维列斯Buffer);
-
-    // 如果用户 ID 无效，返回错误
     if (!isValidUser) {
         return {
             hasError: true,
-            message: `无效的用户 ID: ${(new Uint8Array(维列斯Buffer.slice(1, 17)))}`,
+            message: `无效的用户 ID: ${userIDString}`,
         };
     }
 
-    // 获取附加选项的长度（第 17 个字节）
     const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
-    // 暂时跳过附加选项
-
-    // 解析命令（紧跟在选项之后的 1 个字节）
-    const command = new Uint8Array(
-        维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
-    )[0];
+    const command = new Uint8Array(维列斯Buffer.slice(18 + optLength, 18 + optLength + 1))[0];
+    let isUDP = false;
 
     switch (command) {
         case 1:
-            // TCP 命令，不需特殊处理
             break;
         case 2:
-            // UDP 命令
             isUDP = true;
             break;
         default:
-            // 不支持的命令
             return {
                 hasError: true,
                 message: `不支持的命令 ${command}，支持的命令有 01-tcp, 02-udp, 03-mux`,
             };
     }
 
-    // 解析远程端口（大端序，2 字节）
     const portIndex = 18 + optLength + 1;
-    const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
-    const portRemote = new DataView(portBuffer).getUint16(0);
+    const portRemote = new DataView(维列斯Buffer, portIndex, 2).getUint16(0);
 
-    // 解析地址类型和地址
-    let addressIndex = portIndex + 2;
-    const addressBuffer = new Uint8Array(
-        维列斯Buffer.slice(addressIndex, addressIndex + 1)
-    );
-
-    const addressType = addressBuffer[0];
+    const addressIndex = portIndex + 2;
+    const addressType = new Uint8Array(维列斯Buffer.slice(addressIndex, addressIndex + 1))[0];
+    let addressValue = '';
     let addressLength = 0;
     let addressValueIndex = addressIndex + 1;
-    let addressValue = '';
 
     switch (addressType) {
         case 1:
-            // IPv4 地址
             addressLength = 4;
-            addressValue = new Uint8Array(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-            ).join('.');
+            addressValue = new Uint8Array(维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
             break;
         case 2:
-            // 域名
-            addressLength = new Uint8Array(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
-            )[0];
+            addressLength = new Uint8Array(维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1))[0];
             addressValueIndex += 1;
-            addressValue = new TextDecoder().decode(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-            );
+            addressValue = new TextDecoder().decode(维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength));
             break;
         case 3:
-            // IPv6 地址
             addressLength = 16;
-            const dataView = new DataView(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-            );
+            const dataView = new DataView(维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength));
             const ipv6 = [];
             for (let i = 0; i < 8; i++) {
                 ipv6.push(dataView.getUint16(i * 2).toString(16));
@@ -605,14 +566,12 @@ function process维列斯Header(维列斯Buffer, userID) {
             addressValue = ipv6.join(':');
             break;
         default:
-            // 无效的地址类型
             return {
                 hasError: true,
                 message: `无效的地址类型: ${addressType}`,
             };
     }
 
-    // 确保地址不为空
     if (!addressValue) {
         return {
             hasError: true,
@@ -620,7 +579,6 @@ function process维列斯Header(维列斯Buffer, userID) {
         };
     }
 
-    // 返回解析结果
     return {
         hasError: false,
         addressRemote: addressValue,
