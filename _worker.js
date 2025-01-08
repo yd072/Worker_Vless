@@ -590,12 +590,24 @@ function process维列斯Header(维列斯Buffer, userID) {
     };
 }
 	
-async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
+async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log, maxRetries = 3) {
     const WS_READY_STATE_OPEN = 1; // WebSocket open state
-
+    const RETRY_DELAY_MS = 1000; // 每次重试之间的延迟时间
     let chunkCount = 0;
     let hasIncomingData = false;
     let 维列斯Header = 维列斯ResponseHeader;
+    let retryCount = 0;
+
+    async function handleRetry(reason) {
+        if (retryCount >= maxRetries) {
+            log(`重试次数已达上限 (${maxRetries})，停止重试。原因: ${reason}`);
+            return;
+        }
+        retryCount++;
+        log(`准备重试第 ${retryCount}/${maxRetries} 次，原因: ${reason}`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        retry(); // 调用重试函数
+    }
 
     try {
         await remoteSocket.readable.pipeTo(
@@ -607,7 +619,9 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                     hasIncomingData = true;
 
                     if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                        controller.error('WebSocket 连接未打开，可能已关闭');
+                        const errorMsg = 'WebSocket 连接未打开，可能已关闭';
+                        log(errorMsg);
+                        controller.error(errorMsg);
                         return;
                     }
 
@@ -620,28 +634,40 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                             webSocket.send(chunk);
                         }
                     } catch (error) {
-                        controller.error(`发送数据时发生错误: ${error.message}`);
+                        const sendErrorMsg = `发送数据时发生错误: ${error.message}`;
+                        log(sendErrorMsg);
+                        controller.error(sendErrorMsg);
                         safeCloseWebSocket(webSocket);
+                        await handleRetry(sendErrorMsg);
                     }
                 },
                 close() {
                     log(`远程连接的可读流已关闭，hasIncomingData: ${hasIncomingData}`);
+                    if (!hasIncomingData) {
+                        handleRetry('远程连接关闭时未接收到数据');
+                    }
                 },
                 abort(reason) {
-                    console.error(`远程连接的可读流中断`, reason);
+                    const abortMsg = `远程连接的可读流中断，原因: ${reason}`;
+                    log(abortMsg);
+                    handleRetry(abortMsg);
                 },
             })
         );
     } catch (error) {
-        console.error(`remoteSocketToWS 发生异常`, error.stack || error);
+        const errorMsg = `remoteSocketToWS 发生异常: ${error.stack || error}`;
+        log(errorMsg);
         safeCloseWebSocket(webSocket);
+        await handleRetry(errorMsg);
     }
 
-    if (!hasIncomingData && retry) {
-        log(`重试连接`);
-        retry();
+    if (!hasIncomingData) {
+        const noDataMsg = '远程连接未接收到任何数据';
+        log(noDataMsg);
+        await handleRetry(noDataMsg);
     }
 }
+
 
 /**
  * 将 Base64 编码的字符串转换为 ArrayBuffer
