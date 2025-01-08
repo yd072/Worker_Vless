@@ -1409,16 +1409,10 @@ async function 整理优选列表(api) {
     if (!api || api.length === 0) return [];
 
     let newapi = "";
-
-    // 创建一个AbortController对象，用于控制fetch请求的取消
     const controller = new AbortController();
-
-    const timeout = setTimeout(() => {
-        controller.abort(); // 取消所有请求
-    }, 2000); // 2秒后触发
+    const timeout = setTimeout(() => controller.abort(), 2000);
 
     try {
-        // 使用Promise.allSettled等待所有API请求完成，无论成功或失败
         const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
             method: 'get',
             headers: {
@@ -1428,56 +1422,62 @@ async function 整理优选列表(api) {
             signal: controller.signal
         }).then(response => response.ok ? response.text() : Promise.reject())));
 
-        // 遍历所有响应
         for (const [index, response] of responses.entries()) {
             if (response.status === 'fulfilled') {
                 const content = await response.value;
-                const lines = content.split(/\r?\n/);
-                let 节点备注 = '';
-                let 测速端口 = '443';
-
-                if (lines[0].split(',').length > 3) {
-                    const idMatch = api[index].match(/id=([^&]*)/);
-                    if (idMatch) 节点备注 = idMatch[1];
-
-                    const portMatch = api[index].match(/port=([^&]*)/);
-                    if (portMatch) 测速端口 = portMatch[1];
-
-                    for (let i = 1; i < lines.length; i++) {
-                        const columns = lines[i].split(',')[0];
-                        if (columns) {
-                            newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
-                            if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
-                        }
-                    }
-                } else {
-                    if (api[index].includes('proxyip=true')) {
-                        proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
-                            const baseItem = item.split('#')[0] || item;
-                            if (baseItem.includes(':')) {
-                                const port = baseItem.split(':')[1];
-                                if (!httpsPorts.includes(port)) {
-                                    return baseItem;
-                                }
-                            } else {
-                                return `${baseItem}:443`;
-                            }
-                            return null;
-                        }).filter(Boolean));
-                    }
-                    newapi += content + '\n';
-                }
+                newapi += processContent(content, api[index]);
             }
         }
     } catch (error) {
-        console.error(error);
+        console.error('请求处理出错:', error);
     } finally {
         clearTimeout(timeout);
     }
 
-    const newAddressesapi = await 整理(newapi);
+    return await 整理(newapi);
+}
 
-    return newAddressesapi;
+function processContent(content, apiUrl) {
+    const lines = content.split(/\r?\n/);
+    let 节点备注 = '';
+    let 测速端口 = '443';
+    let result = '';
+
+    if (lines[0].split(',').length > 3) {
+        节点备注 = extractParam(apiUrl, 'id');
+        测速端口 = extractParam(apiUrl, 'port') || 测速端口;
+
+        for (let i = 1; i < lines.length; i++) {
+            const columns = lines[i].split(',')[0];
+            if (columns) {
+                result += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
+                if (apiUrl.includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
+            }
+        }
+    } else {
+        if (apiUrl.includes('proxyip=true')) {
+            proxyIPPool = proxyIPPool.concat((整理(content)).map(item => {
+                const baseItem = item.split('#')[0] || item;
+                if (baseItem.includes(':')) {
+                    const port = baseItem.split(':')[1];
+                    if (!httpsPorts.includes(port)) {
+                        return baseItem;
+                    }
+                } else {
+                    return `${baseItem}:443`;
+                }
+                return null;
+            }).filter(Boolean));
+        }
+        result += content + '\n';
+    }
+
+    return result;
+}
+
+function extractParam(url, param) {
+    const match = url.match(new RegExp(`${param}=([^&]*)`));
+    return match ? match[1] : '';
 }
 
 async function 整理测速结果(tls) {
