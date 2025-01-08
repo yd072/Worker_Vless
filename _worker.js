@@ -1229,6 +1229,7 @@ async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fak
         let isBase64 = true;
 
         if (!sub || sub === "") {
+            console.log('没有提供订阅，使用默认地址');
             if (hostName.includes('workers.dev')) {
                 if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
                     const response = await fetch(proxyhostsURL);
@@ -1269,13 +1270,19 @@ async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fak
 
         let content;
         if ((!sub || sub === "") && isBase64 === true) {
+            console.log('生成本地订阅');
             content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv);
         } else {
+            console.log(`请求订阅内容: ${url}`);
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': UA + atob('IENGLVdvcmtlcnMtZWRnZXR1bm5lbC9jbWxpdQ==')
                 }
             });
+            if (!response.ok) {
+                console.error('获取订阅内容时出错:', response.status, response.statusText);
+                return `Error fetching content: ${response.statusText}`;
+            }
             content = await response.text();
         }
 
@@ -1287,12 +1294,6 @@ async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fak
         console.error('Error fetching content:', error);
         return `Error fetching content: ${error.message}`;
     }
-}
-
-function 生成节点配置页(userID, hostName, uuid, proxyhost, v2ray, clash, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv) {
-    // 生成节点配置页的逻辑
-    // 这里可以根据你的需求进行实现
-    return '节点配置页内容';
 }
 
 async function 整理优选列表(api) {
