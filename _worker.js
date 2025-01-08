@@ -1041,52 +1041,43 @@ async function 双重哈希(文本) {
 }
 
 async function 代理URL(代理网址, 目标网址) {
-    try {
-        const 网址列表 = await 整理(代理网址);
-        if (网址列表.length === 0) {
-            throw new Error('代理网址列表为空');
-        }
+	const 网址列表 = await 整理(代理网址);
+	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-        const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
-        const 解析后的网址 = new URL(完整网址);
+	// 解析目标 URL
+	let 解析后的网址 = new URL(完整网址);
+	console.log(解析后的网址);
+	// 提取并可能修改 URL 组件
+	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
+	let 主机名 = 解析后的网址.hostname;
+	let 路径名 = 解析后的网址.pathname;
+	let 查询参数 = 解析后的网址.search;
 
-        const 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-        const 主机名 = 解析后的网址.hostname;
-        let 路径名 = 解析后的网址.pathname;
-        const 查询参数 = 解析后的网址.search;
+	// 处理路径名
+	if (路径名.charAt(路径名.length - 1) == '/') {
+		路径名 = 路径名.slice(0, -1);
+	}
+	路径名 += 目标网址.pathname;
 
-        // 确保路径名正确拼接
-        if (!路径名.endsWith('/')) {
-            路径名 += '/';
-        }
+	// 构建新的 URL
+	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
 
-        // 确保目标网址路径没有以斜杠开头
-        let 目标路径 = 目标网址.pathname.replace(/^\//, '');
+	// 反向代理请求
+	let 响应 = await fetch(新网址);
 
-        // 拼接路径
-        路径名 += 目标路径;
+	// 创建新的响应
+	let 新响应 = new Response(响应.body, {
+		status: 响应.status,
+		statusText: 响应.statusText,
+		headers: 响应.headers
+	});
 
-        // 构建新的 URL
-        const 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+	// 添加自定义头部，包含 URL 信息
+	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
+	//新响应.headers.set('X-Original-URL', 完整网址);
+	新响应.headers.set('X-New-URL', 新网址);
 
-        // 反向代理请求
-        const 响应 = await fetch(新网址);
-
-        // 创建新的响应
-        const 新响应 = new Response(响应.body, {
-            status: 响应.status,
-            statusText: 响应.statusText,
-            headers: 响应.headers
-        });
-
-        // 添加自定义头部，包含 URL 信息
-        新响应.headers.set('X-New-URL', 新网址);
-
-        return 新响应;
-    } catch (error) {
-        console.error('代理URL函数发生异常:', error);
-        throw error;
-    }
+	return 新响应;
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
