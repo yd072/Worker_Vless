@@ -419,6 +419,7 @@ async function retry() {
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
 }
 
+// 确保以下代码在函数或模块的正确位置
 let shouldUseSocks = false;
 if (go2Socks5s.length > 0 && enableSocks) {
     shouldUseSocks = await useSocks5Pattern(addressRemote);
