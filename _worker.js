@@ -1405,69 +1405,137 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
     }
 }
 
+async function 整理优选列表(api) {
+    if (!api || api.length === 0) return [];
+
+    let newapi = "";
+
+    // 创建一个AbortController对象，用于控制fetch请求的取消
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+        controller.abort(); // 取消所有请求
+    }, 2000); // 2秒后触发
+
+    try {
+        // 使用Promise.allSettled等待所有API请求完成，无论成功或失败
+        const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
+            method: 'get',
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;',
+                'User-Agent': atob('Q0YtV29ya2Vycy1lZGdldHVubmVsL2NtbGl1')
+            },
+            signal: controller.signal
+        }).then(response => response.ok ? response.text() : Promise.reject())));
+
+        // 遍历所有响应
+        for (const [index, response] of responses.entries()) {
+            if (response.status === 'fulfilled') {
+                const content = await response.value;
+                const lines = content.split(/\r?\n/);
+                let 节点备注 = '';
+                let 测速端口 = '443';
+
+                if (lines[0].split(',').length > 3) {
+                    const idMatch = api[index].match(/id=([^&]*)/);
+                    if (idMatch) 节点备注 = idMatch[1];
+
+                    const portMatch = api[index].match(/port=([^&]*)/);
+                    if (portMatch) 测速端口 = portMatch[1];
+
+                    for (let i = 1; i < lines.length; i++) {
+                        const columns = lines[i].split(',')[0];
+                        if (columns) {
+                            newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
+                            if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
+                        }
+                    }
+                } else {
+                    if (api[index].includes('proxyip=true')) {
+                        proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
+                            const baseItem = item.split('#')[0] || item;
+                            if (baseItem.includes(':')) {
+                                const port = baseItem.split(':')[1];
+                                if (!httpsPorts.includes(port)) {
+                                    return baseItem;
+                                }
+                            } else {
+                                return `${baseItem}:443`;
+                            }
+                            return null;
+                        }).filter(Boolean));
+                    }
+                    newapi += content + '\n';
+                }
+            }
+        }
+    } catch (error) {
+        console.error(error);
+    } finally {
+        clearTimeout(timeout);
+    }
+
+    const newAddressesapi = await 整理(newapi);
+
+    return newAddressesapi;
+}
+
 async function 整理测速结果(tls) {
     if (!addressescsv || addressescsv.length === 0) {
         return [];
     }
 
-    const fetchCsvData = async (csvUrl) => {
+    const newAddressescsv = [];
+
+    for (const csvUrl of addressescsv) {
         try {
             const response = await fetch(csvUrl);
+
             if (!response.ok) {
                 console.error('获取CSV地址时出错:', response.status, response.statusText);
-                return [];
+                continue;
             }
 
             const text = await response.text();
             const lines = text.includes('\r\n') ? text.split('\r\n') : text.split('\n');
-            return lines;
-        } catch (error) {
-            console.error('获取CSV地址时出错:', error);
-            return [];
-        }
-    };
 
-    const processCsvLines = (lines, tls) => {
-        const newAddressescsv = [];
-        if (lines.length === 0) return newAddressescsv;
+            const header = lines[0].split(',');
+            const tlsIndex = header.indexOf('TLS');
 
-        const header = lines[0].split(',');
-        const tlsIndex = header.indexOf('TLS');
-        if (tlsIndex === -1) {
-            console.error('CSV文件缺少必需的字段');
-            return newAddressescsv;
-        }
+            if (tlsIndex === -1) {
+                console.error('CSV文件缺少必需的字段');
+                continue;
+            }
 
-        const ipAddressIndex = 0;
-        const portIndex = 1;
-        const dataCenterIndex = tlsIndex + remarkIndex;
+            const ipAddressIndex = 0;
+            const portIndex = 1;
+            const dataCenterIndex = tlsIndex + remarkIndex;
 
-        for (let i = 1; i < lines.length; i++) {
-            const columns = lines[i].split(',');
-            const speedIndex = columns.length - 1;
+            for (let i = 1; i < lines.length; i++) {
+                const columns = lines[i].split(',');
+                const speedIndex = columns.length - 1;
 
-            if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
-                const ipAddress = columns[ipAddressIndex];
-                const port = columns[portIndex];
-                const dataCenter = columns[dataCenterIndex];
+                if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
+                    const ipAddress = columns[ipAddressIndex];
+                    const port = columns[portIndex];
+                    const dataCenter = columns[dataCenterIndex];
 
-                const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
-                newAddressescsv.push(formattedAddress);
+                    const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
+                    newAddressescsv.push(formattedAddress);
 
-                if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
-                    proxyIPPool.push(`${ipAddress}:${port}`);
+                    if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
+                        proxyIPPool.push(`${ipAddress}:${port}`);
+                    }
                 }
             }
+        } catch (error) {
+            console.error('获取CSV地址时出错:', error);
+            continue;
         }
-        return newAddressescsv;
-    };
+    }
 
-    const csvDataPromises = addressescsv.map(csvUrl => fetchCsvData(csvUrl));
-    const csvDataArray = await Promise.all(csvDataPromises);
-
-    return csvDataArray.flatMap(lines => processCsvLines(lines, tls));
+    return newAddressescsv;
 }
-
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
     const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
     const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
