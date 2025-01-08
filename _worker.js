@@ -650,82 +650,82 @@ function process维列斯Header(维列斯Buffer, userID) {
 	};
 }
 	
-async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log, maxRetries = 3) {
-    const WS_READY_STATE_OPEN = 1; // WebSocket open state
-    const RETRY_DELAY_MS = 1000; // 每次重试之间的延迟时间
-    let chunkCount = 0;
-    let hasIncomingData = false;
-    let 维列斯Header = 维列斯ResponseHeader;
-    let retryCount = 0;
+async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
+	// 将数据从远程服务器转发到 WebSocket
+	let remoteChunkCount = 0;
+	let chunks = [];
+	/** @type {ArrayBuffer | null} */
+	let 维列斯Header = 维列斯ResponseHeader;
+	let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
 
-    async function handleRetry(reason) {
-        if (retryCount >= maxRetries) {
-            log(`重试次数已达上限 (${maxRetries})，停止重试。原因: ${reason}`);
-            return;
-        }
-        retryCount++;
-        log(`准备重试第 ${retryCount}/${maxRetries} 次，原因: ${reason}`);
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-        retry(); // 调用重试函数
-    }
+	// 使用管道将远程 Socket 的可读流连接到一个可写流
+	await remoteSocket.readable
+		.pipeTo(
+			new WritableStream({
+				start() {
+					// 初始化时不需要任何操作
+				},
+				/**
+				 * 处理每个数据块
+				 * @param {Uint8Array} chunk 数据块
+				 * @param {*} controller 控制器
+				 */
+				async write(chunk, controller) {
+					hasIncomingData = true; // 标记已收到数据
+					// remoteChunkCount++; // 用于流量控制，现在似乎不需要了
 
-    try {
-        await remoteSocket.readable.pipeTo(
-            new WritableStream({
-                start() {
-                    // 初始化时不需要任何操作
-                },
-                async write(chunk, controller) {
-                    hasIncomingData = true;
+					// 检查 WebSocket 是否处于开放状态
+					if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+						controller.error(
+							'webSocket.readyState is not open, maybe close'
+						);
+					}
 
-                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                        const errorMsg = 'WebSocket 连接未打开，可能已关闭';
-                        log(errorMsg);
-                        controller.error(errorMsg);
-                        return;
-                    }
+					if (维列斯Header) {
+						// 如果有 维列斯 响应头部，将其与第一个数据块一起发送
+						webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
+						维列斯Header = null; // 清空头部，之后不再发送
+					} else {
+						// 直接发送数据块
+						// 以前这里有流量控制代码，限制大量数据的发送速率
+						// 但现在 Cloudflare 似乎已经修复了这个问题
+						// if (remoteChunkCount > 20000) {
+						// 	// cf one package is 4096 byte(4kb),  4096 * 20000 = 80M
+						// 	await delay(1);
+						// }
+						webSocket.send(chunk);
+					}
+				},
+				close() {
+					// 当远程连接的可读流关闭时
+					log(`remoteConnection!.readable is close with hasIncomingData is ${hasIncomingData}`);
+					// 不需要主动关闭 WebSocket，因为这可能导致 HTTP ERR_CONTENT_LENGTH_MISMATCH 问题
+					// 客户端无论如何都会发送关闭事件
+					// safeCloseWebSocket(webSocket);
+				},
+				abort(reason) {
+					// 当远程连接的可读流中断时
+					console.error(`remoteConnection!.readable abort`, reason);
+				},
+			})
+		)
+		.catch((error) => {
+			// 捕获并记录任何异常
+			console.error(
+				`remoteSocketToWS has exception `,
+				error.stack || error
+			);
+			// 发生错误时安全地关闭 WebSocket
+			safeCloseWebSocket(webSocket);
+		});
 
-                    try {
-                        if (维列斯Header) {
-                            const combinedData = await new Blob([维列斯Header, chunk]).arrayBuffer();
-                            webSocket.send(combinedData);
-                            维列斯Header = null;
-                        } else {
-                            webSocket.send(chunk);
-                        }
-                    } catch (error) {
-                        const sendErrorMsg = `发送数据时发生错误: ${error.message}`;
-                        log(sendErrorMsg);
-                        controller.error(sendErrorMsg);
-                        safeCloseWebSocket(webSocket);
-                        await handleRetry(sendErrorMsg);
-                    }
-                },
-                close() {
-                    log(`远程连接的可读流已关闭，hasIncomingData: ${hasIncomingData}`);
-                    if (!hasIncomingData) {
-                        handleRetry('远程连接关闭时未接收到数据');
-                    }
-                },
-                abort(reason) {
-                    const abortMsg = `远程连接的可读流中断，原因: ${reason}`;
-                    log(abortMsg);
-                    handleRetry(abortMsg);
-                },
-            })
-        );
-    } catch (error) {
-        const errorMsg = `remoteSocketToWS 发生异常: ${error.stack || error}`;
-        log(errorMsg);
-        safeCloseWebSocket(webSocket);
-        await handleRetry(errorMsg);
-    }
-
-    if (!hasIncomingData) {
-        const noDataMsg = '远程连接未接收到任何数据';
-        log(noDataMsg);
-        await handleRetry(noDataMsg);
-    }
+	// 处理 Cloudflare 连接 Socket 的特殊错误情况
+	// 1. Socket.closed 将有错误
+	// 2. Socket.readable 将关闭，但没有任何数据
+	if (hasIncomingData === false && retry) {
+		log(`retry`);
+		retry(); // 调用重试函数，尝试重新建立连接
+	}
 }
 
 /**
@@ -735,34 +735,31 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
  * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
  */
 function base64ToArrayBuffer(base64Str) {
-    // 检查输入是否为有效的非空字符串
-    if (typeof base64Str !== 'string' || base64Str.trim() === '') {
-        return { earlyData: undefined, error: new Error('输入必须是非空字符串') };
-    }
+	// 如果输入为空，直接返回空结果
+	if (!base64Str) {
+		return { earlyData: undefined, error: null };
+	}
+	try {
+		// Go 语言使用了 URL 安全的 Base64 变体（RFC 4648）
+		// 这种变体使用 '-' 和 '_' 来代替标准 Base64 中的 '+' 和 '/'
+		// JavaScript 的 atob 函数不直接支持这种变体，所以我们需要先转换
+		base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
 
-    try {
-        // 替换 URL 安全的 Base64 变体字符为标准 Base64
-        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+		// 使用 atob 函数解码 Base64 字符串
+		// atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
+		const decode = atob(base64Str);
 
-        // 确保 Base64 字符串长度是 4 的倍数，补齐 '='
-        const paddingLength = (4 - (base64Str.length % 4)) % 4;
-        if (paddingLength > 0) {
-            base64Str += '='.repeat(paddingLength);
-        }
+		// 将二进制字符串转换为 Uint8Array
+		// 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
+		const arryBuffer = Uint8Array.from(decode, (c) => c.charCodeAt(0));
 
-        // 解码 Base64 字符串为二进制字符串
-        const decodedString = atob(base64Str);
-
-        // 将二进制字符串转换为 Uint8Array 并提取底层 ArrayBuffer
-        const arrayBuffer = Uint8Array.from(decodedString, (c) => c.charCodeAt(0)).buffer;
-
-        return { earlyData: arrayBuffer, error: null };
-    } catch (error) {
-        return { 
-            earlyData: undefined, 
-            error: new Error(`Base64 解码失败: ${error.message}`) 
-        };
-    }
+		// 返回 Uint8Array 的底层 ArrayBuffer
+		// 这是实际的二进制数据，可以用于网络传输或其他二进制操作
+		return { earlyData: arryBuffer.buffer, error: null };
+	} catch (error) {
+		// 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
+		return { earlyData: undefined, error };
+	}
 }
 
 /**
@@ -771,38 +768,55 @@ function base64ToArrayBuffer(base64Str) {
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
  */
 function isValidUUID(uuid) {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return uuidRegex.test(uuid);
+	// 定义一个正则表达式来匹配 UUID 格式
+	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+	// 使用正则表达式测试 UUID 字符串
+	return uuidRegex.test(uuid);
 }
 
 // WebSocket 的两个重要状态常量
-const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态，可以发送和接收消息
-const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
+const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
+const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
 
 function safeCloseWebSocket(socket) {
-    try {
-        if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-            socket.close();
-        }
-    } catch (error) {
-        console.error('safeCloseWebSocket error', error);
-    }
+	try {
+		// 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
+		// 这避免了在已关闭或连接中的 WebSocket 上调用 close()
+		if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
+			socket.close();
+		}
+	} catch (error) {
+		// 记录任何可能发生的错误，虽然按照规范不应该有错误
+		console.error('safeCloseWebSocket error', error);
+	}
 }
 
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
-    byteToHex.push((i + 256).toString(16).slice(1));
+	// (i + 256).toString(16) 确保总是得到两位数的十六进制
+	// .slice(1) 删除前导的 "1"，只保留两位十六进制数
+	byteToHex.push((i + 256).toString(16).slice(1));
 }
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
+ * 这是一个底层函数，直接操作字节，不做任何验证
  * @param {Uint8Array} arr 包含 UUID 字节的数组
  * @param {number} offset 数组中 UUID 开始的位置，默认为 0
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-    return `${byteToHex[arr[offset + 0]]}${byteToHex[arr[offset + 1]]}${byteToHex[arr[offset + 2]]}${byteToHex[arr[offset + 3]]}-${byteToHex[arr[offset + 4]]}${byteToHex[arr[offset + 5]]}-${byteToHex[arr[offset + 6]]}${byteToHex[arr[offset + 7]]}-${byteToHex[arr[offset + 8]]}${byteToHex[arr[offset + 9]]}-${byteToHex[arr[offset + 10]]}${byteToHex[arr[offset + 11]]}${byteToHex[arr[offset + 12]]}${byteToHex[arr[offset + 13]]}${byteToHex[arr[offset + 14]]}${byteToHex[arr[offset + 15]]}`.toLowerCase();
+	// 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
+	// 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
+	// toLowerCase() 确保整个 UUID 是小写的
+	return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
+		byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
+		byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
+		byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
+		byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
+		byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
 }
 
 /**
@@ -814,11 +828,15 @@ function unsafeStringify(arr, offset = 0) {
  * @throws {TypeError} 如果生成的 UUID 字符串无效
  */
 function stringify(arr, offset = 0) {
-    const uuid = unsafeStringify(arr, offset);
-    if (!isValidUUID(uuid)) {
-        throw new TypeError(`生成的 UUID 不符合规范: ${uuid}`);
-    }
-    return uuid;
+	// 使用不安全的函数快速生成 UUID 字符串
+	const uuid = unsafeStringify(arr, offset);
+	// 验证生成的 UUID 是否有效
+	if (!isValidUUID(uuid)) {
+		// 原：throw TypeError("Stringified UUID is invalid");
+		throw TypeError(`生成的 UUID 不符合规范 ${uuid}`);
+		//uuid = userID;
+	}
+	return uuid;
 }
 
 /**
