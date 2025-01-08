@@ -650,14 +650,12 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
  * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
  */
 function base64ToArrayBuffer(base64Str) {
-    // 如果输入为空，直接返回空结果
-    if (!base64Str) {
-        return { earlyData: undefined, error: null };
+    if (typeof base64Str !== 'string' || !base64Str) {
+        return { earlyData: undefined, error: new Error('输入必须是非空字符串') };
     }
+
     try {
-        // Go 语言使用了 URL 安全的 Base64 变体（RFC 4648）
-        // 这种变体使用 '-' 和 '_' 来代替标准 Base64 中的 '+' 和 '/'
-        // JavaScript 的 atob 函数不直接支持这种变体，所以我们需要先转换
+        // 将 URL 安全的 Base64 变体转换为标准 Base64
         base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
 
         // 使用 atob 函数解码 Base64 字符串
@@ -666,10 +664,8 @@ function base64ToArrayBuffer(base64Str) {
         // 将二进制字符串转换为 Uint8Array
         const arrayBuffer = Uint8Array.from(decodedString, (c) => c.charCodeAt(0));
 
-        // 返回 Uint8Array 的底层 ArrayBuffer
         return { earlyData: arrayBuffer.buffer, error: null };
     } catch (error) {
-        // 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
         return { earlyData: undefined, error: new Error(`Base64 解码失败: ${error.message}`) };
     }
 }
