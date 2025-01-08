@@ -817,132 +817,195 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
  * @param {string} addressRemote 目标地址（可以是 IP 或域名）
  * @param {number} portRemote 目标端口
  * @param {function} log 日志记录函数
- * @returns {Promise<Socket>} 返回与 SOCKS5 服务器的连接
  */
 async function socks5Connect(addressType, addressRemote, portRemote, log) {
-    const { username, password, hostname, port } = parsedSocks5Address;
+	const { username, password, hostname, port } = parsedSocks5Address;
+	// 连接到 SOCKS5 代理服务器
+	const socket = connect({
+		hostname, // SOCKS5 服务器的主机名
+		port,	// SOCKS5 服务器的端口
+	});
 
-    try {
-        const socket = connect({
-            hostname,
-            port,
-        });
+	// 请求头格式（Worker -> SOCKS5 服务器）:
+	// +----+----------+----------+
+	// |VER | NMETHODS | METHODS  |
+	// +----+----------+----------+
+	// | 1  |	1	 | 1 to 255 |
+	// +----+----------+----------+
 
-        const socksGreeting = new Uint8Array([5, 2, 0, 2]);
-        const writer = socket.writable.getWriter();
-        await writer.write(socksGreeting);
-        log('已发送 SOCKS5 问候消息');
+	// https://en.wikipedia.org/wiki/SOCKS#SOCKS5
+	// METHODS 字段的含义:
+	// 0x00 不需要认证
+	// 0x02 用户名/密码认证 https://datatracker.ietf.org/doc/html/rfc1929
+	const socksGreeting = new Uint8Array([5, 2, 0, 2]);
+	// 5: SOCKS5 版本号, 2: 支持的认证方法数, 0和2: 两种认证方法（无认证和用户名/密码）
 
-        const reader = socket.readable.getReader();
-        const encoder = new TextEncoder();
-        let res = (await reader.read()).value;
+	const writer = socket.writable.getWriter();
 
-        if (res[0] !== 0x05) {
-            log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
-            return;
-        }
-        if (res[1] === 0xff) {
-            log("服务器不接受任何认证方法");
-            return;
-        }
+	await writer.write(socksGreeting);
+	log('已发送 SOCKS5 问候消息');
 
-        if (res[1] === 0x02) {
-            log("SOCKS5 服务器需要认证");
-            if (!username || !password) {
-                log("请提供用户名和密码");
-                return;
-            }
-            const authRequest = new Uint8Array([
-                1,
-                username.length,
-                ...encoder.encode(username),
-                password.length,
-                ...encoder.encode(password)
-            ]);
-            await writer.write(authRequest);
-            res = (await reader.read()).value;
-            if (res[0] !== 0x01 || res[1] !== 0x00) {
-                log("SOCKS5 服务器认证失败");
-                return;
-            }
-        }
+	const reader = socket.readable.getReader();
+	const encoder = new TextEncoder();
+	let res = (await reader.read()).value;
+	// 响应格式（SOCKS5 服务器 -> Worker）:
+	// +----+--------+
+	// |VER | METHOD |
+	// +----+--------+
+	// | 1  |   1	|
+	// +----+--------+
+	if (res[0] !== 0x05) {
+		log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
+		return;
+	}
+	if (res[1] === 0xff) {
+		log("服务器不接受任何认证方法");
+		return;
+	}
 
-        let DSTADDR;
-        switch (addressType) {
-            case 1:
-                DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
-                break;
-            case 2:
-                DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
-                break;
-            case 3:
-                DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => {
-                    const part = parseInt(x, 16);
-                    return [(part >> 8) & 0xff, part & 0xff];
-                })]);
-                break;
-            default:
-                log(`无效的地址类型: ${addressType}`);
-                return;
-        }
-        const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
-        await writer.write(socksRequest);
-        log('已发送 SOCKS5 请求');
+	// 如果返回 0x0502，表示需要用户名/密码认证
+	if (res[1] === 0x02) {
+		log("SOCKS5 服务器需要认证");
+		if (!username || !password) {
+			log("请提供用户名和密码");
+			return;
+		}
+		// 认证请求格式:
+		// +----+------+----------+------+----------+
+		// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+		// +----+------+----------+------+----------+
+		// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+		// +----+------+----------+------+----------+
+		const authRequest = new Uint8Array([
+			1,				   // 认证子协议版本
+			username.length,	// 用户名长度
+			...encoder.encode(username), // 用户名
+			password.length,	// 密码长度
+			...encoder.encode(password)  // 密码
+		]);
+		await writer.write(authRequest);
+		res = (await reader.read()).value;
+		// 期望返回 0x0100 表示认证成功
+		if (res[0] !== 0x01 || res[1] !== 0x00) {
+			log("SOCKS5 服务器认证失败");
+			return;
+		}
+	}
 
-        res = (await reader.read()).value;
-        if (res[1] === 0x00) {
-            log("SOCKS5 连接已建立");
-        } else {
-            log(`SOCKS5 连接建立失败，错误码: ${res[1]}`);
-            return;
-        }
+	// 请求数据格式（Worker -> SOCKS5 服务器）:
+	// +----+-----+-------+------+----------+----------+
+	// |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  |  1  | X'00' |  1   | Variable |	2	 |
+	// +----+-----+-------+------+----------+----------+
+	// ATYP: 地址类型
+	// 0x01: IPv4 地址
+	// 0x03: 域名
+	// 0x04: IPv6 地址
+	// DST.ADDR: 目标地址
+	// DST.PORT: 目标端口（网络字节序）
 
-        writer.releaseLock();
-        reader.releaseLock();
-        return socket;
-    } catch (error) {
-        log(`socks5Connect 函数发生异常，错误信息: ${error.message}`);
-        throw error;
-    }
+	// addressType
+	// 1 --> IPv4  地址长度 = 4
+	// 2 --> 域名
+	// 3 --> IPv6  地址长度 = 16
+	let DSTADDR;	// DSTADDR = ATYP + DST.ADDR
+	switch (addressType) {
+		case 1: // IPv4
+			DSTADDR = new Uint8Array(
+				[1, ...addressRemote.split('.').map(Number)]
+			);
+			break;
+		case 2: // 域名
+			DSTADDR = new Uint8Array(
+				[3, addressRemote.length, ...encoder.encode(addressRemote)]
+			);
+			break;
+		case 3: // IPv6
+			DSTADDR = new Uint8Array(
+				[4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]
+			);
+			break;
+		default:
+			log(`无效的地址类型: ${addressType}`);
+			return;
+	}
+	const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
+	// 5: SOCKS5版本, 1: 表示CONNECT请求, 0: 保留字段
+	// ...DSTADDR: 目标地址, portRemote >> 8 和 & 0xff: 将端口转为网络字节序
+	await writer.write(socksRequest);
+	log('已发送 SOCKS5 请求');
+
+	res = (await reader.read()).value;
+	// 响应格式（SOCKS5 服务器 -> Worker）:
+	//  +----+-----+-------+------+----------+----------+
+	// |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  |  1  | X'00' |  1   | Variable |	2	 |
+	// +----+-----+-------+------+----------+----------+
+	if (res[1] === 0x00) {
+		log("SOCKS5 连接已建立");
+	} else {
+		log("SOCKS5 连接建立失败");
+		return;
+	}
+	writer.releaseLock();
+	reader.releaseLock();
+	return socket;
 }
 
 /**
  * SOCKS5 代理地址解析器
- * @param {string} address SOCKS5 代理地址
- * @returns {Object} 包含解析后的用户名、密码、主机名和端口号
+ * 此函数用于解析 SOCKS5 代理地址字符串，提取出用户名、密码、主机名和端口号
+ * 
+ * @param {string} address SOCKS5 代理地址，格式可以是：
+ *   - "username:password@hostname:port" （带认证）
+ *   - "hostname:port" （不需认证）
+ *   - "username:password@[ipv6]:port" （IPv6 地址需要用方括号括起来）
  */
 function socks5AddressParser(address) {
-    let [latter, former] = address.split("@").reverse();
-    let username, password, hostname, port;
+	// 使用 "@" 分割地址，分为认证部分和服务器地址部分
+	// reverse() 是为了处理没有认证信息的情况，确保 latter 总是包含服务器地址
+	let [latter, former] = address.split("@").reverse();
+	let username, password, hostname, port;
 
-    if (former) {
-        const formers = former.split(":");
-        if (formers.length !== 2) {
-            throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
-        }
-        [username, password] = formers;
-    }
+	// 如果存在 former 部分，说明提供了认证信息
+	if (former) {
+		const formers = former.split(":");
+		if (formers.length !== 2) {
+			throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
+		}
+		[username, password] = formers;
+	}
 
-    const latters = latter.split(":");
-    port = Number(latters.pop());
-    if (isNaN(port)) {
-        throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
-    }
+	// 解析服务器地址部分
+	const latters = latter.split(":");
+	// 从末尾提取端口号（因为 IPv6 地址中也包含冒号）
+	port = Number(latters.pop());
+	if (isNaN(port)) {
+		throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
+	}
 
-    hostname = latters.join(":");
+	// 剩余部分就是主机名（可能是域名、IPv4 或 IPv6 地址）
+	hostname = latters.join(":");
 
-    const ipv6Regex = /^\[.*\]$/;
-    if (hostname.includes(":") && !ipv6Regex.test(hostname)) {
-        throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
-    }
+	// 处理 IPv6 地址的特殊情况
+	// IPv6 地址包含多个冒号，所以必须用方括号括起来，如 [2001:db8::1]
+	const regex = /^\[.*\]$/;
+	if (hostname.includes(":") && !regex.test(hostname)) {
+		throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
+	}
 
-    return {
-        username,
-        password,
-        hostname,
-        port,
-    };
+	//if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(hostname)) hostname = `${atob('d3d3Lg==')}${hostname}${atob('LmlwLjA5MDIyNy54eXo=')}`;
+	// 返回解析后的结果
+	return {
+		username,  // 用户名，如果没有则为 undefined
+		password,  // 密码，如果没有则为 undefined
+		hostname,  // 主机名，可以是域名、IPv4 或 IPv6 地址
+		port,	 // 端口号，已转换为数字类型
+	}
 }
+
 
 /**
  * 恢复被伪装的信息
