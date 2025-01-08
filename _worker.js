@@ -962,17 +962,24 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
 async function 双重哈希(文本) {
     const 编码器 = new TextEncoder();
 
-    // 第一次哈希
-    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-    const 第一次哈希数组 = Array.from(new Uint8Array(第一次哈希));
-    const 第一次十六进制 = 第一次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    const 计算哈希 = async (输入) => {
+        const 哈希 = await crypto.subtle.digest('MD5', 编码器.encode(输入));
+        const 哈希数组 = Array.from(new Uint8Array(哈希));
+        return 哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    };
 
-    // 第二次哈希，使用第一次哈希结果的一部分
-    const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-    const 第二次哈希数组 = Array.from(new Uint8Array(第二次哈希));
-    const 第二次十六进制 = 第二次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+    try {
+        // 第一次哈希
+        const 第一次十六进制 = await 计算哈希(文本);
 
-    return 第二次十六进制.toLowerCase();
+        // 第二次哈希，使用第一次哈希结果的一部分
+        const 第二次十六进制 = await 计算哈希(第一次十六进制.slice(7, 27));
+
+        return 第二次十六进制.toLowerCase();
+    } catch (error) {
+        console.error('哈希计算时发生错误:', error);
+        throw error;  // 重新抛出错误以便调用者处理
+    }
 }
 
 /**
