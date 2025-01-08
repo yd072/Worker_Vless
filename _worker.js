@@ -276,27 +276,14 @@ async function 维列斯OverWSHandler(request) {
     // 将 banHosts 转换为 Set 以提高查找速度
     const banHostsSet = new Set(banHosts);
 
-    // 缓存已处理的 chunk，防止重复处理相同的数据
-    const processedChunks = new Set();
-
     // WebSocket 数据流向远程服务器的管道
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
             try {
-                // 检查是否已经处理过此数据块，避免重复处理
-                const chunkKey = chunk.toString();  // 可以通过其他方法生成唯一标识
-                if (processedChunks.has(chunkKey)) {
-                    console.log("跳过已处理的 chunk", chunkKey);
-                    return; // 已处理，跳过
-                }
-                // 标记为已处理
-                processedChunks.add(chunkKey);
-
                 if (isDns) {
                     // 如果是 DNS 查询，调用 DNS 处理函数
                     return await handleDNSQuery(chunk, webSocket, null, log);
                 }
-
                 if (remoteSocketWrapper.value) {
                     // 如果已有远程 Socket，直接写入数据
                     const writer = remoteSocketWrapper.value.writable.getWriter();
@@ -316,16 +303,13 @@ async function 维列斯OverWSHandler(request) {
                     维列斯Version = new Uint8Array([0, 0]),
                     isUDP,
                 } = process维列斯Header(chunk, userID);
-                
                 // 设置地址和端口信息，用于日志
                 address = addressRemote;
                 portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
-
                 if (hasError) {
                     // 如果有错误，抛出异常
                     throw new Error(message);
                 }
-
                 // 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
                 if (isUDP) {
                     if (portRemote === 53) {
@@ -334,7 +318,6 @@ async function 维列斯OverWSHandler(request) {
                         throw new Error('UDP 代理仅对 DNS（53 端口）启用');
                     }
                 }
-
                 // 构建 维列斯 响应头部
                 const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
                 // 获取实际的客户端数据
@@ -344,7 +327,6 @@ async function 维列斯OverWSHandler(request) {
                     // 如果是 DNS 查询，调用 DNS 处理函数
                     return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
                 }
-
                 // 处理 TCP 出站连接
                 if (!banHostsSet.has(addressRemote)) {
                     log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
