@@ -1409,10 +1409,16 @@ async function 整理优选列表(api) {
     if (!api || api.length === 0) return [];
 
     let newapi = "";
+
+    // 创建一个AbortController对象，用于控制fetch请求的取消
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
+
+    const timeout = setTimeout(() => {
+        controller.abort(); // 取消所有请求
+    }, 2000); // 2秒后触发
 
     try {
+        // 使用Promise.allSettled等待所有API请求完成，无论成功或失败
         const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
             method: 'get',
             headers: {
@@ -1422,62 +1428,56 @@ async function 整理优选列表(api) {
             signal: controller.signal
         }).then(response => response.ok ? response.text() : Promise.reject())));
 
+        // 遍历所有响应
         for (const [index, response] of responses.entries()) {
             if (response.status === 'fulfilled') {
                 const content = await response.value;
-                newapi += processContent(content, api[index]);
+                const lines = content.split(/\r?\n/);
+                let 节点备注 = '';
+                let 测速端口 = '443';
+
+                if (lines[0].split(',').length > 3) {
+                    const idMatch = api[index].match(/id=([^&]*)/);
+                    if (idMatch) 节点备注 = idMatch[1];
+
+                    const portMatch = api[index].match(/port=([^&]*)/);
+                    if (portMatch) 测速端口 = portMatch[1];
+
+                    for (let i = 1; i < lines.length; i++) {
+                        const columns = lines[i].split(',')[0];
+                        if (columns) {
+                            newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
+                            if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
+                        }
+                    }
+                } else {
+                    if (api[index].includes('proxyip=true')) {
+                        proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
+                            const baseItem = item.split('#')[0] || item;
+                            if (baseItem.includes(':')) {
+                                const port = baseItem.split(':')[1];
+                                if (!httpsPorts.includes(port)) {
+                                    return baseItem;
+                                }
+                            } else {
+                                return `${baseItem}:443`;
+                            }
+                            return null;
+                        }).filter(Boolean));
+                    }
+                    newapi += content + '\n';
+                }
             }
         }
     } catch (error) {
-        console.error('请求处理出错:', error);
+        console.error(error);
     } finally {
         clearTimeout(timeout);
     }
 
-    return await 整理(newapi);
-}
+    const newAddressesapi = await 整理(newapi);
 
-function processContent(content, apiUrl) {
-    const lines = content.split(/\r?\n/);
-    let 节点备注 = '';
-    let 测速端口 = '443';
-    let result = '';
-
-    if (lines[0].split(',').length > 3) {
-        节点备注 = extractParam(apiUrl, 'id');
-        测速端口 = extractParam(apiUrl, 'port') || 测速端口;
-
-        for (let i = 1; i < lines.length; i++) {
-            const columns = lines[i].split(',')[0];
-            if (columns) {
-                result += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
-                if (apiUrl.includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
-            }
-        }
-    } else {
-        if (apiUrl.includes('proxyip=true')) {
-            proxyIPPool = proxyIPPool.concat((整理(content)).map(item => {
-                const baseItem = item.split('#')[0] || item;
-                if (baseItem.includes(':')) {
-                    const port = baseItem.split(':')[1];
-                    if (!httpsPorts.includes(port)) {
-                        return baseItem;
-                    }
-                } else {
-                    return `${baseItem}:443`;
-                }
-                return null;
-            }).filter(Boolean));
-        }
-        result += content + '\n';
-    }
-
-    return result;
-}
-
-function extractParam(url, param) {
-    const match = url.match(new RegExp(`${param}=([^&]*)`));
-    return match ? match[1] : '';
+    return newAddressesapi;
 }
 
 async function 整理测速结果(tls) {
@@ -1485,137 +1485,139 @@ async function 整理测速结果(tls) {
         return [];
     }
 
-    const fetchCsvData = async (csvUrl) => {
+    const newAddressescsv = [];
+
+    for (const csvUrl of addressescsv) {
         try {
             const response = await fetch(csvUrl);
+
             if (!response.ok) {
                 console.error('获取CSV地址时出错:', response.status, response.statusText);
-                return [];
+                continue;
             }
 
             const text = await response.text();
             const lines = text.includes('\r\n') ? text.split('\r\n') : text.split('\n');
-            return lines;
-        } catch (error) {
-            console.error('获取CSV地址时出错:', error);
-            return [];
-        }
-    };
 
-    const processCsvLines = (lines, tls) => {
-        const newAddressescsv = [];
-        if (lines.length === 0) return newAddressescsv;
+            const header = lines[0].split(',');
+            const tlsIndex = header.indexOf('TLS');
 
-        const header = lines[0].split(',');
-        const tlsIndex = header.indexOf('TLS');
-        if (tlsIndex === -1) {
-            console.error('CSV文件缺少必需的字段');
-            return newAddressescsv;
-        }
+            if (tlsIndex === -1) {
+                console.error('CSV文件缺少必需的字段');
+                continue;
+            }
 
-        const ipAddressIndex = 0;
-        const portIndex = 1;
-        const dataCenterIndex = tlsIndex + remarkIndex;
+            const ipAddressIndex = 0;
+            const portIndex = 1;
+            const dataCenterIndex = tlsIndex + remarkIndex;
 
-        for (let i = 1; i < lines.length; i++) {
-            const columns = lines[i].split(',');
-            const speedIndex = columns.length - 1;
+            for (let i = 1; i < lines.length; i++) {
+                const columns = lines[i].split(',');
+                const speedIndex = columns.length - 1;
 
-            if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
-                const ipAddress = columns[ipAddressIndex];
-                const port = columns[portIndex];
-                const dataCenter = columns[dataCenterIndex];
+                if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
+                    const ipAddress = columns[ipAddressIndex];
+                    const port = columns[portIndex];
+                    const dataCenter = columns[dataCenterIndex];
 
-                const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
-                newAddressescsv.push(formattedAddress);
+                    const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
+                    newAddressescsv.push(formattedAddress);
 
-                if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
-                    proxyIPPool.push(`${ipAddress}:${port}`);
+                    if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
+                        proxyIPPool.push(`${ipAddress}:${port}`);
+                    }
                 }
             }
+        } catch (error) {
+            console.error('获取CSV地址时出错:', error);
+            continue;
         }
-        return newAddressescsv;
-    };
+    }
 
-    const csvDataPromises = addressescsv.map(csvUrl => fetchCsvData(csvUrl));
-    const csvDataArray = await Promise.all(csvDataPromises);
-
-    return csvDataArray.flatMap(lines => processCsvLines(lines, tls));
+    return newAddressescsv;
 }
 
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
     const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
     const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
     const httpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
-    const 协议类型 = atob('c3M=');
-
-    const parseAddress = (address, isNoTLS) => {
-        let port = "-1";
-        let addressid = address;
-
-        const match = address.match(regex);
-        if (match) {
-            address = match[1];
-            port = match[2] || port;
-            addressid = match[3] || address;
-        } else {
-            const [addr, portOrId] = address.split(/[:#]/);
-            address = addr;
-            if (address.includes(':')) {
-                port = portOrId.split(':')[0];
-            } else {
-                addressid = portOrId;
-            }
-        }
-
-        if (!isValidIPv4(address) && port === "-1") {
-            const ports = isNoTLS ? httpPorts : httpsPorts;
-            port = ports.find(p => address.includes(p)) || (isNoTLS ? "80" : "443");
-        }
-
-        return { address, port, addressid };
-    };
-
-    const generateLink = (address, port, addressid, isNoTLS) => {
-        let 伪装域名 = host;
-        let 最终路径 = path;
-        let 节点备注 = '';
-
-        if (!isNoTLS) {
-            const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
-            if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
-
-            if (proxyhosts.length > 0 && 伪装域名.includes('.workers.dev')) {
-                最终路径 = `/${伪装域名}${最终路径}`;
-                伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
-                节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
-            }
-        }
-
-        const security = isNoTLS ? 'none' : 'tls';
-        const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&security=${security}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
-
-        return 维列斯Link;
-    };
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
     const processAddresses = (addresses, isNoTLS) => {
         const uniqueAddresses = [...new Set(addresses)];
         return uniqueAddresses.map(address => {
-            const { address: addr, port, addressid } = parseAddress(address, isNoTLS);
-            return generateLink(addr, port, addressid, isNoTLS);
+            let port = "-1";
+            let addressid = address;
+
+            const match = addressid.match(regex);
+            if (!match) {
+                if (address.includes(':') && address.includes('#')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    const subParts = parts[1].split('#');
+                    port = subParts[0];
+                    addressid = subParts[1];
+                } else if (address.includes(':')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    port = parts[1];
+                } else if (address.includes('#')) {
+                    const parts = address.split('#');
+                    address = parts[0];
+                    addressid = parts[1];
+                }
+
+                if (addressid.includes(':')) {
+                    addressid = addressid.split(':')[0];
+                }
+            } else {
+                address = match[1];
+                port = match[2] || port;
+                addressid = match[3] || address;
+            }
+
+            if (!isValidIPv4(address) && port == "-1") {
+                const ports = isNoTLS ? httpPorts : httpsPorts;
+                for (let p of ports) {
+                    if (address.includes(p)) {
+                        port = p;
+                        break;
+                    }
+                }
+            }
+            if (port == "-1") port = isNoTLS ? "80" : "443";
+
+            let 伪装域名 = host;
+            let 最终路径 = path;
+            let 节点备注 = '';
+            if (!isNoTLS) {
+                const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
+                if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
+
+                if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
+                    最终路径 = `/${伪装域名}${最终路径}`;
+                    伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
+                    节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
+                }
+            }
+
+            const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob(isNoTLS ? 'P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==' : 'P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+
+            return 维列斯Link;
         }).join('\n');
     };
 
     const addresses = newAddressesapi.concat(newAddressescsv);
-    let responseBody = processAddresses(addresses, false);
+    const responseBody = processAddresses(addresses, false);
 
-    if (noTLS === 'true') {
+    let base64Response = responseBody;
+    if (noTLS == 'true') {
         const addressesnotls = newAddressesnotlsapi.concat(newAddressesnotlscsv);
-        responseBody += `\n${processAddresses(addressesnotls, true)}`;
+        const notlsresponseBody = processAddresses(addressesnotls, true);
+        base64Response += `\n${notlsresponseBody}`;
     }
-
-    if (link.length > 0) responseBody += '\n' + link.join('\n');
-    return btoa(responseBody);
+    if (link.length > 0) base64Response += '\n' + link.join('\n');
+    return btoa(base64Response);
 }
 
 async function 整理(内容) {
@@ -1638,12 +1640,11 @@ async function sendMessage(type, ip, add_data = "") {
     try {
         let msg = "";
         const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
-        
         if (response.ok) {
             const ipInfo = await response.json();
-            msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}</tg-spoiler>\n${add_data}`;
+            msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}\n${add_data}`;
         } else {
-            msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}</tg-spoiler>`;
+            msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}`;
         }
 
         const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent(msg)}`;
@@ -1674,36 +1675,33 @@ async function 生成动态UUID(密钥) {
     const 起始日期 = new Date(2007, 6, 7, 更新时间, 0, 0); // 固定起始日期为2007年7月7日的凌晨3点
     const 一周的毫秒数 = 1000 * 60 * 60 * 24 * 有效时间;
 
-    const 获取当前周数 = () => {
+    function 获取当前周数() {
         const 现在 = new Date();
         const 调整后的现在 = new Date(现在.getTime() + 时区偏移 * 60 * 60 * 1000);
         const 时间差 = Number(调整后的现在) - Number(起始日期);
         return Math.ceil(时间差 / 一周的毫秒数);
-    };
+    }
 
-    const 生成UUID = async (基础字符串) => {
+    async function 生成UUID(基础字符串) {
         const 哈希缓冲区 = new TextEncoder().encode(基础字符串);
         const 哈希 = await crypto.subtle.digest('SHA-256', 哈希缓冲区);
         const 哈希数组 = Array.from(new Uint8Array(哈希));
         const 十六进制哈希 = 哈希数组.map(b => b.toString(16).padStart(2, '0')).join('');
         return `${十六进制哈希.substr(0, 8)}-${十六进制哈希.substr(8, 4)}-4${十六进制哈希.substr(13, 3)}-${(parseInt(十六进制哈希.substr(16, 2), 16) & 0x3f | 0x80).toString(16)}${十六进制哈希.substr(18, 2)}-${十六进制哈希.substr(20, 12)}`;
-    };
+    }
 
-    const 当前周数 = 获取当前周数();
+    const 当前周数 = 获取当前周数(); // 获取当前周数
     const 结束时间 = new Date(起始日期.getTime() + 当前周数 * 一周的毫秒数);
 
-    try {
-        const 当前UUID = await 生成UUID(密钥 + 当前周数);
-        const 上一个UUID = await 生成UUID(密钥 + (当前周数 - 1));
+    // 生成两个 UUID
+    const 当前UUID = await 生成UUID(密钥 + 当前周数);
+    const 上一个UUID = await 生成UUID(密钥 + (当前周数 - 1));
 
-        const 到期时间UTC = new Date(结束时间.getTime() - 时区偏移 * 60 * 60 * 1000);
-        const 到期时间字符串 = `到期时间(UTC): ${到期时间UTC.toISOString().slice(0, 19).replace('T', ' ')} (UTC+8): ${结束时间.toISOString().slice(0, 19).replace('T', ' ')}\n`;
+    // 格式化到期时间
+    const 到期时间UTC = new Date(结束时间.getTime() - 时区偏移 * 60 * 60 * 1000); // UTC时间
+    const 到期时间字符串 = `到期时间(UTC): ${到期时间UTC.toISOString().slice(0, 19).replace('T', ' ')} (UTC+8): ${结束时间.toISOString().slice(0, 19).replace('T', ' ')}\n`;
 
-        return [当前UUID, 上一个UUID, 到期时间字符串];
-    } catch (error) {
-        console.error('生成UUID时出错:', error);
-        return null;
-    }
+    return [当前UUID, 上一个UUID, 到期时间字符串];
 }
 
 async function 迁移地址列表(env, txt = 'ADD.txt') {
@@ -1712,8 +1710,10 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
         const 新数据 = await env.KV.get(txt);
 
         if (旧数据 && !新数据) {
-            await env.KV.put(txt, 旧数据); // 写入新位置
-            await env.KV.delete(`/${txt}`); // 删除旧数据
+            // 写入新位置
+            await env.KV.put(txt, 旧数据);
+            // 删除旧数据
+            await env.KV.delete(`/${txt}`);
             return true;
         }
         return false;
@@ -1721,15 +1721,6 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
         console.error('迁移地址列表时发生错误:', error);
         return false;
     }
-}
-
-// 错误处理函数，用于统一处理错误响应
-function handleError(error, message = '处理请求时发生错误') {
-    console.error(`${message}:`, error);
-    return new Response(`服务器错误: ${error.message}`, {
-        status: 500,
-        headers: { "Content-Type": "text/plain;charset=utf-8" }
-    });
 }
 
 async function KV(request, env, txt = 'ADD.txt') {
