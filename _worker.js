@@ -964,26 +964,46 @@ function socks5AddressParser(address) {
  */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     try {
+        // 如果内容是Base64编码的，先解码
         if (isBase64) {
-            content = atob(content);  // 如果内容是Base64编码的，先解码
+            content = atob(content);
         }
 
-        const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const fakeUserIDRegex = new RegExp(escapeRegExp(fakeUserID), 'g');
-        const fakeHostNameRegex = new RegExp(escapeRegExp(fakeHostName), 'g');
+        // 创建并替换伪装的用户ID和主机名
+        content = replaceMaskedInfo(content, fakeUserID, userID)
+                         .replace(new RegExp(escapeRegExp(fakeHostName), 'g'), hostName);
 
-        content = content.replace(fakeUserIDRegex, userID)
-                         .replace(fakeHostNameRegex, hostName);
-
+        // 如果内容是Base64编码的，处理完后再次编码
         if (isBase64) {
-            content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+            content = btoa(content);
         }
 
         return content;
     } catch (error) {
-        console.error('处理内容时发生错误:', error);
+        console.error('恢复伪装信息时发生错误:', error);
         return content;  // 返回原始内容以防止数据丢失
     }
+}
+
+/**
+ * 替换伪装的用户ID或主机名
+ * @param {string} content 内容
+ * @param {string} fakeValue 伪装的值
+ * @param {string} realValue 真实的值
+ * @returns {string} 替换后的内容
+ */
+function replaceMaskedInfo(content, fakeValue, realValue) {
+    const fakeValueRegex = new RegExp(escapeRegExp(fakeValue), 'g');
+    return content.replace(fakeValueRegex, realValue);
+}
+
+/**
+ * 转义正则表达式中的特殊字符
+ * @param {string} string 需要转义的字符串
+ * @returns {string} 转义后的字符串
+ */
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
