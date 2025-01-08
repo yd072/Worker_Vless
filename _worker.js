@@ -905,95 +905,141 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
  * @param {string} addressRemote 目标地址（可以是 IP 或域名）
  * @param {number} portRemote 目标端口
  * @param {function} log 日志记录函数
- * @returns {Promise<Socket>} 返回与 SOCKS5 服务器的连接
  */
 async function socks5Connect(addressType, addressRemote, portRemote, log) {
-    const { username, password, hostname, port } = parsedSocks5Address;
+	const { username, password, hostname, port } = parsedSocks5Address;
+	// 连接到 SOCKS5 代理服务器
+	const socket = connect({
+		hostname, // SOCKS5 服务器的主机名
+		port,	// SOCKS5 服务器的端口
+	});
 
-    try {
-        // 连接到 SOCKS5 代理服务器
-        const socket = connect({
-            hostname, // SOCKS5 服务器的主机名
-            port,     // SOCKS5 服务器的端口
-        });
+	// 请求头格式（Worker -> SOCKS5 服务器）:
+	// +----+----------+----------+
+	// |VER | NMETHODS | METHODS  |
+	// +----+----------+----------+
+	// | 1  |	1	 | 1 to 255 |
+	// +----+----------+----------+
 
-        // 发送 SOCKS5 问候消息
-        const socksGreeting = new Uint8Array([5, 2, 0, 2]);
-        const writer = socket.writable.getWriter();
-        await writer.write(socksGreeting);
-        log('已发送 SOCKS5 问候消息');
+	// https://en.wikipedia.org/wiki/SOCKS#SOCKS5
+	// METHODS 字段的含义:
+	// 0x00 不需要认证
+	// 0x02 用户名/密码认证 https://datatracker.ietf.org/doc/html/rfc1929
+	const socksGreeting = new Uint8Array([5, 2, 0, 2]);
+	// 5: SOCKS5 版本号, 2: 支持的认证方法数, 0和2: 两种认证方法（无认证和用户名/密码）
 
-        const reader = socket.readable.getReader();
-        const encoder = new TextEncoder();
-        let res = (await reader.read()).value;
+	const writer = socket.writable.getWriter();
 
-        // 检查 SOCKS5 服务器响应
-        if (res[0] !== 0x05) {
-            log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
-            return;
-        }
-        if (res[1] === 0xff) {
-            log("服务器不接受任何认证方法");
-            return;
-        }
+	await writer.write(socksGreeting);
+	log('已发送 SOCKS5 问候消息');
 
-        // 处理用户名/密码认证
-        if (res[1] === 0x02) {
-            log("SOCKS5 服务器需要认证");
-            if (!username || !password) {
-                log("请提供用户名和密码");
-                return;
-            }
-            const authRequest = new Uint8Array([
-                1,                    // 认证子协议版本
-                username.length,      // 用户名长度
-                ...encoder.encode(username), // 用户名
-                password.length,      // 密码长度
-                ...encoder.encode(password)  // 密码
-            ]);
-            await writer.write(authRequest);
-            res = (await reader.read()).value;
-            if (res[0] !== 0x01 || res[1] !== 0x00) {
-                log("SOCKS5 服务器认证失败");
-                return;
-            }
-        }
+	const reader = socket.readable.getReader();
+	const encoder = new TextEncoder();
+	let res = (await reader.read()).value;
+	// 响应格式（SOCKS5 服务器 -> Worker）:
+	// +----+--------+
+	// |VER | METHOD |
+	// +----+--------+
+	// | 1  |   1	|
+	// +----+--------+
+	if (res[0] !== 0x05) {
+		log(`SOCKS5 服务器版本错误: 收到 ${res[0]}，期望是 5`);
+		return;
+	}
+	if (res[1] === 0xff) {
+		log("服务器不接受任何认证方法");
+		return;
+	}
 
-        // 构建并发送 SOCKS5 请求
-        let DSTADDR;
-        switch (addressType) {
-            case 1: // IPv4
-                DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
-                break;
-            case 2: // 域名
-                DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
-                break;
-            case 3: // IPv6
-                DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]);
-                break;
-            default:
-                log(`无效的地址类型: ${addressType}`);
-                return;
-        }
-        const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
-        await writer.write(socksRequest);
-        log('已发送 SOCKS5 请求');
+	// 如果返回 0x0502，表示需要用户名/密码认证
+	if (res[1] === 0x02) {
+		log("SOCKS5 服务器需要认证");
+		if (!username || !password) {
+			log("请提供用户名和密码");
+			return;
+		}
+		// 认证请求格式:
+		// +----+------+----------+------+----------+
+		// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+		// +----+------+----------+------+----------+
+		// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+		// +----+------+----------+------+----------+
+		const authRequest = new Uint8Array([
+			1,				   // 认证子协议版本
+			username.length,	// 用户名长度
+			...encoder.encode(username), // 用户名
+			password.length,	// 密码长度
+			...encoder.encode(password)  // 密码
+		]);
+		await writer.write(authRequest);
+		res = (await reader.read()).value;
+		// 期望返回 0x0100 表示认证成功
+		if (res[0] !== 0x01 || res[1] !== 0x00) {
+			log("SOCKS5 服务器认证失败");
+			return;
+		}
+	}
 
-        res = (await reader.read()).value;
-        if (res[1] === 0x00) {
-            log("SOCKS5 连接已建立");
-        } else {
-            log("SOCKS5 连接建立失败");
-            return;
-        }
+	// 请求数据格式（Worker -> SOCKS5 服务器）:
+	// +----+-----+-------+------+----------+----------+
+	// |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  |  1  | X'00' |  1   | Variable |	2	 |
+	// +----+-----+-------+------+----------+----------+
+	// ATYP: 地址类型
+	// 0x01: IPv4 地址
+	// 0x03: 域名
+	// 0x04: IPv6 地址
+	// DST.ADDR: 目标地址
+	// DST.PORT: 目标端口（网络字节序）
 
-        writer.releaseLock();
-        reader.releaseLock();
-        return socket;
-    } catch (error) {
-        log(`socks5Connect 函数发生异常，错误信息: ${error.message}`);
-        throw error;
-    }
+	// addressType
+	// 1 --> IPv4  地址长度 = 4
+	// 2 --> 域名
+	// 3 --> IPv6  地址长度 = 16
+	let DSTADDR;	// DSTADDR = ATYP + DST.ADDR
+	switch (addressType) {
+		case 1: // IPv4
+			DSTADDR = new Uint8Array(
+				[1, ...addressRemote.split('.').map(Number)]
+			);
+			break;
+		case 2: // 域名
+			DSTADDR = new Uint8Array(
+				[3, addressRemote.length, ...encoder.encode(addressRemote)]
+			);
+			break;
+		case 3: // IPv6
+			DSTADDR = new Uint8Array(
+				[4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]
+			);
+			break;
+		default:
+			log(`无效的地址类型: ${addressType}`);
+			return;
+	}
+	const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
+	// 5: SOCKS5版本, 1: 表示CONNECT请求, 0: 保留字段
+	// ...DSTADDR: 目标地址, portRemote >> 8 和 & 0xff: 将端口转为网络字节序
+	await writer.write(socksRequest);
+	log('已发送 SOCKS5 请求');
+
+	res = (await reader.read()).value;
+	// 响应格式（SOCKS5 服务器 -> Worker）:
+	//  +----+-----+-------+------+----------+----------+
+	// |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  |  1  | X'00' |  1   | Variable |	2	 |
+	// +----+-----+-------+------+----------+----------+
+	if (res[1] === 0x00) {
+		log("SOCKS5 连接已建立");
+	} else {
+		log("SOCKS5 连接建立失败");
+		return;
+	}
+	writer.releaseLock();
+	reader.releaseLock();
+	return socket;
 }
 
 /**
@@ -1004,48 +1050,48 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
  *   - "username:password@hostname:port" （带认证）
  *   - "hostname:port" （不需认证）
  *   - "username:password@[ipv6]:port" （IPv6 地址需要用方括号括起来）
- * @returns {Object} 包含解析后的用户名、密码、主机名和端口号
  */
 function socks5AddressParser(address) {
-    // 使用 "@" 分割地址，分为认证部分和服务器地址部分
-    // reverse() 是为了处理没有认证信息的情况，确保 latter 总是包含服务器地址
-    let [latter, former] = address.split("@").reverse();
-    let username, password, hostname, port;
+	// 使用 "@" 分割地址，分为认证部分和服务器地址部分
+	// reverse() 是为了处理没有认证信息的情况，确保 latter 总是包含服务器地址
+	let [latter, former] = address.split("@").reverse();
+	let username, password, hostname, port;
 
-    // 如果存在 former 部分，说明提供了认证信息
-    if (former) {
-        const formers = former.split(":");
-        if (formers.length !== 2) {
-            throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
-        }
-        [username, password] = formers;
-    }
+	// 如果存在 former 部分，说明提供了认证信息
+	if (former) {
+		const formers = former.split(":");
+		if (formers.length !== 2) {
+			throw new Error('无效的 SOCKS 地址格式：认证部分必须是 "username:password" 的形式');
+		}
+		[username, password] = formers;
+	}
 
-    // 解析服务器地址部分
-    const latters = latter.split(":");
-    // 从末尾提取端口号（因为 IPv6 地址中也包含冒号）
-    port = Number(latters.pop());
-    if (isNaN(port)) {
-        throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
-    }
+	// 解析服务器地址部分
+	const latters = latter.split(":");
+	// 从末尾提取端口号（因为 IPv6 地址中也包含冒号）
+	port = Number(latters.pop());
+	if (isNaN(port)) {
+		throw new Error('无效的 SOCKS 地址格式：端口号必须是数字');
+	}
 
-    // 剩余部分就是主机名（可能是域名、IPv4 或 IPv6 地址）
-    hostname = latters.join(":");
+	// 剩余部分就是主机名（可能是域名、IPv4 或 IPv6 地址）
+	hostname = latters.join(":");
 
-    // 处理 IPv6 地址的特殊情况
-    // IPv6 地址包含多个冒号，所以必须用方括号括起来，如 [2001:db8::1]
-    const ipv6Regex = /^\[.*\]$/;
-    if (hostname.includes(":") && !ipv6Regex.test(hostname)) {
-        throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
-    }
+	// 处理 IPv6 地址的特殊情况
+	// IPv6 地址包含多个冒号，所以必须用方括号括起来，如 [2001:db8::1]
+	const regex = /^\[.*\]$/;
+	if (hostname.includes(":") && !regex.test(hostname)) {
+		throw new Error('无效的 SOCKS 地址格式：IPv6 地址必须用方括号括起来，如 [2001:db8::1]');
+	}
 
-    // 返回解析后的结果
-    return {
-        username,  // 用户名，如果没有则为 undefined
-        password,  // 密码，如果没有则为 undefined
-        hostname,  // 主机名，可以是域名、IPv4 或 IPv6 地址
-        port,      // 端口号，已转换为数字类型
-    };
+	//if (/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(hostname)) hostname = `${atob('d3d3Lg==')}${hostname}${atob('LmlwLjA5MDIyNy54eXo=')}`;
+	// 返回解析后的结果
+	return {
+		username,  // 用户名，如果没有则为 undefined
+		password,  // 密码，如果没有则为 undefined
+		hostname,  // 主机名，可以是域名、IPv4 或 IPv6 地址
+		port,	 // 端口号，已转换为数字类型
+	}
 }
 
 /**
@@ -1055,27 +1101,20 @@ function socks5AddressParser(address) {
  * @param {string} content 需要处理的内容
  * @param {string} userID 真实的用户ID
  * @param {string} hostName 真实的主机名
- * @param {string} fakeUserID 伪装的用户ID
- * @param {string} fakeHostName 伪装的主机名
  * @param {boolean} isBase64 内容是否是Base64编码的
  * @returns {string} 恢复真实信息后的内容
  */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
-    if (isBase64) {
-        content = atob(content);  // 如果内容是Base64编码的，先解码
-    }
+	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
-    // 使用正则表达式全局替换（'g'标志）
-    // 将所有出现的假用户ID和假主机名替换为真实的值
-    const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // 转义正则表达式中的特殊字符
-    content = content.replace(new RegExp(escapeRegExp(fakeUserID), 'g'), userID)
-                     .replace(new RegExp(escapeRegExp(fakeHostName), 'g'), hostName);
+	// 使用正则表达式全局替换（'g'标志）
+	// 将所有出现的假用户ID和假主机名替换为真实的值
+	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
+		.replace(new RegExp(fakeHostName, 'g'), hostName);
 
-    if (isBase64) {
-        content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
-    }
+	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
 
-    return content;
+	return content;
 }
 
 /**
@@ -1087,71 +1126,57 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
  * @returns {Promise<string>} 双重哈希后的小写十六进制字符串
  */
 async function 双重哈希(文本) {
-    const 编码器 = new TextEncoder();
+	const 编码器 = new TextEncoder();
 
-    // 第一次哈希
-    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-    const 第一次哈希数组 = Array.from(new Uint8Array(第一次哈希));
-    const 第一次十六进制 = 第一次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+	const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
+	const 第一次哈希数组 = Array.from(new Uint8Array(第一次哈希));
+	const 第一次十六进制 = 第一次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
 
-    // 第二次哈希，使用第一次哈希结果的一部分
-    const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-    const 第二次哈希数组 = Array.from(new Uint8Array(第二次哈希));
-    const 第二次十六进制 = 第二次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
+	const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
+	const 第二次哈希数组 = Array.from(new Uint8Array(第二次哈希));
+	const 第二次十六进制 = 第二次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
 
-    return 第二次十六进制.toLowerCase();
+	return 第二次十六进制.toLowerCase();
 }
 
-/**
- * 代理URL函数
- * 通过从代理网址列表中随机选择一个网址来构建新的请求
- * 
- * @param {string} 代理网址 - 用于代理的基础网址
- * @param {URL} 目标网址 - 目标网址对象
- * @returns {Promise<Response>} 返回新的响应对象
- */
 async function 代理URL(代理网址, 目标网址) {
-    try {
-        const 网址列表 = await 整理(代理网址);
-        const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+	const 网址列表 = await 整理(代理网址);
+	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-        // 解析目标 URL
-        let 解析后的网址 = new URL(完整网址);
-        console.log(解析后的网址);
+	// 解析目标 URL
+	let 解析后的网址 = new URL(完整网址);
+	console.log(解析后的网址);
+	// 提取并可能修改 URL 组件
+	let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
+	let 主机名 = 解析后的网址.hostname;
+	let 路径名 = 解析后的网址.pathname;
+	let 查询参数 = 解析后的网址.search;
 
-        // 提取并可能修改 URL 组件
-        let 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-        let 主机名 = 解析后的网址.hostname;
-        let 路径名 = 解析后的网址.pathname;
-        let 查询参数 = 解析后的网址.search;
+	// 处理路径名
+	if (路径名.charAt(路径名.length - 1) == '/') {
+		路径名 = 路径名.slice(0, -1);
+	}
+	路径名 += 目标网址.pathname;
 
-        // 处理路径名
-        if (路径名.charAt(路径名.length - 1) === '/') {
-            路径名 = 路径名.slice(0, -1);
-        }
-        路径名 += 目标网址.pathname;
+	// 构建新的 URL
+	let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
 
-        // 构建新的 URL
-        let 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+	// 反向代理请求
+	let 响应 = await fetch(新网址);
 
-        // 反向代理请求
-        let 响应 = await fetch(新网址);
+	// 创建新的响应
+	let 新响应 = new Response(响应.body, {
+		status: 响应.status,
+		statusText: 响应.statusText,
+		headers: 响应.headers
+	});
 
-        // 创建新的响应
-        let 新响应 = new Response(响应.body, {
-            status: 响应.status,
-            statusText: 响应.statusText,
-            headers: 响应.headers
-        });
+	// 添加自定义头部，包含 URL 信息
+	//新响应.headers.set('X-Proxied-By', 'Cloudflare Worker');
+	//新响应.headers.set('X-Original-URL', 完整网址);
+	新响应.headers.set('X-New-URL', 新网址);
 
-        // 添加自定义头部，包含 URL 信息
-        新响应.headers.set('X-New-URL', 新网址);
-
-        return 新响应;
-    } catch (error) {
-        console.error('代理URL函数发生异常:', error);
-        throw error;
-    }
+	return 新响应;
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
