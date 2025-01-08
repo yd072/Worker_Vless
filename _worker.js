@@ -1015,29 +1015,17 @@ function escapeRegExp(string) {
  * @returns {Promise<string>} 双重哈希后的小写十六进制字符串
  */
 async function 双重哈希(文本) {
-    const 编码器 = new TextEncoder();
+	const 编码器 = new TextEncoder();
 
-    const 计算哈希 = async (输入) => {
-        const 哈希 = await crypto.subtle.digest('MD5', 编码器.encode(输入));
-        return 哈希; // 直接返回二进制结果
-    };
+	const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
+	const 第一次哈希数组 = Array.from(new Uint8Array(第一次哈希));
+	const 第一次十六进制 = 第一次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
 
-    try {
-        // 第一次哈希
-        const 第一次哈希结果 = await 计算哈希(文本);
+	const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
+	const 第二次哈希数组 = Array.from(new Uint8Array(第二次哈希));
+	const 第二次十六进制 = 第二次哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
 
-        // 第二次哈希，使用第一次哈希结果的一部分（第7到27字节）
-        const 第二次哈希结果 = await 计算哈希(第一次哈希结果.slice(7, 27));
-
-        // 将结果转为十六进制小写字符串
-        const 哈希数组 = Array.from(new Uint8Array(第二次哈希结果));
-        const 第二次十六进制 = 哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
-
-        return 第二次十六进制.toLowerCase();
-    } catch (error) {
-        console.error('哈希计算时发生错误:', error);
-        throw error;  // 重新抛出错误以便调用者处理
-    }
+	return 第二次十六进制.toLowerCase();
 }
 
 async function 代理URL(代理网址, 目标网址) {
