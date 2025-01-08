@@ -986,24 +986,26 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
 }
 
 /**
- * 替换伪装的用户ID或主机名
- * @param {string} content 内容
- * @param {string} fakeValue 伪装的值
- * @param {string} realValue 真实的值
- * @returns {string} 替换后的内容
+ * 恢复被伪装的信息
+ * 这个函数用于将内容中的假用户ID和假主机名替换回真实的值
+ * 
+ * @param {string} content 需要处理的内容
+ * @param {string} userID 真实的用户ID
+ * @param {string} hostName 真实的主机名
+ * @param {boolean} isBase64 内容是否是Base64编码的
+ * @returns {string} 恢复真实信息后的内容
  */
-function replaceMaskedInfo(content, fakeValue, realValue) {
-    const fakeValueRegex = new RegExp(escapeRegExp(fakeValue), 'g');
-    return content.replace(fakeValueRegex, realValue);
-}
+function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
+	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
-/**
- * 转义正则表达式中的特殊字符
- * @param {string} string 需要转义的字符串
- * @returns {string} 转义后的字符串
- */
-function escapeRegExp(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	// 使用正则表达式全局替换（'g'标志）
+	// 将所有出现的假用户ID和假主机名替换为真实的值
+	content = content.replace(new RegExp(fakeUserID, 'g'), userID)
+		.replace(new RegExp(fakeHostName, 'g'), hostName);
+
+	if (isBase64) content = btoa(content);  // 如果原内容是Base64编码的，处理完后再次编码
+
+	return content;
 }
 
 /**
