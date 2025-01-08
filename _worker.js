@@ -257,7 +257,7 @@ async function 维列斯OverWSHandler(request) {
     let address = '';
     let portWithRandomLog = '';
     // 日志函数，用于记录连接信息
-    const log = (/** @type {string} */ info, /** @type {string | undefined} */ event) => {
+    const log = (info, event) => {
         console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
     };
     // 获取早期数据头部，可能包含了一些初始化数据
@@ -272,6 +272,9 @@ async function 维列斯OverWSHandler(request) {
     };
     // 标记是否为 DNS 查询
     let isDns = false;
+
+    // 将 banHosts 转换为 Set 以提高查找速度
+    const banHostsSet = new Set(banHosts);
 
     // WebSocket 数据流向远程服务器的管道
     readableWebSocketStream.pipeTo(new WritableStream({
@@ -325,7 +328,7 @@ async function 维列斯OverWSHandler(request) {
                     return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
                 }
                 // 处理 TCP 出站连接
-                if (!banHosts.includes(addressRemote)) {
+                if (!banHostsSet.has(addressRemote)) {
                     log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
                     handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
                 } else {
