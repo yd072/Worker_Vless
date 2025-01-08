@@ -596,12 +596,22 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
     let 维列斯Header = 维列斯ResponseHeader;
     let retryCount = 0;
     const MAX_RETRIES = 5;
+    const HEARTBEAT_INTERVAL = 30000; // 30秒心跳间隔
 
     function safeCloseWebSocket(ws) {
         if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
             ws.close();
         }
     }
+
+    function sendHeartbeat() {
+        if (webSocket.readyState === WS_READY_STATE_OPEN) {
+            webSocket.send('ping');
+            log('发送心跳');
+        }
+    }
+
+    const heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
 
     try {
         await remoteSocket.readable
@@ -640,9 +650,11 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                     },
                     close() {
                         log(`远程连接的可读流已关闭，hasIncomingData: ${hasIncomingData}, 时间: ${new Date().toISOString()}`);
+                        clearInterval(heartbeatInterval);
                     },
                     abort(reason) {
                         console.error(`远程连接的可读流中断`, reason);
+                        clearInterval(heartbeatInterval);
                     },
                 })
             );
@@ -650,13 +662,14 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
         console.error(`remoteSocketToWS 发生异常: ${error.stack || error}`);
         log(`remoteSocketToWS 发生异常: ${error.message}`);
         safeCloseWebSocket(webSocket);
+        clearInterval(heartbeatInterval);
     }
 
     if (!hasIncomingData && retry) {
         if (retryCount < MAX_RETRIES) {
             retryCount++;
             log(`尝试重试连接 (第 ${retryCount} 次)`);
-            setTimeout(() => retry(retryCount), 1000);
+            setTimeout(() => retry(retryCount), Math.pow(2, retryCount) * 1000); // 指数退避
         } else {
             log(`已达到最大重试次数 (${MAX_RETRIES})，放弃重试`);
         }
