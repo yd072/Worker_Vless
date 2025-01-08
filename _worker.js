@@ -590,81 +590,67 @@ function process维列斯Header(维列斯Buffer, userID) {
     };
 }
 	
-async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log, maxRetries = 3) {
-    const WS_READY_STATE_OPEN = 1; // WebSocket open state
-    const RETRY_DELAY_MS = 1000; // 每次重试之间的延迟时间
+async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
+    // 将数据从远程服务器转发到 WebSocket
     let chunkCount = 0;
-    let hasIncomingData = false;
+    let hasIncomingData = false; // 检查远程 Socket 是否有传入数据
     let 维列斯Header = 维列斯ResponseHeader;
-    let retryCount = 0;
 
-    async function handleRetry(reason) {
-        if (retryCount >= maxRetries) {
-            log(`重试次数已达上限 (${maxRetries})，停止重试。原因: ${reason}`);
-            return;
-        }
-        retryCount++;
-        log(`准备重试第 ${retryCount}/${maxRetries} 次，原因: ${reason}`);
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-        retry(); // 调用重试函数
-    }
-
-    try {
-        await remoteSocket.readable.pipeTo(
+    // 使用管道将远程 Socket 的可读流连接到一个可写流
+    await remoteSocket.readable
+        .pipeTo(
             new WritableStream({
                 start() {
                     // 初始化时不需要任何操作
                 },
+                /**
+                 * 处理每个数据块
+                 * @param {Uint8Array} chunk 数据块
+                 * @param {*} controller 控制器
+                 */
                 async write(chunk, controller) {
-                    hasIncomingData = true;
+                    hasIncomingData = true; // 标记已收到数据
 
+                    // 检查 WebSocket 是否处于开放状态
                     if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                        const errorMsg = 'WebSocket 连接未打开，可能已关闭';
-                        log(errorMsg);
-                        controller.error(errorMsg);
+                        controller.error('WebSocket 连接未打开，可能已关闭');
                         return;
                     }
 
                     try {
                         if (维列斯Header) {
-                            const combinedData = await new Blob([维列斯Header, chunk]).arrayBuffer();
-                            webSocket.send(combinedData);
-                            维列斯Header = null;
+                            // 如果有 维列斯 响应头部，将其与第一个数据块一起发送
+                            webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
+                            维列斯Header = null; // 清空头部，之后不再发送
                         } else {
+                            // 直接发送数据块
                             webSocket.send(chunk);
                         }
                     } catch (error) {
-                        const sendErrorMsg = `发送数据时发生错误: ${error.message}`;
-                        log(sendErrorMsg);
-                        controller.error(sendErrorMsg);
-                        safeCloseWebSocket(webSocket);
-                        await handleRetry(sendErrorMsg);
+                        controller.error(`发送数据时发生错误: ${error.message}`);
                     }
                 },
                 close() {
+                    // 当远程连接的可读流关闭时
                     log(`远程连接的可读流已关闭，hasIncomingData: ${hasIncomingData}`);
-                    if (!hasIncomingData) {
-                        handleRetry('远程连接关闭时未接收到数据');
-                    }
                 },
                 abort(reason) {
-                    const abortMsg = `远程连接的可读流中断，原因: ${reason}`;
-                    log(abortMsg);
-                    handleRetry(abortMsg);
+                    // 当远程连接的可读流中断时
+                    console.error(`远程连接的可读流中断`, reason);
                 },
             })
-        );
-    } catch (error) {
-        const errorMsg = `remoteSocketToWS 发生异常: ${error.stack || error}`;
-        log(errorMsg);
-        safeCloseWebSocket(webSocket);
-        await handleRetry(errorMsg);
-    }
+        )
+        .catch((error) => {
+            // 捕获并记录任何异常
+            console.error(`remoteSocketToWS 发生异常`, error.stack || error);
+            // 发生错误时安全地关闭 WebSocket
+            safeCloseWebSocket(webSocket);
+        });
 
-    if (!hasIncomingData) {
-        const noDataMsg = '远程连接未接收到任何数据';
-        log(noDataMsg);
-        await handleRetry(noDataMsg);
+    // 处理 Cloudflare 连接 Socket 的特殊错误情况
+    if (!hasIncomingData && retry) {
+        log(`重试连接`);
+        retry(); // 调用重试函数，尝试重新建立连接
     }
 }
 
