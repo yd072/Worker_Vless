@@ -3,7 +3,7 @@ import { connect } from 'cloudflare:sockets';
 
 let userID = '';
 let proxyIP = '';
-//let sub = '';
+let sub = '';
 let subConverter = 'SUBAPI.fxxk.dedyn.io';
 let subConfig = "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_MultiMode.ini";
 let subProtocol = 'https';
@@ -12,6 +12,8 @@ let socks5Address = '';
 let parsedSocks5Address = {};
 let enableSocks = false;
 
+let fakeUserID;
+let fakeHostName;
 let noTLS = 'false';
 const expire = 4102329600;//2099-12-31
 let proxyIPs;
@@ -72,7 +74,7 @@ export default {
 			currentDate.setHours(0, 0, 0, 0);
 			const timestamp = Math.ceil(currentDate.getTime() / 1000);
 			const fakeUserIDMD5 = await 双重哈希(`${userID}${timestamp}`);
-			const fakeUserID = [
+			fakeUserID = [
 				fakeUserIDMD5.slice(0, 8),
 				fakeUserIDMD5.slice(8, 12),
 				fakeUserIDMD5.slice(12, 16),
@@ -80,7 +82,7 @@ export default {
 				fakeUserIDMD5.slice(20)
 			].join('-');
 
-			const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
+			fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
 
 			proxyIP = env.PROXYIP || env.proxyip || proxyIP;
 			proxyIPs = await 整理(proxyIP);
@@ -124,7 +126,7 @@ export default {
 				subEmoji = env.SUBEMOJI || env.EMOJI || subEmoji;
 				if (subEmoji == '0') subEmoji = 'false';
 				if (env.LINK) link = await 整理(env.LINK);
-				let sub = env.SUB || '';
+				sub = env.SUB || sub;
 				subConverter = env.SUBAPI || subConverter;
 				if (subConverter.includes("http://")) {
 					subConverter = subConverter.split("//")[1];
@@ -158,14 +160,14 @@ export default {
 						},
 					});
 				} else if (路径 == `/${fakeUserID}`) {
-					const fakeConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, 'CF-Workers-SUB', RproxyIP, url, fakeUserID, fakeHostName, env);
+					const fakeConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, 'CF-Workers-SUB', RproxyIP, url, env);
 					return new Response(`${fakeConfig}`, { status: 200 });
 				} else if (url.pathname == `/${动态UUID}/edit` || 路径 == `/${userID}/edit`) {
 					const html = await KV(request, env);
 					return html;
 				} else if (url.pathname == `/${动态UUID}` || 路径 == `/${userID}`) {
 					await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${UA}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					const 维列斯Config = await 生成配置信息(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+					const 维列斯Config = await 生成配置信息(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, env);
 					const now = Date.now();
 					//const timestamp = Math.floor(now / 1000);
 					const today = new Date(now);
@@ -1104,7 +1106,7 @@ function socks5AddressParser(address) {
  * @param {boolean} isBase64 内容是否是Base64编码的
  * @returns {string} 恢复真实信息后的内容
  */
-function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
+function 恢复伪装信息(content, userID, hostName, isBase64) {
 	if (isBase64) content = atob(content);  // 如果内容是Base64编码的，先解码
 
 	// 使用正则表达式全局替换（'g'标志）
@@ -1218,7 +1220,7 @@ const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRT
  * @param {string} UA
  * @returns {Promise<string>}
  */
-async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
+async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, env) {
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
 		if (match) {
@@ -1542,7 +1544,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 
 			if (_url.pathname == `/${fakeUserID}`) return content;
 
-			return 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64);
+			return 恢复伪装信息(content, userID, hostName, isBase64);
 
 		} catch (error) {
 			console.error('Error fetching content:', error);
