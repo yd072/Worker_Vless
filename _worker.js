@@ -1547,75 +1547,83 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
     const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
     const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
     const httpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
-    const 协议类型 = atob('c3M=');
-
-    const parseAddress = (address, isNoTLS) => {
-        let port = "-1";
-        let addressid = address;
-
-        const match = address.match(regex);
-        if (match) {
-            address = match[1];
-            port = match[2] || port;
-            addressid = match[3] || address;
-        } else {
-            const [addr, portOrId] = address.split(/[:#]/);
-            address = addr;
-            if (address.includes(':')) {
-                port = portOrId.split(':')[0];
-            } else {
-                addressid = portOrId;
-            }
-        }
-
-        if (!isValidIPv4(address) && port === "-1") {
-            const ports = isNoTLS ? httpPorts : httpsPorts;
-            port = ports.find(p => address.includes(p)) || (isNoTLS ? "80" : "443");
-        }
-
-        return { address, port, addressid };
-    };
-
-    const generateLink = (address, port, addressid, isNoTLS) => {
-        let 伪装域名 = host;
-        let 最终路径 = path;
-        let 节点备注 = '';
-
-        if (!isNoTLS) {
-            const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
-            if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
-
-            if (proxyhosts.length > 0 && 伪装域名.includes('.workers.dev')) {
-                最终路径 = `/${伪装域名}${最终路径}`;
-                伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
-                节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
-            }
-        }
-
-        const security = isNoTLS ? 'none' : 'tls';
-        const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&security=${security}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
-
-        return 维列斯Link;
-    };
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
     const processAddresses = (addresses, isNoTLS) => {
         const uniqueAddresses = [...new Set(addresses)];
         return uniqueAddresses.map(address => {
-            const { address: addr, port, addressid } = parseAddress(address, isNoTLS);
-            return generateLink(addr, port, addressid, isNoTLS);
+            let port = "-1";
+            let addressid = address;
+
+            const match = addressid.match(regex);
+            if (!match) {
+                if (address.includes(':') && address.includes('#')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    const subParts = parts[1].split('#');
+                    port = subParts[0];
+                    addressid = subParts[1];
+                } else if (address.includes(':')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    port = parts[1];
+                } else if (address.includes('#')) {
+                    const parts = address.split('#');
+                    address = parts[0];
+                    addressid = parts[1];
+                }
+
+                if (addressid.includes(':')) {
+                    addressid = addressid.split(':')[0];
+                }
+            } else {
+                address = match[1];
+                port = match[2] || port;
+                addressid = match[3] || address;
+            }
+
+            if (!isValidIPv4(address) && port == "-1") {
+                const ports = isNoTLS ? httpPorts : httpsPorts;
+                for (let p of ports) {
+                    if (address.includes(p)) {
+                        port = p;
+                        break;
+                    }
+                }
+            }
+            if (port == "-1") port = isNoTLS ? "80" : "443";
+
+            let 伪装域名 = host;
+            let 最终路径 = path;
+            let 节点备注 = '';
+            if (!isNoTLS) {
+                const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
+                if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
+
+                if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
+                    最终路径 = `/${伪装域名}${最终路径}`;
+                    伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
+                    节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
+                }
+            }
+
+            const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob(isNoTLS ? 'P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==' : 'P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+
+            return 维列斯Link;
         }).join('\n');
     };
 
     const addresses = newAddressesapi.concat(newAddressescsv);
-    let responseBody = processAddresses(addresses, false);
+    const responseBody = processAddresses(addresses, false);
 
-    if (noTLS === 'true') {
+    let base64Response = responseBody;
+    if (noTLS == 'true') {
         const addressesnotls = newAddressesnotlsapi.concat(newAddressesnotlscsv);
-        responseBody += `\n${processAddresses(addressesnotls, true)}`;
+        const notlsresponseBody = processAddresses(addressesnotls, true);
+        base64Response += `\n${notlsresponseBody}`;
     }
-
-    if (link.length > 0) responseBody += '\n' + link.join('\n');
-    return btoa(responseBody);
+    if (link.length > 0) base64Response += '\n' + link.join('\n');
+    return btoa(base64Response);
 }
 
 async function 整理(内容) {
@@ -1638,11 +1646,12 @@ async function sendMessage(type, ip, add_data = "") {
     try {
         let msg = "";
         const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
+        
         if (response.ok) {
             const ipInfo = await response.json();
-            msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}\n${add_data}`;
+            msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}</tg-spoiler>\n${add_data}`;
         } else {
-            msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}`;
+            msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}</tg-spoiler>`;
         }
 
         const url = `https://api.telegram.org/bot${BotToken}/sendMessage?chat_id=${ChatID}&parse_mode=HTML&text=${encodeURIComponent(msg)}`;
@@ -1673,33 +1682,36 @@ async function 生成动态UUID(密钥) {
     const 起始日期 = new Date(2007, 6, 7, 更新时间, 0, 0); // 固定起始日期为2007年7月7日的凌晨3点
     const 一周的毫秒数 = 1000 * 60 * 60 * 24 * 有效时间;
 
-    function 获取当前周数() {
+    const 获取当前周数 = () => {
         const 现在 = new Date();
         const 调整后的现在 = new Date(现在.getTime() + 时区偏移 * 60 * 60 * 1000);
         const 时间差 = Number(调整后的现在) - Number(起始日期);
         return Math.ceil(时间差 / 一周的毫秒数);
-    }
+    };
 
-    async function 生成UUID(基础字符串) {
+    const 生成UUID = async (基础字符串) => {
         const 哈希缓冲区 = new TextEncoder().encode(基础字符串);
         const 哈希 = await crypto.subtle.digest('SHA-256', 哈希缓冲区);
         const 哈希数组 = Array.from(new Uint8Array(哈希));
         const 十六进制哈希 = 哈希数组.map(b => b.toString(16).padStart(2, '0')).join('');
         return `${十六进制哈希.substr(0, 8)}-${十六进制哈希.substr(8, 4)}-4${十六进制哈希.substr(13, 3)}-${(parseInt(十六进制哈希.substr(16, 2), 16) & 0x3f | 0x80).toString(16)}${十六进制哈希.substr(18, 2)}-${十六进制哈希.substr(20, 12)}`;
-    }
+    };
 
-    const 当前周数 = 获取当前周数(); // 获取当前周数
+    const 当前周数 = 获取当前周数();
     const 结束时间 = new Date(起始日期.getTime() + 当前周数 * 一周的毫秒数);
 
-    // 生成两个 UUID
-    const 当前UUID = await 生成UUID(密钥 + 当前周数);
-    const 上一个UUID = await 生成UUID(密钥 + (当前周数 - 1));
+    try {
+        const 当前UUID = await 生成UUID(密钥 + 当前周数);
+        const 上一个UUID = await 生成UUID(密钥 + (当前周数 - 1));
 
-    // 格式化到期时间
-    const 到期时间UTC = new Date(结束时间.getTime() - 时区偏移 * 60 * 60 * 1000); // UTC时间
-    const 到期时间字符串 = `到期时间(UTC): ${到期时间UTC.toISOString().slice(0, 19).replace('T', ' ')} (UTC+8): ${结束时间.toISOString().slice(0, 19).replace('T', ' ')}\n`;
+        const 到期时间UTC = new Date(结束时间.getTime() - 时区偏移 * 60 * 60 * 1000);
+        const 到期时间字符串 = `到期时间(UTC): ${到期时间UTC.toISOString().slice(0, 19).replace('T', ' ')} (UTC+8): ${结束时间.toISOString().slice(0, 19).replace('T', ' ')}\n`;
 
-    return [当前UUID, 上一个UUID, 到期时间字符串];
+        return [当前UUID, 上一个UUID, 到期时间字符串];
+    } catch (error) {
+        console.error('生成UUID时出错:', error);
+        return null;
+    }
 }
 
 async function 迁移地址列表(env, txt = 'ADD.txt') {
@@ -1708,10 +1720,8 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
         const 新数据 = await env.KV.get(txt);
 
         if (旧数据 && !新数据) {
-            // 写入新位置
-            await env.KV.put(txt, 旧数据);
-            // 删除旧数据
-            await env.KV.delete(`/${txt}`);
+            await env.KV.put(txt, 旧数据); // 写入新位置
+            await env.KV.delete(`/${txt}`); // 删除旧数据
             return true;
         }
         return false;
@@ -1719,6 +1729,15 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
         console.error('迁移地址列表时发生错误:', error);
         return false;
     }
+}
+
+// 错误处理函数，用于统一处理错误响应
+function handleError(error, message = '处理请求时发生错误') {
+    console.error(`${message}:`, error);
+    return new Response(`服务器错误: ${error.message}`, {
+        status: 500,
+        headers: { "Content-Type": "text/plain;charset=utf-8" }
+    });
 }
 
 async function KV(request, env, txt = 'ADD.txt') {
@@ -1730,8 +1749,7 @@ async function KV(request, env, txt = 'ADD.txt') {
                 await env.KV.put(txt, content);
                 return new Response("保存成功");
             } catch (error) {
-                console.error('保存KV时发生错误:', error);
-                return new Response("保存失败: " + error.message, { status: 500 });
+                return handleError(error, '保存KV时发生错误');
             }
         }
 
@@ -1742,8 +1760,7 @@ async function KV(request, env, txt = 'ADD.txt') {
             try {
                 content = await env.KV.get(txt) || '';
             } catch (error) {
-                console.error('读取KV时发生错误:', error);
-                content = '读取数据时发生错误: ' + error.message;
+                return handleError(error, '读取KV时发生错误');
             }
         }
 
@@ -1769,152 +1786,53 @@ async function KV(request, env, txt = 'ADD.txt') {
                 </style>
             </head>
             <body>
-                ################################################################<br>
-                ${FileName} 优选订阅列表:<br>
-                ---------------------------------------------------------------<br>
-                &nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
-                <div id="noticeContent" class="notice-content">
-                    ${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOUUlOUMlRTYlOTglQUYlRTUlOEYlOEQlRTQlQkIlQTNJUCVFRiVCQyU4QyVFNSU4RiVBRiVFNCVCRCU5QyVFNCVCOCVCQVBST1hZSVAlRTclOUElODQlRTglQUYlOUQlRUYlQkMlOEMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwcm94eWlwJTNEdHJ1ZSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzQ3N0cm9uZyUzRSUzRnByb3h5aXAlM0R0cnVlJTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJTI3aHR0cHMlM0ElMkYlMkZnaXRodWIuY29tJTJGWElVMiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QlMjclM0VDbG91ZGZsYXJlU3BlZWRUZXN0JTNDJTJGYSUzRSUyMCVFNyU5QSU4NCUyMGNzdiUyMCVFNyVCQiU5MyVFNiU5RSU5QyVFNiU5NiU4NyVFNCVCQiVCNiVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NiciUzRSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCLSUyMCVFNSVBNiU4MiVFOSU5QyU4MCVFNiU4QyU4NyVFNSVBRSU5QTIwNTMlRTclQUIlQUYlRTUlOEYlQTMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwb3J0JTNEMjA1MyUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0Zwb3J0JTNEMjA1MyUzQyUyRnN0cm9uZyUzRSUzQ2JyJTNFJTNDYnIlM0UKJTA5JTA5JTA5JTA5JTA5JTI2bmJzcCUzQiUyNm5ic3AlM0ItJTIwJUU1JUE2JTgyJUU5JTlDJTgwJUU2JThDJTg3JUU1JUFFJTlBJUU4JThBJTgyJUU3JTgyJUI5JUU1JUE0JTg3JUU2JUIzJUE4JUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0ZpZCUzRENGJUU0JUJDJTk4JUU5JTgwJTg5JTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQi0lMjAlRTUlQTYlODIlRTklOUMlODAlRTYlOEMlODclRTUlQUUlOUElRTUlQTQlOUElRTQlQjglQUElRTUlOEYlODIlRTYlOTUlQjAlRTUlODglOTklRTklOUMlODAlRTglQTYlODElRTQlQkQlQkYlRTclOTQlQTglMjclMjYlMjclRTUlODElOUElRTklOTclQjQlRTklOUElOTQlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QuY3N2JTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUzQ3N0cm9uZyUzRSUyNiUzQyUyRnN0cm9uZyUzRXBvcnQlM0QyMDUzJTNDYnIlM0U='))}
-                </div>
                 <div class="editor-container">
                     ${hasKV ? `
-                    <textarea class="editor" 
-                        placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
-                        id="content">${content}</textarea>
+                    <textarea class="editor" id="content">${content}</textarea>
                     <div class="save-container">
                         <button class="back-btn" onclick="goBack()">返回配置页</button>
                         <button class="save-btn" onclick="saveContent(this)">保存</button>
                         <span class="save-status" id="saveStatus"></span>
                     </div>
-                    <br>
-                    ################################################################<br>
-                    ${cmad}
                     ` : '<p>未绑定KV空间</p>'}
                 </div>
         
                 <script>
-                if (document.querySelector('.editor')) {
-                    let timer;
+                function goBack() {
+                    const currentUrl = window.location.href;
+                    const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
+                    window.location.href = parentUrl;
+                }
+        
+                function saveContent(button) {
                     const textarea = document.getElementById('content');
-                    const originalContent = textarea.value;
-        
-                    function goBack() {
-                        const currentUrl = window.location.href;
-                        const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
-                        window.location.href = parentUrl;
-                    }
-        
-                    function replaceFullwidthColon() {
-                        const text = textarea.value;
-                        textarea.value = text.replace(/：/g, ':');
-                    }
-                    
-                    function saveContent(button) {
-                        try {
-                            const updateButtonText = (step) => {
-                                button.textContent = \`保存中: \${step}\`;
-                            };
-                            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                            
-                            if (!isIOS) {
-                                replaceFullwidthColon();
-                            }
-                            updateButtonText('开始保存');
-                            button.disabled = true;
-                            const textarea = document.getElementById('content');
-                            if (!textarea) {
-                                throw new Error('找不到文本编辑区域');
-                            }
-                            updateButtonText('获取内容');
-                            let newContent;
-                            let originalContent;
-                            try {
-                                newContent = textarea.value || '';
-                                originalContent = textarea.defaultValue || '';
-                            } catch (e) {
-                                console.error('获取内容错误:', e);
-                                throw new Error('无法获取编辑内容');
-                            }
-                            updateButtonText('准备状态更新函数');
-                            const updateStatus = (message, isError = false) => {
-                                const statusElem = document.getElementById('saveStatus');
-                                if (statusElem) {
-                                    statusElem.textContent = message;
-                                    statusElem.style.color = isError ? 'red' : '#666';
-                                }
-                            };
-                            updateButtonText('准备按钮重置函数');
-                            const resetButton = () => {
-                                button.textContent = '保存';
-                                button.disabled = false;
-                            };
-                            if (newContent !== originalContent) {
-                                updateButtonText('发送保存请求');
-                                fetch(window.location.href, {
-                                    method: 'POST',
-                                    body: newContent,
-                                    headers: {
-                                        'Content-Type': 'text/plain;charset=UTF-8'
-                                    },
-                                    cache: 'no-cache'
-                                })
-                                .then(response => {
-                                    updateButtonText('检查响应状态');
-                                    if (!response.ok) {
-                                        throw new Error(\`HTTP error! status: \${response.status}\`);
-                                    }
-                                    updateButtonText('更新保存状态');
-                                    const now = new Date().toLocaleString();
-                                    document.title = \`编辑已保存 \${now}\`;
-                                    updateStatus(\`已保存 \${now}\`);
-                                })
-                                .catch(error => {
-                                    updateButtonText('处理错误');
-                                    console.error('Save error:', error);
-                                    updateStatus(\`保存失败: \${error.message}\`, true);
-                                })
-                                .finally(() => {
-                                    resetButton();
-                                });
-                            } else {
-                                updateButtonText('检查内容变化');
-                                updateStatus('内容未变化');
-                                resetButton();
-                            }
-                        } catch (error) {
-                            console.error('保存过程出错:', error);
-                            button.textContent = '保存';
-                            button.disabled = false;
-                            const statusElem = document.getElementById('saveStatus');
-                            if (statusElem) {
-                                statusElem.textContent = \`错误: \${error.message}\`;
-                                statusElem.style.color = 'red';
-                            }
+                    const newContent = textarea.value;
+                    fetch(window.location.href, {
+                        method: 'POST',
+                        body: newContent,
+                        headers: {
+                            'Content-Type': 'text/plain;charset=utf-8'
+                        },
+                        cache: 'no-cache'
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(\`HTTP error! status: \${response.status}\`);
                         }
-                    }
-        
-                    textarea.addEventListener('blur', saveContent);
-                    textarea.addEventListener('input', () => {
-                        clearTimeout(timer);
-                        timer = setTimeout(saveContent, 5000);
+                        const now = new Date().toLocaleString();
+                        document.title = \`编辑已保存 \${now}\`;
+                        document.getElementById('saveStatus').textContent = \`已保存 \${now}\`;
+                    })
+                    .catch(error => {
+                        console.error('Save error:', error);
+                        document.getElementById('saveStatus').textContent = \`保存失败: \${error.message}\`;
+                        document.getElementById('saveStatus').style.color = 'red';
+                    })
+                    .finally(() => {
+                        button.textContent = '保存';
+                        button.disabled = false;
                     });
                 }
-        
-                function toggleNotice() {
-                    const noticeContent = document.getElementById('noticeContent');
-                    const noticeToggle = document.getElementById('noticeToggle');
-                    if (noticeContent.style.display === 'none' || noticeContent.style.display === '') {
-                        noticeContent.style.display = 'block';
-                        noticeToggle.textContent = '注意事项∧';
-                    } else {
-                        noticeContent.style.display = 'none';
-                        noticeToggle.textContent = '注意事项∨';
-                    }
-                }
-        
-                document.addEventListener('DOMContentLoaded', () => {
-                    document.getElementById('noticeContent').style.display = 'none';
-                });
                 </script>
             </body>
             </html>
@@ -1924,10 +1842,6 @@ async function KV(request, env, txt = 'ADD.txt') {
             headers: { "Content-Type": "text/html;charset=utf-8" }
         });
     } catch (error) {
-        console.error('处理请求时发生错误:', error);
-        return new Response("服务器错误: " + error.message, {
-            status: 500,
-            headers: { "Content-Type": "text/plain;charset=utf-8" }
-        });
+        return handleError(error);
     }
 }
