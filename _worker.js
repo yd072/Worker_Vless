@@ -676,10 +676,7 @@ function base64ToArrayBuffer(base64Str) {
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
  */
 function isValidUUID(uuid) {
-    // 定义一个正则表达式来匹配 UUID 格式
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-    // 使用正则表达式测试 UUID 字符串
     return uuidRegex.test(uuid);
 }
 
@@ -689,12 +686,10 @@ const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
 
 function safeCloseWebSocket(socket) {
     try {
-        // 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
         if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
             socket.close();
         }
     } catch (error) {
-        // 记录任何可能发生的错误
         console.error('safeCloseWebSocket error', error);
     }
 }
@@ -702,7 +697,6 @@ function safeCloseWebSocket(socket) {
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
-    // 确保总是得到两位数的十六进制
     byteToHex.push((i + 256).toString(16).slice(1));
 }
 
@@ -713,15 +707,7 @@ for (let i = 0; i < 256; ++i) {
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-    // 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-    return (
-        byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
-        byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
-        byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
-        byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
-        byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
-        byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]
-    ).toLowerCase();
+    return `${byteToHex[arr[offset + 0]]}${byteToHex[arr[offset + 1]]}${byteToHex[arr[offset + 2]]}${byteToHex[arr[offset + 3]]}-${byteToHex[arr[offset + 4]]}${byteToHex[arr[offset + 5]]}-${byteToHex[arr[offset + 6]]}${byteToHex[arr[offset + 7]]}-${byteToHex[arr[offset + 8]]}${byteToHex[arr[offset + 9]]}-${byteToHex[arr[offset + 10]]}${byteToHex[arr[offset + 11]]}${byteToHex[arr[offset + 12]]}${byteToHex[arr[offset + 13]]}${byteToHex[arr[offset + 14]]}${byteToHex[arr[offset + 15]]}`.toLowerCase();
 }
 
 /**
@@ -733,15 +719,10 @@ function unsafeStringify(arr, offset = 0) {
  * @throws {TypeError} 如果生成的 UUID 字符串无效
  */
 function stringify(arr, offset = 0) {
-    // 使用不安全的函数快速生成 UUID 字符串
     const uuid = unsafeStringify(arr, offset);
-
-    // 验证生成的 UUID 是否有效
     if (!isValidUUID(uuid)) {
-        // 抛出错误并提供详细的错误信息
         throw new TypeError(`生成的 UUID 不符合规范: ${uuid}`);
     }
-
     return uuid;
 }
 
