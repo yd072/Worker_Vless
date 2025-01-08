@@ -1485,137 +1485,153 @@ async function 整理测速结果(tls) {
         return [];
     }
 
-    const fetchCsvData = async (csvUrl) => {
+    const newAddressescsv = [];
+
+    for (const csvUrl of addressescsv) {
         try {
             const response = await fetch(csvUrl);
+
             if (!response.ok) {
                 console.error('获取CSV地址时出错:', response.status, response.statusText);
-                return [];
+                continue;
             }
 
             const text = await response.text();
             const lines = text.includes('\r\n') ? text.split('\r\n') : text.split('\n');
-            return lines;
-        } catch (error) {
-            console.error('获取CSV地址时出错:', error);
-            return [];
-        }
-    };
 
-    const processCsvLines = (lines, tls) => {
-        const newAddressescsv = [];
-        if (lines.length === 0) return newAddressescsv;
+            const header = lines[0].split(',');
+            const tlsIndex = header.indexOf('TLS');
 
-        const header = lines[0].split(',');
-        const tlsIndex = header.indexOf('TLS');
-        if (tlsIndex === -1) {
-            console.error('CSV文件缺少必需的字段');
-            return newAddressescsv;
-        }
+            if (tlsIndex === -1) {
+                console.error('CSV文件缺少必需的字段');
+                continue;
+            }
 
-        const ipAddressIndex = 0;
-        const portIndex = 1;
-        const dataCenterIndex = tlsIndex + remarkIndex;
+            const ipAddressIndex = 0;
+            const portIndex = 1;
+            const dataCenterIndex = tlsIndex + remarkIndex;
 
-        for (let i = 1; i < lines.length; i++) {
-            const columns = lines[i].split(',');
-            const speedIndex = columns.length - 1;
+            for (let i = 1; i < lines.length; i++) {
+                const columns = lines[i].split(',');
+                const speedIndex = columns.length - 1;
 
-            if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
-                const ipAddress = columns[ipAddressIndex];
-                const port = columns[portIndex];
-                const dataCenter = columns[dataCenterIndex];
+                if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
+                    const ipAddress = columns[ipAddressIndex];
+                    const port = columns[portIndex];
+                    const dataCenter = columns[dataCenterIndex];
 
-                const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
-                newAddressescsv.push(formattedAddress);
+                    const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
+                    newAddressescsv.push(formattedAddress);
 
-                if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
-                    proxyIPPool.push(`${ipAddress}:${port}`);
+                    if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
+                        proxyIPPool.push(`${ipAddress}:${port}`);
+                    }
                 }
             }
+        } catch (error) {
+            console.error('获取CSV地址时出错:', error);
+            continue;
         }
-        return newAddressescsv;
-    };
+    }
 
-    const csvDataPromises = addressescsv.map(csvUrl => fetchCsvData(csvUrl));
-    const csvDataArray = await Promise.all(csvDataPromises);
-
-    return csvDataArray.flatMap(lines => processCsvLines(lines, tls));
+    return newAddressescsv;
 }
 
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
     const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
     const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
     const httpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
-    const 协议类型 = atob('c3M=');
-
-    const parseAddress = (address, isNoTLS) => {
-        let port = "-1";
-        let addressid = address;
-
-        const match = address.match(regex);
-        if (match) {
-            address = match[1];
-            port = match[2] || port;
-            addressid = match[3] || address;
-        } else {
-            const [addr, portOrId] = address.split(/[:#]/);
-            address = addr;
-            if (address.includes(':')) {
-                port = portOrId.split(':')[0];
-            } else {
-                addressid = portOrId;
-            }
-        }
-
-        if (!isValidIPv4(address) && port === "-1") {
-            const ports = isNoTLS ? httpPorts : httpsPorts;
-            port = ports.find(p => address.includes(p)) || (isNoTLS ? "80" : "443");
-        }
-
-        return { address, port, addressid };
-    };
-
-    const generateLink = (address, port, addressid, isNoTLS) => {
-        let 伪装域名 = host;
-        let 最终路径 = path;
-        let 节点备注 = '';
-
-        if (!isNoTLS) {
-            const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
-            if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
-
-            if (proxyhosts.length > 0 && 伪装域名.includes('.workers.dev')) {
-                最终路径 = `/${伪装域名}${最终路径}`;
-                伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
-                节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
-            }
-        }
-
-        const security = isNoTLS ? 'none' : 'tls';
-        const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&security=${security}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
-
-        return 维列斯Link;
-    };
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
     const processAddresses = (addresses, isNoTLS) => {
         const uniqueAddresses = [...new Set(addresses)];
         return uniqueAddresses.map(address => {
-            const { address: addr, port, addressid } = parseAddress(address, isNoTLS);
-            return generateLink(addr, port, addressid, isNoTLS);
+            let port = "-1";
+            let addressid = address;
+
+            const match = addressid.match(regex);
+            if (!match) {
+                if (address.includes(':') && address.includes('#')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    const subParts = parts[1].split('#');
+                    port = subParts[0];
+                    addressid = subParts[1];
+                } else if (address.includes(':')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    port = parts[1];
+                } else if (address.includes('#')) {
+                    const parts = address.split('#');
+                    address = parts[0];
+                    addressid = parts[1];
+                }
+
+                if (addressid.includes(':')) {
+                    addressid = addressid.split(':')[0];
+                }
+            } else {
+                address = match[1];
+                port = match[2] || port;
+                addressid = match[3] || address;
+            }
+
+            if (!isValidIPv4(address) && port == "-1") {
+                const ports = isNoTLS ? httpPorts : httpsPorts;
+                for (let p of ports) {
+                    if (address.includes(p)) {
+                        port = p;
+                        break;
+                    }
+                }
+            }
+            if (port == "-1") port = isNoTLS ? "80" : "443";
+
+            let 伪装域名 = host;
+            let 最终路径 = path;
+            let 节点备注 = '';
+            if (!isNoTLS) {
+                const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
+                if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
+
+                if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
+                    最终路径 = `/${伪装域名}${最终路径}`;
+                    伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
+                    节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
+                }
+            }
+
+            const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob(isNoTLS ? 'P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==' : 'P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+
+            return 维列斯Link;
         }).join('\n');
     };
 
     const addresses = newAddressesapi.concat(newAddressescsv);
-    let responseBody = processAddresses(addresses, false);
+    const responseBody = processAddresses(addresses, false);
 
-    if (noTLS === 'true') {
+    let base64Response = responseBody;
+    if (noTLS == 'true') {
         const addressesnotls = newAddressesnotlsapi.concat(newAddressesnotlscsv);
-        responseBody += `\n${processAddresses(addressesnotls, true)}`;
+        const notlsresponseBody = processAddresses(addressesnotls, true);
+        base64Response += `\n${notlsresponseBody}`;
     }
+    if (link.length > 0) base64Response += '\n' + link.join('\n');
+    return btoa(base64Response);
+}
 
-    if (link.length > 0) responseBody += '\n' + link.join('\n');
-    return btoa(responseBody);
+async function 整理(内容) {
+    // 将制表符、双引号、单引号和换行符都替换为逗号
+    // 然后将连续的多个逗号替换为单个逗号
+    let 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',');
+
+    // 删除开头和结尾的逗号（如果有的话）
+    替换后的内容 = 替换后的内容.replace(/^,|,$/g, '');
+
+    // 使用逗号分割字符串，得到地址数组
+    const 地址数组 = 替换后的内容.split(',');
+
+    return 地址数组;
 }
 
 async function sendMessage(type, ip, add_data = "") {
