@@ -1108,89 +1108,99 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 }
 
 async function 处理订阅(sub) {
-    const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
-    if (match) {
-        sub = match[1];
+    try {
+        const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
+        if (match) {
+            sub = match[1];
+        }
+        const subs = await 整理(sub);
+        return subs.length > 1 ? subs[0] : sub;
+    } catch (error) {
+        console.error('处理订阅时发生错误:', error);
+        throw error;
     }
-    const subs = await 整理(sub);
-    return subs.length > 1 ? subs[0] : sub;
 }
 
 async function 处理地址(env, hostName, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv) {
-    if (env.KV) {
-        await 迁移地址列表(env);
-        const 优选地址列表 = await env.KV.get('ADD.txt');
-        if (优选地址列表) {
-            const 优选地址数组 = await 整理(优选地址列表);
-            const 分类地址 = {
-                接口地址: new Set(),
-                链接地址: new Set(),
-                优选地址: new Set()
-            };
+    try {
+        if (env.KV) {
+            await 迁移地址列表(env);
+            const 优选地址列表 = await env.KV.get('ADD.txt');
+            if (优选地址列表) {
+                const 优选地址数组 = await 整理(优选地址列表);
+                const 分类地址 = {
+                    接口地址: new Set(),
+                    链接地址: new Set(),
+                    优选地址: new Set()
+                };
 
-            for (const 元素 of 优选地址数组) {
-                if (元素.startsWith('https://')) {
-                    分类地址.接口地址.add(元素);
-                } else if (元素.includes('://')) {
-                    分类地址.链接地址.add(元素);
-                } else {
-                    分类地址.优选地址.add(元素);
+                for (const 元素 of 优选地址数组) {
+                    if (元素.startsWith('https://')) {
+                        分类地址.接口地址.add(元素);
+                    } else if (元素.includes('://')) {
+                        分类地址.链接地址.add(元素);
+                    } else {
+                        分类地址.优选地址.add(元素);
+                    }
                 }
+
+                addressesapi.push(...分类地址.接口地址);
+                addresses.push(...分类地址.优选地址);
+            }
+        }
+
+        if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) === 0) {
+            const cfips = [
+                '103.21.244.0/23',
+                '104.16.0.0/13',
+                '104.24.0.0/14',
+                '172.64.0.0/14',
+                '103.21.244.0/23',
+                '104.16.0.0/14',
+                '104.24.0.0/15',
+                '141.101.64.0/19',
+                '172.64.0.0/14',
+                '188.114.96.0/21',
+                '190.93.240.0/21',
+            ];
+
+            function generateRandomIPFromCIDR(cidr) {
+                const [base, mask] = cidr.split('/');
+                const baseIP = base.split('.').map(Number);
+                const subnetMask = 32 - parseInt(mask, 10);
+                const maxHosts = Math.pow(2, subnetMask) - 1;
+                const randomHost = Math.floor(Math.random() * maxHosts);
+
+                const randomIP = baseIP.map((octet, index) => {
+                    if (index < 3) {
+                        if (index === 2) {
+                            return (octet & (255 << (8 - (subnetMask % 8)))) + ((randomHost >> 8) & 255);
+                        }
+                        return octet;
+                    }
+                    return (octet & (255 << subnetMask)) + (randomHost & 255);
+                });
+
+                return randomIP.join('.');
             }
 
-            addressesapi.push(...分类地址.接口地址);
-            addresses.push(...分类地址.优选地址);
+            addresses.push('127.0.0.1:1234#CFnat');
+            if (hostName.includes(".workers.dev")) {
+                addressesnotls.push(...cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+            } else {
+                addresses.push(...cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+            }
         }
-    }
-
-    if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) === 0) {
-        const cfips = [
-            '103.21.244.0/23',
-            '104.16.0.0/13',
-            '104.24.0.0/14',
-            '172.64.0.0/14',
-            '103.21.244.0/23',
-            '104.16.0.0/14',
-            '104.24.0.0/15',
-            '141.101.64.0/19',
-            '172.64.0.0/14',
-            '188.114.96.0/21',
-            '190.93.240.0/21',
-        ];
-
-        function generateRandomIPFromCIDR(cidr) {
-            const [base, mask] = cidr.split('/');
-            const baseIP = base.split('.').map(Number);
-            const subnetMask = 32 - parseInt(mask, 10);
-            const maxHosts = Math.pow(2, subnetMask) - 1;
-            const randomHost = Math.floor(Math.random() * maxHosts);
-
-            const randomIP = baseIP.map((octet, index) => {
-                if (index < 3) {
-                    if (index === 2) {
-                        return (octet & (255 << (8 - (subnetMask % 8)))) + ((randomHost >> 8) & 255);
-                    }
-                    return octet;
-                }
-                return (octet & (255 << subnetMask)) + (randomHost & 255);
-            });
-
-            return randomIP.join('.');
-        }
-
-        addresses.push('127.0.0.1:1234#CFnat');
-        if (hostName.includes(".workers.dev")) {
-            addressesnotls.push(...cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-        } else {
-            addresses.push(...cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-        }
+    } catch (error) {
+        console.error('处理地址时发生错误:', error);
+        throw error;
     }
 }
 
 async function 获取代理主机(hostName, proxyhosts) {
-    if (hostName.includes(".workers.dev")) {
-        if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
-            try {
+    try {
+        if (hostName.includes(".workers.dev")) {
+            if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
                 const response = await fetch(proxyhostsURL);
 
                 if (!response.ok) {
@@ -1203,23 +1213,24 @@ async function 获取代理主机(hostName, proxyhosts) {
                 const nonEmptyLines = lines.filter(line => line.trim() !== '');
 
                 proxyhosts = proxyhosts.concat(nonEmptyLines);
-            } catch (error) {
-                console.error('获取地址时出错:', error);
             }
+            if (proxyhosts.length !== 0) return proxyhosts[Math.floor(Math.random() * proxyhosts.length)] + "/";
         }
-        if (proxyhosts.length !== 0) return proxyhosts[Math.floor(Math.random() * proxyhosts.length)] + "/";
+        return '';
+    } catch (error) {
+        console.error('获取代理主机时发生错误:', error);
+        throw error;
     }
-    return '';
 }
 
 async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env, addresses, addressesapi, addressesnotls, addressesnotlsapi, addressescsv) {
-    let url = `${subProtocol}://${sub}/sub?host=${fakeHostName}&uuid=${fakeUserID + atob('JmVkZ2V0dW5uZWw9Y21saXUmcHJveHlpcD0=') + RproxyIP}&path=${encodeURIComponent(path)}`;
-    let isBase64 = true;
+    try {
+        let url = `${subProtocol}://${sub}/sub?host=${fakeHostName}&uuid=${fakeUserID + atob('JmVkZ2V0dW5uZWw9Y21saXUmcHJveHlpcD0=') + RproxyIP}&path=${encodeURIComponent(path)}`;
+        let isBase64 = true;
 
-    if (!sub || sub === "") {
-        if (hostName.includes('workers.dev')) {
-            if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
-                try {
+        if (!sub || sub === "") {
+            if (hostName.includes('workers.dev')) {
+                if (proxyhostsURL && (!proxyhosts || proxyhosts.length === 0)) {
                     const response = await fetch(proxyhostsURL);
 
                     if (!response.ok) {
@@ -1232,34 +1243,30 @@ async function 生成订阅内容(userID, hostName, sub, UA, RproxyIP, _url, fak
                     const nonEmptyLines = lines.filter(line => line.trim() !== '');
 
                     proxyhosts = proxyhosts.concat(nonEmptyLines);
-                } catch (error) {
-                    console.error('获取地址时出错:', error);
                 }
+                proxyhosts = [...new Set(proxyhosts)];
             }
-            proxyhosts = [...new Set(proxyhosts)];
+
+            newAddressesapi = await 整理优选列表(addressesapi);
+            newAddressescsv = await 整理测速结果('TRUE');
+            url = `https://${hostName}/${fakeUserID + _url.search}`;
+            if (hostName.includes("worker") || hostName.includes("notls") || noTLS === 'true') {
+                if (_url.search) url += '&notls';
+                else url += '?notls';
+            }
+            console.log(`虚假订阅: ${url}`);
         }
 
-        newAddressesapi = await 整理优选列表(addressesapi);
-        newAddressescsv = await 整理测速结果('TRUE');
-        url = `https://${hostName}/${fakeUserID + _url.search}`;
-        if (hostName.includes("worker") || hostName.includes("notls") || noTLS === 'true') {
-            if (_url.search) url += '&notls';
-            else url += '?notls';
+        if (!userAgent.includes(('CF-Workers-SUB').toLowerCase())) {
+            if ((userAgent.includes('clash') && !userAgent.includes('nekobox')) || (_url.searchParams.has('clash') && !userAgent.includes('subconverter'))) {
+                url = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+                isBase64 = false;
+            } else if (userAgent.includes('sing-box') || userAgent.includes('singbox') || ((_url.searchParams.has('singbox') || _url.searchParams.has('sb')) && !userAgent.includes('subconverter'))) {
+                url = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+                isBase64 = false;
+            }
         }
-        console.log(`虚假订阅: ${url}`);
-    }
 
-    if (!userAgent.includes(('CF-Workers-SUB').toLowerCase())) {
-        if ((userAgent.includes('clash') && !userAgent.includes('nekobox')) || (_url.searchParams.has('clash') && !userAgent.includes('subconverter'))) {
-            url = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-            isBase64 = false;
-        } else if (userAgent.includes('sing-box') || userAgent.includes('singbox') || ((_url.searchParams.has('singbox') || _url.searchParams.has('sb')) && !userAgent.includes('subconverter'))) {
-            url = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-            isBase64 = false;
-        }
-    }
-
-    try {
         let content;
         if ((!sub || sub === "") && isBase64 === true) {
             content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv);
