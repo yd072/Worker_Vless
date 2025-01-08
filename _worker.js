@@ -1410,56 +1410,62 @@ async function 整理测速结果(tls) {
         return [];
     }
 
-    const newAddressescsv = [];
-
-    for (const csvUrl of addressescsv) {
+    const fetchCsvData = async (csvUrl) => {
         try {
             const response = await fetch(csvUrl);
-
             if (!response.ok) {
                 console.error('获取CSV地址时出错:', response.status, response.statusText);
-                continue;
+                return [];
             }
 
             const text = await response.text();
             const lines = text.includes('\r\n') ? text.split('\r\n') : text.split('\n');
-
-            const header = lines[0].split(',');
-            const tlsIndex = header.indexOf('TLS');
-
-            if (tlsIndex === -1) {
-                console.error('CSV文件缺少必需的字段');
-                continue;
-            }
-
-            const ipAddressIndex = 0;
-            const portIndex = 1;
-            const dataCenterIndex = tlsIndex + remarkIndex;
-
-            for (let i = 1; i < lines.length; i++) {
-                const columns = lines[i].split(',');
-                const speedIndex = columns.length - 1;
-
-                if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
-                    const ipAddress = columns[ipAddressIndex];
-                    const port = columns[portIndex];
-                    const dataCenter = columns[dataCenterIndex];
-
-                    const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
-                    newAddressescsv.push(formattedAddress);
-
-                    if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
-                        proxyIPPool.push(`${ipAddress}:${port}`);
-                    }
-                }
-            }
+            return lines;
         } catch (error) {
             console.error('获取CSV地址时出错:', error);
-            continue;
+            return [];
         }
-    }
+    };
 
-    return newAddressescsv;
+    const processCsvLines = (lines, tls) => {
+        const newAddressescsv = [];
+        if (lines.length === 0) return newAddressescsv;
+
+        const header = lines[0].split(',');
+        const tlsIndex = header.indexOf('TLS');
+        if (tlsIndex === -1) {
+            console.error('CSV文件缺少必需的字段');
+            return newAddressescsv;
+        }
+
+        const ipAddressIndex = 0;
+        const portIndex = 1;
+        const dataCenterIndex = tlsIndex + remarkIndex;
+
+        for (let i = 1; i < lines.length; i++) {
+            const columns = lines[i].split(',');
+            const speedIndex = columns.length - 1;
+
+            if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
+                const ipAddress = columns[ipAddressIndex];
+                const port = columns[portIndex];
+                const dataCenter = columns[dataCenterIndex];
+
+                const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
+                newAddressescsv.push(formattedAddress);
+
+                if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() === 'TRUE' && !httpsPorts.includes(port)) {
+                    proxyIPPool.push(`${ipAddress}:${port}`);
+                }
+            }
+        }
+        return newAddressescsv;
+    };
+
+    const csvDataPromises = addressescsv.map(csvUrl => fetchCsvData(csvUrl));
+    const csvDataArray = await Promise.all(csvDataPromises);
+
+    return csvDataArray.flatMap(lines => processCsvLines(lines, tls));
 }
 
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
