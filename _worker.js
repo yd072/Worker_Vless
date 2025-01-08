@@ -434,66 +434,56 @@ remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 	
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
-    // 标记可读流是否已被取消
     let isReadableStreamCancelled = false;
 
-    // 创建一个新的可读流
     const stream = new ReadableStream({
-        // 当流开始时的初始化函数
         start(controller) {
-            // 监听 WebSocket 的消息事件
-            webSocketServer.addEventListener('message', (event) => {
-                // 如果流已被取消，不再处理新消息
-                if (isReadableStreamCancelled) {
-                    return;
-                }
+            const onMessage = (event) => {
+                if (isReadableStreamCancelled) return;
                 const message = event.data;
-                // 将消息加入流的队列中
                 controller.enqueue(message);
-            });
+            };
 
-            // 监听 WebSocket 的关闭事件
-            webSocketServer.addEventListener('close', () => {
-                // 客户端发送了关闭信号，需要关闭服务器端
+            const onClose = () => {
                 safeCloseWebSocket(webSocketServer);
-                // 如果流未被取消，则关闭控制器
-                if (isReadableStreamCancelled) {
-                    return;
+                if (!isReadableStreamCancelled) {
+                    controller.close();
                 }
-                controller.close();
-            });
+                removeEventListeners();
+            };
 
-            // 监听 WebSocket 的错误事件
-            webSocketServer.addEventListener('error', (err) => {
+            const onError = (err) => {
                 log('WebSocket 服务器发生错误', err.message);
-                // 将错误传递给控制器
                 controller.error(err);
-            });
+                removeEventListeners();
+            };
 
-            // 处理 WebSocket 0-RTT（零往返时间）的早期数据
+            const removeEventListeners = () => {
+                webSocketServer.removeEventListener('message', onMessage);
+                webSocketServer.removeEventListener('close', onClose);
+                webSocketServer.removeEventListener('error', onError);
+            };
+
+            webSocketServer.addEventListener('message', onMessage);
+            webSocketServer.addEventListener('close', onClose);
+            webSocketServer.addEventListener('error', onError);
+
             const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
             if (error) {
-                // 如果解码早期数据时出错，将错误传递给控制器
                 controller.error(error);
             } else if (earlyData) {
-                // 如果有早期数据，将其加入流的队列中
                 controller.enqueue(earlyData);
             }
         },
 
-        // 当使用者从流中拉取数据时调用
         pull(controller) {
-            // 这里可以实现反压机制
+            // 实现反压机制
         },
 
-        // 当流被取消时调用
         cancel(reason) {
-            if (isReadableStreamCancelled) {
-                return;
-            }
+            if (isReadableStreamCancelled) return;
             log(`可读流被取消，原因是 ${reason}`);
             isReadableStreamCancelled = true;
-            // 安全地关闭 WebSocket
             safeCloseWebSocket(webSocketServer);
         }
     });
