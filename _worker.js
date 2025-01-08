@@ -430,8 +430,7 @@ let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks)
 // 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
 // 如果连接失败或无数据，retry 函数将被调用进行重试
 remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-}
-	
+
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     // 标记可读流是否已被取消
     let isReadableStreamCancelled = false;
@@ -499,9 +498,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 
     return stream;
 }
-
-// https://xtls.github.io/development/protocols/维列斯.html
-// https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
 
 /**
  * 解析 维列斯 协议的头部数据
@@ -640,7 +636,7 @@ function process维列斯Header(维列斯Buffer, userID) {
         isUDP,
     };
 }
-
+	
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
     // 将数据从远程服务器转发到 WebSocket
     let chunkCount = 0;
