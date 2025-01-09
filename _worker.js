@@ -774,7 +774,9 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
                         if (维列斯Header) {
-                            const combinedData = await new Blob([维列斯Header, chunk]).arrayBuffer();
+                            const combinedData = new Uint8Array(维列斯Header.byteLength + chunk.byteLength);
+                            combinedData.set(new Uint8Array(维列斯Header), 0);
+                            combinedData.set(new Uint8Array(chunk), 维列斯Header.byteLength);
                             webSocket.send(combinedData);
                             维列斯Header = null;
                         } else {
@@ -784,6 +786,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
                     }
+                } else {
+                    console.warn('WebSocket 连接已关闭，无法发送数据');
                 }
             },
             close() {
