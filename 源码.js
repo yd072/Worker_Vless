@@ -201,8 +201,9 @@ export default {
                 }
             } else {
                 socks5Address = url.searchParams.get('socks5') || socks5Address;
-                if (new RegExp('/socks5=', 'i').test(url.pathname)) socks5Address = url.pathname.split('5=')[1];
-                else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
+                if (/\/socks5?=/.test(url.pathname)) {
+                    socks5Address = url.pathname.split('5=')[1];
+                } else if (/\/socks5?:\/\//.test(url.pathname)) {
                     socks5Address = url.pathname.split('://')[1].split('#')[0];
                     if (socks5Address.includes('@')) {
                         let userPassword = socks5Address.split('@')[0];
@@ -227,13 +228,10 @@ export default {
                 if (url.searchParams.has('proxyip')) {
                     proxyIP = url.searchParams.get('proxyip');
                     enableSocks = false;
-                } else if (new RegExp('/proxyip=', 'i').test(url.pathname)) {
-                    proxyIP = url.pathname.toLowerCase().split('/proxyip=')[1];
+                } else if (/\/proxyip[.=]/.test(url.pathname)) {
+                    proxyIP = url.pathname.toLowerCase().split(/\/proxyip[.=]/)[1];
                     enableSocks = false;
-                } else if (new RegExp('/proxyip.', 'i').test(url.pathname)) {
-                    proxyIP = `proxyip.${url.pathname.toLowerCase().split("/proxyip.")[1]}`;
-                    enableSocks = false;
-                } else if (new RegExp('/pyip=', 'i').test(url.pathname)) {
+                } else if (/\/pyip=/.test(url.pathname)) {
                     proxyIP = url.pathname.toLowerCase().split('/pyip=')[1];
                     enableSocks = false;
                 }
@@ -439,13 +437,19 @@ remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 	
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let isReadableStreamCancelled = false;
+    const messageQueue = []; // 用于存储消息的队列
+    let resolvePull; // 用于存储 pull 的 resolve 函数
 
     const stream = new ReadableStream({
         start(controller) {
             const onMessage = (event) => {
                 if (isReadableStreamCancelled) return;
                 const message = event.data;
-                controller.enqueue(message);
+                messageQueue.push(message);
+                if (resolvePull) {
+                    resolvePull();
+                    resolvePull = null;
+                }
             };
 
             const onClose = () => {
@@ -470,12 +474,20 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             if (error) {
                 controller.error(error);
             } else if (earlyData) {
-                controller.enqueue(earlyData);
+                messageQueue.push(earlyData);
+                if (resolvePull) {
+                    resolvePull();
+                    resolvePull = null;
+                }
             }
         },
 
-        pull(controller) {
-            // 反压机制（如需要可以实现）
+        async pull(controller) {
+            if (messageQueue.length > 0) {
+                controller.enqueue(messageQueue.shift());
+            } else {
+                await new Promise(resolve => resolvePull = resolve);
+            }
         },
 
         cancel(reason) {
@@ -483,6 +495,9 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             log(`可读流被取消，原因是 ${reason}`);
             isReadableStreamCancelled = true;
             safeCloseWebSocket(webSocketServer);
+            webSocketServer.removeEventListener('message', onMessage);
+            webSocketServer.removeEventListener('close', onClose);
+            webSocketServer.removeEventListener('error', onError);
         }
     });
 
@@ -492,12 +507,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 // https://xtls.github.io/development/protocols/维列斯.html
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
 
-/**
- * 解析 维列斯 协议的头部数据
- * @param {ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
- * @param {string} userID 用于验证的用户 ID
- * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
- */
 function process维列斯Header(维列斯Buffer, userID) {
     if (维列斯Buffer.byteLength < 24) {
         return {
@@ -587,9 +596,8 @@ function process维列斯Header(维列斯Buffer, userID) {
         isUDP,
     };
 }
-	
+
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
-    let chunkCount = 0;
     let hasIncomingData = false;
     let 维列斯Header = 维列斯ResponseHeader;
     const WS_READY_STATE_OPEN = 1;
@@ -597,9 +605,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
     await remoteSocket.readable
         .pipeTo(
             new WritableStream({
-                start() {
-                    // 初始化时不需要任何操作
-                },
                 async write(chunk, controller) {
                     hasIncomingData = true;
 
@@ -610,6 +615,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
 
                     try {
                         if (维列斯Header) {
+                            // 直接使用 TypedArray 的 set 方法进行合并，避免多次内存分配
                             const combined = new Uint8Array(维列斯Header.length + chunk.length);
                             combined.set(维列斯Header);
                             combined.set(chunk, 维列斯Header.length);
@@ -621,7 +627,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                     } catch (error) {
                         log(`发送数据时发生错误: ${error.message}`);
                         controller.error(`发送数据时发生错误: ${error.message}`);
-                        // 考虑在此处进行重试或其他恢复操作
                     }
                 },
                 close() {
@@ -635,7 +640,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
         .catch((error) => {
             console.error(`remoteSocketToWS 发生异常`, error.stack || error);
             safeCloseWebSocket(webSocket);
-            // 考虑在此处进行重试或其他恢复操作
         });
 
     if (!hasIncomingData && retry) {
@@ -706,10 +710,7 @@ function safeCloseWebSocket(socket) {
 }
 
 // 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-    byteToHex.push((i + 256).toString(16).slice(1));
-}
+const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
@@ -797,9 +798,9 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 }
 
 /**
- * 合并  响应头与 DNS 响应数据
- * @param {ArrayBuffer} header  响应头
- * @param {ArrayBuffer} data - DNS 响应数据
+ * 合并响应头与 DNS 响应数据
+ * @param {ArrayBuffer} header 响应头
+ * @param {ArrayBuffer} data DNS 响应数据
  * @returns {ArrayBuffer} 合并后的数据
  */
 function mergeData(header, data) {
@@ -808,7 +809,6 @@ function mergeData(header, data) {
     combinedData.set(new Uint8Array(data), header.byteLength);
     return combinedData.buffer;
 }
-
 
 /**
  * 建立 SOCKS5 代理连接
