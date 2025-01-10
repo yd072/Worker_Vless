@@ -256,9 +256,11 @@ async function 维列斯OverWSHandler(request) {
 
     let address = '';
     let portWithRandomLog = '';
-    // 日志函数，用于记录连接信息
+    // 优化日志函数，添加环境判断
     const log = (info, event) => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+        }
     };
     // 获取早期数据头部，可能包含了一些初始化数据
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -337,7 +339,9 @@ async function 维列斯OverWSHandler(request) {
             } catch (error) {
                 log('处理数据时发生错误', error.message);
                 // 关闭 WebSocket 连接以防止资源泄漏
-                webSocket.close(1011, '内部错误');
+                if (webSocket.readyState === WebSocket.OPEN) {
+                    webSocket.close(1011, '内部错误');
+                }
             }
         },
         close() {
@@ -349,7 +353,9 @@ async function 维列斯OverWSHandler(request) {
     })).catch((err) => {
         log('readableWebSocketStream 管道错误', err);
         // 关闭 WebSocket 连接以防止资源泄漏
-        webSocket.close(1011, '管道错误');
+        if (webSocket.readyState === WebSocket.OPEN) {
+            webSocket.close(1011, '管道错误');
+        }
     });
 
     // 返回一个 WebSocket 升级的响应
@@ -743,6 +749,9 @@ function stringify(arr, offset = 0) {
     return uuid;
 }
 
+// 简单的 DNS 缓存
+const dnsCache = new Map();
+
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
@@ -759,6 +768,17 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 
         let 维列斯Header = 维列斯ResponseHeader;
 
+        // 检查缓存
+        const cacheKey = udpChunk.toString();
+        if (dnsCache.has(cacheKey)) {
+            log(`从缓存中获取 DNS 结果`);
+            const cachedResponse = dnsCache.get(cacheKey);
+            if (webSocket.readyState === WS_READY_STATE_OPEN) {
+                webSocket.send(cachedResponse);
+            }
+            return;
+        }
+
         const tcpSocket = connect({
             hostname: dnsServer,
             port: dnsPort,
@@ -773,15 +793,18 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
+                        let combinedData;
                         if (维列斯Header) {
-                            const combinedData = new Uint8Array(维列斯Header.byteLength + chunk.byteLength);
+                            combinedData = new Uint8Array(维列斯Header.byteLength + chunk.byteLength);
                             combinedData.set(new Uint8Array(维列斯Header), 0);
                             combinedData.set(new Uint8Array(chunk), 维列斯Header.byteLength);
-                            webSocket.send(combinedData);
                             维列斯Header = null;
                         } else {
-                            webSocket.send(chunk);
+                            combinedData = chunk;
                         }
+                        webSocket.send(combinedData);
+                        // 缓存结果
+                        dnsCache.set(cacheKey, combinedData);
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
