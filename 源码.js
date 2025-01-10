@@ -292,7 +292,7 @@ async function 维列斯OverWSHandler(request) {
                     return;
                 }
 
-                // 处理 VLESS 协议头部（逻辑上实现 VLESS 处理）
+                // 处理 维列斯 协议头部（逻辑上实现 维列斯 处理）
                 const {
                     hasError,
                     message,
@@ -302,7 +302,7 @@ async function 维列斯OverWSHandler(request) {
                     rawDataIndex,
                     维列斯Version = new Uint8Array([0, 0]), // 保持变量名不变
                     isUDP,
-                } = process维列斯Header(chunk, userID); // 保持函数名不变，但实现 VLESS 逻辑
+                } = process维列斯Header(chunk, userID); // 保持函数名不变，但实现 维列斯 逻辑
                 // 设置地址和端口信息，用于日志
                 address = addressRemote;
                 portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
@@ -318,7 +318,7 @@ async function 维列斯OverWSHandler(request) {
                         throw new Error('UDP 代理仅对 DNS（53 端口）启用');
                     }
                 }
-                // 构建 VLESS 响应头部（逻辑上实现 VLESS 处理）
+                // 构建 维列斯 响应头部（逻辑上实现 维列斯 处理）
                 const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]); // 保持变量名不变
                 // 获取实际的客户端数据
                 const rawClientData = chunk.slice(rawDataIndex);
@@ -741,17 +741,17 @@ function stringify(arr, offset = 0) {
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
  * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
- * @param {ArrayBuffer} vlessResponseHeader - VLESS 协议的响应头部数据
+ * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
  * @param {(string) => void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, vlessResponseHeader, log) {
+async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1; // WebSocket open state
 
     try {
         const dnsServer = '8.8.4.4'; // Google DNS server
         const dnsPort = 53; // Standard DNS port
 
-        let vlessHeader = vlessResponseHeader;
+        let 维列斯Header = 维列斯ResponseHeader;
 
         // 连接到 DNS 服务器
         const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
@@ -767,13 +767,13 @@ async function handleDNSQuery(udpChunk, webSocket, vlessResponseHeader, log) {
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
-                        // 合并 VLESS 响应头与 DNS 响应数据
-                        const combinedData = vlessHeader ? mergeData(vlessHeader, chunk) : chunk;
+                        // 合并 维列斯 响应头与 DNS 响应数据
+                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
                         
                         webSocket.send(combinedData);
 
-                        // 只发送一次 VLESS 响应头
-                        if (vlessHeader) vlessHeader = null;
+                        // 只发送一次 维列斯 响应头
+                        if (维列斯Header) 维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
