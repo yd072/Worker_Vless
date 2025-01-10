@@ -251,34 +251,48 @@ async function 维列斯OverWSHandler(request) {
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
+    // 接受 WebSocket 连接
     webSocket.accept();
 
     let address = '';
     let portWithRandomLog = '';
+    // 日志函数，用于记录连接信息
     const log = (info, event) => {
         console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
     };
-
+    // 获取早期数据头部，可能包含了一些初始化数据
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+
+    // 创建一个可读的 WebSocket 流，用于接收客户端数据
     const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-    let remoteSocketWrapper = { value: null };
+    // 用于存储远程 Socket 的包装器
+    let remoteSocketWrapper = {
+        value: null,
+    };
+    // 标记是否为 DNS 查询
     let isDns = false;
+
+    // 将 banHosts 转换为 Set 以提高查找速度
     const banHostsSet = new Set(banHosts);
 
+    // WebSocket 数据流向远程服务器的管道
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
             try {
                 if (isDns) {
+                    // 如果是 DNS 查询，调用 DNS 处理函数
                     return await handleDNSQuery(chunk, webSocket, null, log);
                 }
                 if (remoteSocketWrapper.value) {
+                    // 如果已有远程 Socket，直接写入数据
                     const writer = remoteSocketWrapper.value.writable.getWriter();
                     await writer.write(chunk);
                     writer.releaseLock();
                     return;
                 }
 
+                // 处理 VLESS 协议头部（逻辑上实现 VLESS 处理）
                 const {
                     hasError,
                     message,
@@ -286,15 +300,17 @@ async function 维列斯OverWSHandler(request) {
                     portRemote = 443,
                     addressRemote = '',
                     rawDataIndex,
-                    维列斯Version = new Uint8Array([0, 0]),
+                    维列斯Version = new Uint8Array([0, 0]), // 保持变量名不变
                     isUDP,
-                } = process维列斯Header(chunk, userID);
-
+                } = process维列斯Header(chunk, userID); // 保持函数名不变，但实现 VLESS 逻辑
+                // 设置地址和端口信息，用于日志
                 address = addressRemote;
                 portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
                 if (hasError) {
+                    // 如果有错误，抛出异常
                     throw new Error(message);
                 }
+                // 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
                 if (isUDP) {
                     if (portRemote === 53) {
                         isDns = true;
@@ -302,14 +318,16 @@ async function 维列斯OverWSHandler(request) {
                         throw new Error('UDP 代理仅对 DNS（53 端口）启用');
                     }
                 }
-
-                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
+                // 构建 VLESS 响应头部（逻辑上实现 VLESS 处理）
+                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]); // 保持变量名不变
+                // 获取实际的客户端数据
                 const rawClientData = chunk.slice(rawDataIndex);
 
                 if (isDns) {
+                    // 如果是 DNS 查询，调用 DNS 处理函数
                     return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
                 }
-
+                // 处理 TCP 出站连接
                 if (!banHostsSet.has(addressRemote)) {
                     log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
                     handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
@@ -318,6 +336,7 @@ async function 维列斯OverWSHandler(request) {
                 }
             } catch (error) {
                 log('处理数据时发生错误', error.message);
+                // 关闭 WebSocket 连接以防止资源泄漏
                 webSocket.close(1011, '内部错误');
             }
         },
@@ -329,9 +348,11 @@ async function 维列斯OverWSHandler(request) {
         },
     })).catch((err) => {
         log('readableWebSocketStream 管道错误', err);
+        // 关闭 WebSocket 连接以防止资源泄漏
         webSocket.close(1011, '管道错误');
     });
 
+    // 返回一个 WebSocket 升级的响应
     return new Response(null, {
         status: 101,
         // @ts-ignore
@@ -428,29 +449,23 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             };
 
             const onClose = () => {
-                safeCloseWebSocket(webSocketServer);
                 if (!isReadableStreamCancelled) {
                     controller.close();
                 }
-                removeEventListeners();
+                safeCloseWebSocket(webSocketServer);
             };
 
             const onError = (err) => {
                 log('WebSocket 服务器发生错误', err.message);
                 controller.error(err);
-                removeEventListeners();
-            };
-
-            const removeEventListeners = () => {
-                webSocketServer.removeEventListener('message', onMessage);
-                webSocketServer.removeEventListener('close', onClose);
-                webSocketServer.removeEventListener('error', onError);
+                safeCloseWebSocket(webSocketServer);
             };
 
             webSocketServer.addEventListener('message', onMessage);
             webSocketServer.addEventListener('close', onClose);
             webSocketServer.addEventListener('error', onError);
 
+            // 处理早期数据（0-RTT）
             const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
             if (error) {
                 controller.error(error);
@@ -460,7 +475,7 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
         },
 
         pull(controller) {
-            // 实现反压机制
+            // 反压机制（如需要可以实现）
         },
 
         cancel(reason) {
@@ -726,36 +741,39 @@ function stringify(arr, offset = 0) {
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
  * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
+ * @param {ArrayBuffer} vlessResponseHeader - VLESS 协议的响应头部数据
  * @param {(string) => void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+async function handleDNSQuery(udpChunk, webSocket, vlessResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1; // WebSocket open state
 
     try {
         const dnsServer = '8.8.4.4'; // Google DNS server
         const dnsPort = 53; // Standard DNS port
 
-        let 维列斯Header = 维列斯ResponseHeader;
+        let vlessHeader = vlessResponseHeader;
 
-        // 使用连接池或缓存连接
-        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
+        // 连接到 DNS 服务器
+        const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
 
         log(`连接到 ${dnsServer}:${dnsPort}`);
+
         const writer = tcpSocket.writable.getWriter();
         await writer.write(udpChunk);
-        writer.releaseLock();
+        writer.releaseLock(); // 释放写入器锁
 
+        // 读取 DNS 响应并通过 WebSocket 发送
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
-                        // 直接发送数据，减少不必要的复制
-                        const dataToSend = 维列斯Header 
-                            ? new Uint8Array([...new Uint8Array(维列斯Header), ...new Uint8Array(chunk)])
-                            : chunk;
-                        webSocket.send(dataToSend);
-                        维列斯Header = null;
+                        // 合并 VLESS 响应头与 DNS 响应数据
+                        const combinedData = vlessHeader ? mergeData(vlessHeader, chunk) : chunk;
+                        
+                        webSocket.send(combinedData);
+
+                        // 只发送一次 VLESS 响应头
+                        if (vlessHeader) vlessHeader = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
@@ -769,28 +787,28 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
             },
             abort(reason) {
                 console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
-            },
+            }
         }));
     } catch (error) {
+        // 捕获所有异常并记录
         console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
         safeCloseWebSocket(webSocket);
     }
 }
 
 /**
- * 获取或创建 TCP 连接
- * @param {string} hostname - DNS 服务器地址
- * @param {number} port - 端口号
- * @returns {Promise<TCPSocket>} - 返回 TCP 连接
+ * 合并  响应头与 DNS 响应数据
+ * @param {ArrayBuffer} header  响应头
+ * @param {ArrayBuffer} data - DNS 响应数据
+ * @returns {ArrayBuffer} 合并后的数据
  */
-async function getOrCreateConnection(hostname, port) {
-    // 这里需要实现连接池逻辑，以下是一个简单的示例
-    // 实际应用中需要根据需求实现连接池
-    return connect({
-        hostname: hostname,
-        port: port,
-    });
+function mergeData(header, data) {
+    const combinedData = new Uint8Array(header.byteLength + data.byteLength);
+    combinedData.set(new Uint8Array(header), 0);
+    combinedData.set(new Uint8Array(data), header.byteLength);
+    return combinedData.buffer;
 }
+
 
 /**
  * 建立 SOCKS5 代理连接
