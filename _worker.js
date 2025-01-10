@@ -712,10 +712,7 @@ function safeCloseWebSocket(socket) {
 }
 
 // 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-    byteToHex.push((i + 256).toString(16).slice(1));
-}
+const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
