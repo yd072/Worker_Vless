@@ -761,8 +761,10 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 
         let 维列斯Header = 维列斯ResponseHeader;
 
-        // 使用连接池或缓存 DNS 结果（假设有实现）
-        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
+        const tcpSocket = connect({
+            hostname: dnsServer,
+            port: dnsPort,
+        });
 
         log(`连接到 ${dnsServer}:${dnsPort}`);
         const writer = tcpSocket.writable.getWriter();
