@@ -600,7 +600,6 @@ function process维列斯Header(维列斯Buffer, userID) {
 }
 
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
-    let chunkCount = 0;
     let hasIncomingData = false;
     let 维列斯Header = 维列斯ResponseHeader;
     const WS_READY_STATE_OPEN = 1;
@@ -608,9 +607,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
     await remoteSocket.readable
         .pipeTo(
             new WritableStream({
-                start() {
-                    // 初始化时不需要任何操作
-                },
                 async write(chunk, controller) {
                     hasIncomingData = true;
 
@@ -621,6 +617,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
 
                     try {
                         if (维列斯Header) {
+                            // 直接使用 TypedArray 的 set 方法进行合并，避免多次内存分配
                             const combined = new Uint8Array(维列斯Header.length + chunk.length);
                             combined.set(维列斯Header);
                             combined.set(chunk, 维列斯Header.length);
@@ -632,7 +629,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                     } catch (error) {
                         log(`发送数据时发生错误: ${error.message}`);
                         controller.error(`发送数据时发生错误: ${error.message}`);
-                        // 考虑在此处进行重试或其他恢复操作
                     }
                 },
                 close() {
@@ -646,7 +642,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
         .catch((error) => {
             console.error(`remoteSocketToWS 发生异常`, error.stack || error);
             safeCloseWebSocket(webSocket);
-            // 考虑在此处进行重试或其他恢复操作
         });
 
     if (!hasIncomingData && retry) {
