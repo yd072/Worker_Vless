@@ -394,10 +394,8 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
  */
 async function retry() {
     if (enableSocks) {
-        // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
-        // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
         if (!proxyIP || proxyIP === '') {
             proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
         } else {
@@ -413,30 +411,21 @@ async function retry() {
         }
         tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
-    // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
     tcpSocket.closed.catch(error => {
         console.log('retry tcpSocket closed error', error);
     }).finally(() => {
         safeCloseWebSocket(webSocket);
     });
-    // 建立从远程 Socket 到 WebSocket 的数据流
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
 }
 
-// 确保以下代码在函数或模块的正确位置
 let shouldUseSocks = false;
 if (go2Socks5s.length > 0 && enableSocks) {
     shouldUseSocks = await useSocks5Pattern(addressRemote);
 }
-// 首次尝试连接远程服务器
 let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
-
-// 当远程 Socket 就绪时，将其传递给 WebSocket
-// 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
-// 如果连接失败或无数据，retry 函数将被调用进行重试
 remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-}
-	
+
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let isReadableStreamCancelled = false;
 
@@ -465,7 +454,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             webSocketServer.addEventListener('close', onClose);
             webSocketServer.addEventListener('error', onError);
 
-            // 处理早期数据（0-RTT）
             const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
             if (error) {
                 controller.error(error);
@@ -474,9 +462,7 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             }
         },
 
-        pull(controller) {
-            // 反压机制（如需要可以实现）
-        },
+        pull(controller) {},
 
         cancel(reason) {
             if (isReadableStreamCancelled) return;
@@ -489,15 +475,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     return stream;
 }
 
-// https://xtls.github.io/development/protocols/维列斯.html
-// https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
-
-/**
- * 解析 维列斯 协议的头部数据
- * @param {ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
- * @param {string} userID 用于验证的用户 ID
- * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
- */
 function process维列斯Header(维列斯Buffer, userID) {
     if (维列斯Buffer.byteLength < 24) {
         return {
@@ -587,7 +564,7 @@ function process维列斯Header(维列斯Buffer, userID) {
         isUDP,
     };
 }
-	
+
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
     let chunkCount = 0;
     let hasIncomingData = false;
@@ -597,9 +574,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
     await remoteSocket.readable
         .pipeTo(
             new WritableStream({
-                start() {
-                    // 初始化时不需要任何操作
-                },
+                start() {},
                 async write(chunk, controller) {
                     hasIncomingData = true;
 
@@ -621,7 +596,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                     } catch (error) {
                         log(`发送数据时发生错误: ${error.message}`);
                         controller.error(`发送数据时发生错误: ${error.message}`);
-                        // 考虑在此处进行重试或其他恢复操作
                     }
                 },
                 close() {
@@ -635,7 +609,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
         .catch((error) => {
             console.error(`remoteSocketToWS 发生异常`, error.stack || error);
             safeCloseWebSocket(webSocket);
-            // 考虑在此处进行重试或其他恢复操作
         });
 
     if (!hasIncomingData && retry) {
@@ -644,32 +617,19 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
     }
 }
 
-/**
- * 将 Base64 编码的字符串转换为 ArrayBuffer
- * 
- * @param {string} base64Str Base64 编码的输入字符串
- * @returns {{ earlyData: ArrayBuffer | undefined, error: Error | null }} 返回解码后的 ArrayBuffer 或错误
- */
 function base64ToArrayBuffer(base64Str) {
-    // 检查输入是否为有效的非空字符串
     if (typeof base64Str !== 'string' || base64Str.trim() === '') {
         return { earlyData: undefined, error: new Error('输入必须是非空字符串') };
     }
 
     try {
-        // 替换 URL 安全的 Base64 变体字符为标准 Base64
         base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
-
-        // 确保 Base64 字符串长度是 4 的倍数，补齐 '='
         const paddingLength = (4 - (base64Str.length % 4)) % 4;
         if (paddingLength > 0) {
             base64Str += '='.repeat(paddingLength);
         }
 
-        // 解码 Base64 字符串为二进制字符串
         const decodedString = atob(base64Str);
-
-        // 将二进制字符串转换为 Uint8Array 并提取底层 ArrayBuffer
         const arrayBuffer = Uint8Array.from(decodedString, (c) => c.charCodeAt(0)).buffer;
 
         return { earlyData: arrayBuffer, error: null };
@@ -681,19 +641,13 @@ function base64ToArrayBuffer(base64Str) {
     }
 }
 
-/**
- * 这不是真正的 UUID 验证，而是一个简化的版本
- * @param {string} uuid 要验证的 UUID 字符串
- * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
- */
 function isValidUUID(uuid) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return uuidRegex.test(uuid);
 }
 
-// WebSocket 的两个重要状态常量
-const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态，可以发送和接收消息
-const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
+const WS_READY_STATE_OPEN = 1;
+const WS_READY_STATE_CLOSING = 2;
 
 function safeCloseWebSocket(socket) {
     try {
@@ -705,30 +659,15 @@ function safeCloseWebSocket(socket) {
     }
 }
 
-// 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
     byteToHex.push((i + 256).toString(16).slice(1));
 }
 
-/**
- * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} UUID 字符串
- */
 function unsafeStringify(arr, offset = 0) {
     return `${byteToHex[arr[offset + 0]]}${byteToHex[arr[offset + 1]]}${byteToHex[arr[offset + 2]]}${byteToHex[arr[offset + 3]]}-${byteToHex[arr[offset + 4]]}${byteToHex[arr[offset + 5]]}-${byteToHex[arr[offset + 6]]}${byteToHex[arr[offset + 7]]}-${byteToHex[arr[offset + 8]]}${byteToHex[arr[offset + 9]]}-${byteToHex[arr[offset + 10]]}${byteToHex[arr[offset + 11]]}${byteToHex[arr[offset + 12]]}${byteToHex[arr[offset + 13]]}${byteToHex[arr[offset + 14]]}${byteToHex[arr[offset + 15]]}`.toLowerCase();
 }
 
-/**
- * 将字节数组转换为 UUID 字符串，并验证其有效性
- * 这是一个安全的函数，它确保返回的 UUID 格式正确
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} 有效的 UUID 字符串
- * @throws {TypeError} 如果生成的 UUID 字符串无效
- */
 function stringify(arr, offset = 0) {
     const uuid = unsafeStringify(arr, offset);
     if (!isValidUUID(uuid)) {
@@ -737,42 +676,31 @@ function stringify(arr, offset = 0) {
     return uuid;
 }
 
-/**
- * 处理 DNS 查询的函数
- * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
- * @param {(string) => void} log - 日志记录函数
- */
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    const WS_READY_STATE_OPEN = 1; // WebSocket open state
+    const WS_READY_STATE_OPEN = 1;
 
     try {
-        const dnsServer = '8.8.4.4'; // Google DNS server
-        const dnsPort = 53; // Standard DNS port
+        const dnsServer = '8.8.4.4';
+        const dnsPort = 53;
 
         let 维列斯Header = 维列斯ResponseHeader;
 
-        // 连接到 DNS 服务器
         const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
 
         log(`连接到 ${dnsServer}:${dnsPort}`);
 
         const writer = tcpSocket.writable.getWriter();
         await writer.write(udpChunk);
-        writer.releaseLock(); // 释放写入器锁
+        writer.releaseLock();
 
-        // 读取 DNS 响应并通过 WebSocket 发送
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
-                        // 合并 维列斯 响应头与 DNS 响应数据
                         const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
                         
                         webSocket.send(combinedData);
 
-                        // 只发送一次 维列斯 响应头
                         if (维列斯Header) 维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
@@ -790,18 +718,11 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
             }
         }));
     } catch (error) {
-        // 捕获所有异常并记录
         console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
         safeCloseWebSocket(webSocket);
     }
 }
 
-/**
- * 合并  响应头与 DNS 响应数据
- * @param {ArrayBuffer} header  响应头
- * @param {ArrayBuffer} data - DNS 响应数据
- * @returns {ArrayBuffer} 合并后的数据
- */
 function mergeData(header, data) {
     const combinedData = new Uint8Array(header.byteLength + data.byteLength);
     combinedData.set(new Uint8Array(header), 0);
@@ -809,15 +730,6 @@ function mergeData(header, data) {
     return combinedData.buffer;
 }
 
-
-/**
- * 建立 SOCKS5 代理连接
- * @param {number} addressType 目标地址类型（1: IPv4, 2: 域名, 3: IPv6）
- * @param {string} addressRemote 目标地址（可以是 IP 或域名）
- * @param {number} portRemote 目标端口
- * @param {function} log 日志记录函数
- * @returns {Promise<Socket>} 返回与 SOCKS5 服务器的连接
- */
 async function socks5Connect(addressType, addressRemote, portRemote, log) {
     const { username, password, hostname, port } = parsedSocks5Address;
 
@@ -905,11 +817,6 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
     }
 }
 
-/**
- * SOCKS5 代理地址解析器
- * @param {string} address SOCKS5 代理地址
- * @returns {Object} 包含解析后的用户名、密码、主机名和端口号
- */
 function socks5AddressParser(address) {
     let [latter, former] = address.split("@").reverse();
     let username, password, hostname, port;
@@ -943,30 +850,15 @@ function socks5AddressParser(address) {
     };
 }
 
-/**
- * 恢复被伪装的信息
- * 这个函数用于将内容中的假用户ID和假主机名替换回真实的值
- * 
- * @param {string} content 需要处理的内容
- * @param {string} userID 真实的用户ID
- * @param {string} hostName 真实的主机名
- * @param {string} fakeUserID 伪装的用户ID
- * @param {string} fakeHostName 伪装的主机名
- * @param {boolean} isBase64 内容是否是Base64编码的
- * @returns {string} 恢复真实信息后的内容
- */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     try {
-        // 如果内容是Base64编码的，先解码
         if (isBase64) {
             content = atob(content);
         }
 
-        // 创建并替换伪装的用户ID和主机名
         content = replaceMaskedInfo(content, fakeUserID, userID)
                          .replace(new RegExp(escapeRegExp(fakeHostName), 'g'), hostName);
 
-        // 如果内容是Base64编码的，处理完后再次编码
         if (isBase64) {
             content = btoa(content);
         }
@@ -974,62 +866,38 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
         return content;
     } catch (error) {
         console.error('恢复伪装信息时发生错误:', error);
-        return content;  // 返回原始内容以防止数据丢失
+        return content;
     }
 }
 
-/**
- * 替换伪装的用户ID或主机名
- * @param {string} content 内容
- * @param {string} fakeValue 伪装的值
- * @param {string} realValue 真实的值
- * @returns {string} 替换后的内容
- */
 function replaceMaskedInfo(content, fakeValue, realValue) {
     const fakeValueRegex = new RegExp(escapeRegExp(fakeValue), 'g');
     return content.replace(fakeValueRegex, realValue);
 }
 
-/**
- * 转义正则表达式中的特殊字符
- * @param {string} string 需要转义的字符串
- * @returns {string} 转义后的字符串
- */
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * 双重MD5哈希函数
- * 这个函数对输入文本进行两次MD5哈希，增强安全性
- * 第二次哈希使用第一次哈希结果的一部分作为输入
- * 
- * @param {string} 文本 要哈希的文本
- * @returns {Promise<string>} 双重哈希后的小写十六进制字符串
- */
 async function 双重哈希(文本) {
     const 编码器 = new TextEncoder();
 
     const 计算哈希 = async (输入) => {
-        const 哈希 = await crypto.subtle.digest('MD5', 编码器.encode(输入));
-        return 哈希; // 直接返回二进制结果
+        const 哈希 = await crypto.subtle.digest('SHA-256', 编码器.encode(输入));
+        return 哈希;
     };
 
     try {
-        // 第一次哈希
         const 第一次哈希结果 = await 计算哈希(文本);
-
-        // 第二次哈希，使用第一次哈希结果的一部分（第7到27字节）
         const 第二次哈希结果 = await 计算哈希(第一次哈希结果.slice(7, 27));
 
-        // 将结果转为十六进制小写字符串
         const 哈希数组 = Array.from(new Uint8Array(第二次哈希结果));
         const 第二次十六进制 = 哈希数组.map(字节 => 字节.toString(16).padStart(2, '0')).join('');
 
         return 第二次十六进制.toLowerCase();
     } catch (error) {
         console.error('哈希计算时发生错误:', error);
-        throw error;  // 重新抛出错误以便调用者处理
+        throw error;
     }
 }
 
@@ -1048,31 +916,23 @@ async function 代理URL(代理网址, 目标网址) {
         let 路径名 = 解析后的网址.pathname;
         const 查询参数 = 解析后的网址.search;
 
-        // 确保路径名正确拼接
         if (!路径名.endsWith('/')) {
             路径名 += '/';
         }
 
-        // 确保目标网址路径没有以斜杠开头
         let 目标路径 = 目标网址.pathname.replace(/^\//, '');
-
-        // 拼接路径
         路径名 += 目标路径;
 
-        // 构建新的 URL
         const 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
 
-        // 反向代理请求
         const 响应 = await fetch(新网址);
 
-        // 创建新的响应
         const 新响应 = new Response(响应.body, {
             status: 响应.status,
             statusText: 响应.statusText,
             headers: 响应.headers
         });
 
-        // 添加自定义头部，包含 URL 信息
         新响应.headers.set('X-New-URL', 新网址);
 
         return 新响应;
