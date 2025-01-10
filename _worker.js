@@ -439,13 +439,19 @@ remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 	
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let isReadableStreamCancelled = false;
+    const messageQueue = []; // 用于存储消息的队列
+    let resolvePull; // 用于存储 pull 的 resolve 函数
 
     const stream = new ReadableStream({
         start(controller) {
             const onMessage = (event) => {
                 if (isReadableStreamCancelled) return;
                 const message = event.data;
-                controller.enqueue(message);
+                messageQueue.push(message);
+                if (resolvePull) {
+                    resolvePull();
+                    resolvePull = null;
+                }
             };
 
             const onClose = () => {
@@ -470,12 +476,20 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             if (error) {
                 controller.error(error);
             } else if (earlyData) {
-                controller.enqueue(earlyData);
+                messageQueue.push(earlyData);
+                if (resolvePull) {
+                    resolvePull();
+                    resolvePull = null;
+                }
             }
         },
 
-        pull(controller) {
-            // 反压机制（如需要可以实现）
+        async pull(controller) {
+            if (messageQueue.length > 0) {
+                controller.enqueue(messageQueue.shift());
+            } else {
+                await new Promise(resolve => resolvePull = resolve);
+            }
         },
 
         cancel(reason) {
@@ -483,6 +497,9 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
             log(`可读流被取消，原因是 ${reason}`);
             isReadableStreamCancelled = true;
             safeCloseWebSocket(webSocketServer);
+            webSocketServer.removeEventListener('message', onMessage);
+            webSocketServer.removeEventListener('close', onClose);
+            webSocketServer.removeEventListener('error', onError);
         }
     });
 
