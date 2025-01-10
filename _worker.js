@@ -800,9 +800,9 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 }
 
 /**
- * 合并  响应头与 DNS 响应数据
- * @param {ArrayBuffer} header  响应头
- * @param {ArrayBuffer} data - DNS 响应数据
+ * 合并响应头与 DNS 响应数据
+ * @param {ArrayBuffer} header 响应头
+ * @param {ArrayBuffer} data DNS 响应数据
  * @returns {ArrayBuffer} 合并后的数据
  */
 function mergeData(header, data) {
@@ -811,7 +811,6 @@ function mergeData(header, data) {
     combinedData.set(new Uint8Array(data), header.byteLength);
     return combinedData.buffer;
 }
-
 
 /**
  * 建立 SOCKS5 代理连接
