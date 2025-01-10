@@ -201,8 +201,9 @@ export default {
                 }
             } else {
                 socks5Address = url.searchParams.get('socks5') || socks5Address;
-                if (new RegExp('/socks5=', 'i').test(url.pathname)) socks5Address = url.pathname.split('5=')[1];
-                else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
+                if (/\/socks5?=/.test(url.pathname)) {
+                    socks5Address = url.pathname.split('5=')[1];
+                } else if (/\/socks5?:\/\//.test(url.pathname)) {
                     socks5Address = url.pathname.split('://')[1].split('#')[0];
                     if (socks5Address.includes('@')) {
                         let userPassword = socks5Address.split('@')[0];
@@ -227,13 +228,10 @@ export default {
                 if (url.searchParams.has('proxyip')) {
                     proxyIP = url.searchParams.get('proxyip');
                     enableSocks = false;
-                } else if (new RegExp('/proxyip=', 'i').test(url.pathname)) {
-                    proxyIP = url.pathname.toLowerCase().split('/proxyip=')[1];
+                } else if (/\/proxyip[.=]/.test(url.pathname)) {
+                    proxyIP = url.pathname.toLowerCase().split(/\/proxyip[.=]/)[1];
                     enableSocks = false;
-                } else if (new RegExp('/proxyip.', 'i').test(url.pathname)) {
-                    proxyIP = `proxyip.${url.pathname.toLowerCase().split("/proxyip.")[1]}`;
-                    enableSocks = false;
-                } else if (new RegExp('/pyip=', 'i').test(url.pathname)) {
+                } else if (/\/pyip=/.test(url.pathname)) {
                     proxyIP = url.pathname.toLowerCase().split('/pyip=')[1];
                     enableSocks = false;
                 }
