@@ -384,62 +384,48 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		return tcpSocket;
 	}
 
-// 解析代理IP和端口
-function parseProxyIP(proxyIP, portRemote) {
-    if (!proxyIP || proxyIP === '') {
-        return {
-            ip: atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`),
-            port: portRemote
-        };
-    }
-    if (proxyIP.includes(']:')) {
-        const [ip, port] = proxyIP.split(']:');
-        return { ip, port: port || portRemote };
-    }
-    if (proxyIP.split(':').length === 2) {
-        const [ip, port] = proxyIP.split(':');
-        return { ip, port: port || portRemote };
-    }
-    if (proxyIP.includes('.tp')) {
-        const port = proxyIP.split('.tp')[1].split('.')[0];
-        return { ip: proxyIP, port: port || portRemote };
-    }
-    return { ip: proxyIP, port: portRemote };
-}
-
-// 重试函数
+/**
+ * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
+ * 这可能是因为某些网络问题导致的连接失败
+ */
 async function retry() {
     let tcpSocket;
     if (enableSocks) {
+        // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
-        const { ip, port } = parseProxyIP(proxyIP, portRemote);
-        tcpSocket = await connectAndWrite(ip, port);
+        // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
+        if (!proxyIP || proxyIP === '') {
+            proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+        } else if (proxyIP.includes(']:')) {
+            portRemote = proxyIP.split(']:')[1] || portRemote;
+            proxyIP = proxyIP.split(']:')[0] || proxyIP;
+        } else if (proxyIP.split(':').length === 2) {
+            portRemote = proxyIP.split(':')[1] || portRemote;
+            proxyIP = proxyIP.split(':')[0] || proxyIP;
+        }
+        if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+        tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
-    handleSocketClosure(tcpSocket);
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-}
-
-// 处理Socket关闭
-function handleSocketClosure(tcpSocket) {
+    // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
     tcpSocket.closed.catch(error => {
         console.log('retry tcpSocket closed error', error);
     }).finally(() => {
         safeCloseWebSocket(webSocket);
     });
+    // 建立从远程 Socket 到 WebSocket 的数据流
+    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
 }
 
-// 主函数逻辑
-async function main() {
-    let useSocks = false;
-    if (go2Socks5s.length > 0 && enableSocks) {
-        useSocks = await useSocks5Pattern(addressRemote);
-    }
-    let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-}
+let useSocks = false;
+if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
+// 首次尝试连接远程服务器
+let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
 
-main();
+// 当远程 Socket 就绪时，将其传递给 WebSocket
+// 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
+// 如果连接失败或无数据，retry 函数将被调用进行重试
+remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 	// 标记可读流是否已被取消
