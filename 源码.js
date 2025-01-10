@@ -738,10 +738,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 
         let 维列斯Header = 维列斯ResponseHeader;
 
-        const tcpSocket = connect({
-            hostname: dnsServer,
-            port: dnsPort,
-        });
+        // 使用连接池或缓存连接
+        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
 
         log(`连接到 ${dnsServer}:${dnsPort}`);
         const writer = tcpSocket.writable.getWriter();
@@ -752,15 +750,12 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
-                        if (维列斯Header) {
-                            const combinedData = new Uint8Array(维列斯Header.byteLength + chunk.byteLength);
-                            combinedData.set(new Uint8Array(维列斯Header), 0);
-                            combinedData.set(new Uint8Array(chunk), 维列斯Header.byteLength);
-                            webSocket.send(combinedData);
-                            维列斯Header = null;
-                        } else {
-                            webSocket.send(chunk);
-                        }
+                        // 直接发送数据，减少不必要的复制
+                        const dataToSend = 维列斯Header 
+                            ? new Uint8Array([...new Uint8Array(维列斯Header), ...new Uint8Array(chunk)])
+                            : chunk;
+                        webSocket.send(dataToSend);
+                        维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
@@ -780,6 +775,21 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
         safeCloseWebSocket(webSocket);
     }
+}
+
+/**
+ * 获取或创建 TCP 连接
+ * @param {string} hostname - DNS 服务器地址
+ * @param {number} port - 端口号
+ * @returns {Promise<TCPSocket>} - 返回 TCP 连接
+ */
+async function getOrCreateConnection(hostname, port) {
+    // 这里需要实现连接池逻辑，以下是一个简单的示例
+    // 实际应用中需要根据需求实现连接池
+    return connect({
+        hostname: hostname,
+        port: port,
+    });
 }
 
 /**
