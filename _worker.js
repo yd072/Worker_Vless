@@ -707,16 +707,6 @@ function isValidUUID(uuid) {
 const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态，可以发送和接收消息
 const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
 
-function safeCloseWebSocket(socket) {
-    try {
-        if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-            socket.close();
-        }
-    } catch (error) {
-        console.error('safeCloseWebSocket error', error);
-    }
-}
-
 // 预计算 0-255 每个字节的十六进制表示
 const byteToHex = [];
 for (let i = 0; i < 256; ++i) {
@@ -821,11 +811,15 @@ async function getOrCreateConnection(hostname, port) {
 
 /**
  * 安全关闭 WebSocket
- * @param {WebSocket} webSocket - 需要关闭的 WebSocket
+ * @param {WebSocket} socket - 需要关闭的 WebSocket
  */
-function safeCloseWebSocket(webSocket) {
-    if (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING) {
-        webSocket.close();
+function safeCloseWebSocket(socket) {
+    try {
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.CLOSING) {
+            socket.close();
+        }
+    } catch (error) {
+        console.error('safeCloseWebSocket error', error);
     }
 }
 
