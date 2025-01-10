@@ -509,12 +509,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 // https://xtls.github.io/development/protocols/维列斯.html
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
 
-/**
- * 解析 维列斯 协议的头部数据
- * @param {ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
- * @param {string} userID 用于验证的用户 ID
- * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
- */
 function process维列斯Header(维列斯Buffer, userID) {
     if (维列斯Buffer.byteLength < 24) {
         return {
@@ -604,7 +598,7 @@ function process维列斯Header(维列斯Buffer, userID) {
         isUDP,
     };
 }
-	
+
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
     let chunkCount = 0;
     let hasIncomingData = false;
