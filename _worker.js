@@ -292,7 +292,7 @@ async function 维列斯OverWSHandler(request) {
                     return;
                 }
 
-                // 处理 维列斯 协议头部
+                // 处理 VLESS 协议头部（逻辑上实现 VLESS 处理）
                 const {
                     hasError,
                     message,
@@ -300,9 +300,9 @@ async function 维列斯OverWSHandler(request) {
                     portRemote = 443,
                     addressRemote = '',
                     rawDataIndex,
-                    维列斯Version = new Uint8Array([0, 0]),
+                    维列斯Version = new Uint8Array([0, 0]), // 保持变量名不变
                     isUDP,
-                } = process维列斯Header(chunk, userID);
+                } = process维列斯Header(chunk, userID); // 保持函数名不变，但实现 VLESS 逻辑
                 // 设置地址和端口信息，用于日志
                 address = addressRemote;
                 portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
@@ -318,8 +318,8 @@ async function 维列斯OverWSHandler(request) {
                         throw new Error('UDP 代理仅对 DNS（53 端口）启用');
                     }
                 }
-                // 构建 维列斯 响应头部
-                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
+                // 构建 VLESS 响应头部（逻辑上实现 VLESS 处理）
+                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]); // 保持变量名不变
                 // 获取实际的客户端数据
                 const rawClientData = chunk.slice(rawDataIndex);
 
