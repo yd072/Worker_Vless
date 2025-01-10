@@ -440,34 +440,34 @@ remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let isReadableStreamCancelled = false;
 
-    const removeEventListeners = () => {
-        webSocketServer.removeEventListener('message', onMessage);
-        webSocketServer.removeEventListener('close', onClose);
-        webSocketServer.removeEventListener('error', onError);
-    };
-
-    const onMessage = (event) => {
-        if (isReadableStreamCancelled) return;
-        const message = event.data;
-        controller.enqueue(message);
-    };
-
-    const onClose = () => {
-        safeCloseWebSocket(webSocketServer);
-        if (!isReadableStreamCancelled) {
-            controller.close();
-        }
-        removeEventListeners();
-    };
-
-    const onError = (err) => {
-        log('WebSocket 服务器发生错误', err.message);
-        controller.error(err);
-        removeEventListeners();
-    };
-
     const stream = new ReadableStream({
         start(controller) {
+            const onMessage = (event) => {
+                if (isReadableStreamCancelled) return;
+                const message = event.data;
+                controller.enqueue(message);
+            };
+
+            const onClose = () => {
+                safeCloseWebSocket(webSocketServer);
+                if (!isReadableStreamCancelled) {
+                    controller.close();
+                }
+                removeEventListeners();
+            };
+
+            const onError = (err) => {
+                log('WebSocket 服务器发生错误', err.message);
+                controller.error(err);
+                removeEventListeners();
+            };
+
+            const removeEventListeners = () => {
+                webSocketServer.removeEventListener('message', onMessage);
+                webSocketServer.removeEventListener('close', onClose);
+                webSocketServer.removeEventListener('error', onError);
+            };
+
             webSocketServer.addEventListener('message', onMessage);
             webSocketServer.addEventListener('close', onClose);
             webSocketServer.addEventListener('error', onError);
