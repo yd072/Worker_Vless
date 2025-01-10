@@ -47,16 +47,18 @@ let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 export default {
     async fetch(request, env, ctx) {
         try {
+            const { UUID, uuid, PASSWORD, pswd, KEY, TOKEN, TIME, UPTIME, PROXYIP, proxyip, SOCKS5, GO2SOCKS5, CFPORTS, BAN, RPROXYIP, ADD, ADDAPI, ADDNOTLS, ADDNOTLSAPI, ADDCSV, DLS, CSVREMARK, TGTOKEN, TGID, SUBNAME, SUBEMOJI, EMOJI, LINK, SUB, SUBAPI, SUBCONFIG, URL302, URL } = env;
             const UA = request.headers.get('User-Agent') || 'null';
             const userAgent = UA.toLowerCase();
-            userID = env.UUID || env.uuid || env.PASSWORD || env.pswd || userID;
-            if (env.KEY || env.TOKEN || (userID && !isValidUUID(userID))) {
-                动态UUID = env.KEY || env.TOKEN || userID;
-                有效时间 = Number(env.TIME) || 有效时间;
-                更新时间 = Number(env.UPTIME) || 更新时间;
+            let userID = UUID || uuid || PASSWORD || pswd;
+            let 动态UUID, 有效时间, 更新时间, proxyIP, socks5Address, enableSocks = false;
+
+            if (KEY || TOKEN || (userID && !isValidUUID(userID))) {
+                动态UUID = KEY || TOKEN || userID;
+                有效时间 = Number(TIME) || 有效时间;
+                更新时间 = Number(UPTIME) || 更新时间;
                 const userIDs = await 生成动态UUID(动态UUID);
                 userID = userIDs[0];
-                userIDLow = userIDs[1];
             }
 
             if (!userID) {
@@ -82,56 +84,52 @@ export default {
 
             const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
 
-            proxyIP = env.PROXYIP || env.proxyip || proxyIP;
-            proxyIPs = await 整理(proxyIP);
-            proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
-
-            socks5Address = env.SOCKS5 || socks5Address;
-            socks5s = await 整理(socks5Address);
-            socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+            proxyIP = (await 整理(PROXYIP || proxyip || proxyIP))[Math.floor(Math.random() * proxyIPs.length)];
+            socks5Address = (await 整理(SOCKS5 || socks5Address))[Math.floor(Math.random() * socks5s.length)];
             socks5Address = socks5Address.split('//')[1] || socks5Address;
-            if (env.GO2SOCKS5) go2Socks5s = await 整理(env.GO2SOCKS5);
-            if (env.CFPORTS) httpsPorts = await 整理(env.CFPORTS);
-            if (env.BAN) banHosts = await 整理(env.BAN);
+
+            if (GO2SOCKS5) go2Socks5s = await 整理(GO2SOCKS5);
+            if (CFPORTS) httpsPorts = await 整理(CFPORTS);
+            if (BAN) banHosts = await 整理(BAN);
+
             if (socks5Address) {
                 try {
                     parsedSocks5Address = socks5AddressParser(socks5Address);
-                    RproxyIP = env.RPROXYIP || 'false';
+                    RproxyIP = RPROXYIP || 'false';
                     enableSocks = true;
                 } catch (err) {
                     console.log(err.toString());
-                    RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
-                    enableSocks = false;
+                    RproxyIP = RPROXYIP || !proxyIP ? 'true' : 'false';
                 }
             } else {
-                RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
+                RproxyIP = RPROXYIP || !proxyIP ? 'true' : 'false';
             }
 
             const upgradeHeader = request.headers.get('Upgrade');
             const url = new URL(request.url);
             if (!upgradeHeader || upgradeHeader !== 'websocket') {
-                if (env.ADD) addresses = await 整理(env.ADD);
-                if (env.ADDAPI) addressesapi = await 整理(env.ADDAPI);
-                if (env.ADDNOTLS) addressesnotls = await 整理(env.ADDNOTLS);
-                if (env.ADDNOTLSAPI) addressesnotlsapi = await 整理(env.ADDNOTLSAPI);
-                if (env.ADDCSV) addressescsv = await 整理(env.ADDCSV);
-                DLS = Number(env.DLS) || DLS;
-                remarkIndex = Number(env.CSVREMARK) || remarkIndex;
-                BotToken = env.TGTOKEN || BotToken;
-                ChatID = env.TGID || ChatID;
-                FileName = env.SUBNAME || FileName;
-                subEmoji = env.SUBEMOJI || env.EMOJI || subEmoji;
+                if (ADD) addresses = await 整理(ADD);
+                if (ADDAPI) addressesapi = await 整理(ADDAPI);
+                if (ADDNOTLS) addressesnotls = await 整理(ADDNOTLS);
+                if (ADDNOTLSAPI) addressesnotlsapi = await 整理(ADDNOTLSAPI);
+                if (ADDCSV) addressescsv = await 整理(ADDCSV);
+                DLS = Number(DLS) || DLS;
+                remarkIndex = Number(CSVREMARK) || remarkIndex;
+                BotToken = TGTOKEN || BotToken;
+                ChatID = TGID || ChatID;
+                FileName = SUBNAME || FileName;
+                subEmoji = SUBEMOJI || EMOJI || subEmoji;
                 if (subEmoji == '0') subEmoji = 'false';
-                if (env.LINK) link = await 整理(env.LINK);
-                let sub = env.SUB || '';
-                subConverter = env.SUBAPI || subConverter;
+                if (LINK) link = await 整理(LINK);
+                let sub = SUB || '';
+                subConverter = SUBAPI || subConverter;
                 if (subConverter.includes("http://")) {
                     subConverter = subConverter.split("//")[1];
                     subProtocol = 'http';
                 } else {
                     subConverter = subConverter.split("//")[1] || subConverter;
                 }
-                subConfig = env.SUBCONFIG || subConfig;
+                subConfig = SUBCONFIG || subConfig;
                 if (url.searchParams.has('sub') && url.searchParams.get('sub') !== '') sub = url.searchParams.get('sub');
                 if (url.searchParams.has('notls')) noTLS = 'true';
 
@@ -148,8 +146,8 @@ export default {
 
                 const 路径 = url.pathname.toLowerCase();
                 if (路径 == '/') {
-                    if (env.URL302) return Response.redirect(env.URL302, 302);
-                    else if (env.URL) return await 代理URL(env.URL, url);
+                    if (URL302) return Response.redirect(URL302, 302);
+                    else if (URL) return await 代理URL(URL, url);
                     else return new Response(JSON.stringify(request.cf, null, 4), {
                         status: 200,
                         headers: {
@@ -195,8 +193,8 @@ export default {
                         });
                     }
                 } else {
-                    if (env.URL302) return Response.redirect(env.URL302, 302);
-                    else if (env.URL) return await 代理URL(env.URL, url);
+                    if (URL302) return Response.redirect(URL302, 302);
+                    else if (URL) return await 代理URL(URL, url);
                     else return new Response('不用怀疑！你UUID就是错的！！！', { status: 404 });
                 }
             } else {
