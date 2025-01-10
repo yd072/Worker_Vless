@@ -741,41 +741,39 @@ function stringify(arr, offset = 0) {
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
  * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
+ * @param {ArrayBuffer} vlessResponseHeader - VLESS 协议的响应头部数据
  * @param {(string) => void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+async function handleDNSQuery(udpChunk, webSocket, vlessResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1; // WebSocket open state
 
     try {
         const dnsServer = '8.8.4.4'; // Google DNS server
         const dnsPort = 53; // Standard DNS port
 
-        let 维列斯Header = 维列斯ResponseHeader;
+        let vlessHeader = vlessResponseHeader;
 
-        const tcpSocket = connect({
-            hostname: dnsServer,
-            port: dnsPort,
-        });
+        // 连接到 DNS 服务器
+        const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
 
         log(`连接到 ${dnsServer}:${dnsPort}`);
+
         const writer = tcpSocket.writable.getWriter();
         await writer.write(udpChunk);
-        writer.releaseLock();
+        writer.releaseLock(); // 释放写入器锁
 
+        // 读取 DNS 响应并通过 WebSocket 发送
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
                     try {
-                        if (维列斯Header) {
-                            const combinedData = new Uint8Array(维列斯Header.byteLength + chunk.byteLength);
-                            combinedData.set(new Uint8Array(维列斯Header), 0);
-                            combinedData.set(new Uint8Array(chunk), 维列斯Header.byteLength);
-                            webSocket.send(combinedData);
-                            维列斯Header = null;
-                        } else {
-                            webSocket.send(chunk);
-                        }
+                        // 合并 VLESS 响应头与 DNS 响应数据
+                        const combinedData = vlessHeader ? mergeData(vlessHeader, chunk) : chunk;
+                        
+                        webSocket.send(combinedData);
+
+                        // 只发送一次 VLESS 响应头
+                        if (vlessHeader) vlessHeader = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
@@ -789,13 +787,28 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
             },
             abort(reason) {
                 console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
-            },
+            }
         }));
     } catch (error) {
+        // 捕获所有异常并记录
         console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
         safeCloseWebSocket(webSocket);
     }
 }
+
+/**
+ * 合并  响应头与 DNS 响应数据
+ * @param {ArrayBuffer} header  响应头
+ * @param {ArrayBuffer} data - DNS 响应数据
+ * @returns {ArrayBuffer} 合并后的数据
+ */
+function mergeData(header, data) {
+    const combinedData = new Uint8Array(header.byteLength + data.byteLength);
+    combinedData.set(new Uint8Array(header), 0);
+    combinedData.set(new Uint8Array(data), header.byteLength);
+    return combinedData.buffer;
+}
+
 
 /**
  * 建立 SOCKS5 代理连接
