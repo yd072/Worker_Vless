@@ -256,11 +256,9 @@ async function 维列斯OverWSHandler(request) {
 
     let address = '';
     let portWithRandomLog = '';
-    // 优化日志函数，添加环境判断
+    // 日志函数，用于记录连接信息
     const log = (info, event) => {
-        if (process.env.NODE_ENV !== 'production') {
-            console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
-        }
+        console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
     };
     // 获取早期数据头部，可能包含了一些初始化数据
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -339,9 +337,7 @@ async function 维列斯OverWSHandler(request) {
             } catch (error) {
                 log('处理数据时发生错误', error.message);
                 // 关闭 WebSocket 连接以防止资源泄漏
-                if (webSocket.readyState === WebSocket.OPEN) {
-                    webSocket.close(1011, '内部错误');
-                }
+                webSocket.close(1011, '内部错误');
             }
         },
         close() {
@@ -353,9 +349,7 @@ async function 维列斯OverWSHandler(request) {
     })).catch((err) => {
         log('readableWebSocketStream 管道错误', err);
         // 关闭 WebSocket 连接以防止资源泄漏
-        if (webSocket.readyState === WebSocket.OPEN) {
-            webSocket.close(1011, '管道错误');
-        }
+        webSocket.close(1011, '管道错误');
     });
 
     // 返回一个 WebSocket 升级的响应
