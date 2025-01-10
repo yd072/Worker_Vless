@@ -442,49 +442,64 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 
     const stream = new ReadableStream({
         start(controller) {
+            // 处理 WebSocket 消息的函数
             const onMessage = (event) => {
                 if (isReadableStreamCancelled) return;
                 const message = event.data;
                 controller.enqueue(message);
             };
 
+            // 处理 WebSocket 关闭的函数
             const onClose = () => {
-                safeCloseWebSocket(webSocketServer);
                 if (!isReadableStreamCancelled) {
                     controller.close();
                 }
-                removeEventListeners();
+                // 安全地关闭 WebSocket，确保连接不会保持开启
+                safeCloseWebSocket(webSocketServer);
             };
 
+            // 处理 WebSocket 错误的函数
             const onError = (err) => {
                 log('WebSocket 服务器发生错误', err.message);
                 controller.error(err);
-                removeEventListeners();
             };
 
-            const removeEventListeners = () => {
-                webSocketServer.removeEventListener('message', onMessage);
-                webSocketServer.removeEventListener('close', onClose);
-                webSocketServer.removeEventListener('error', onError);
-            };
-
+            // 添加事件监听器
             webSocketServer.addEventListener('message', onMessage);
             webSocketServer.addEventListener('close', onClose);
             webSocketServer.addEventListener('error', onError);
 
+            // 处理 WebSocket 0-RTT 早期数据
             const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
             if (error) {
                 controller.error(error);
             } else if (earlyData) {
                 controller.enqueue(earlyData);
             }
+
+            // 清理事件监听器的函数
+            const cleanup = () => {
+                webSocketServer.removeEventListener('message', onMessage);
+                webSocketServer.removeEventListener('close', onClose);
+                webSocketServer.removeEventListener('error', onError);
+            };
+
+            // 如果流被取消，清理 WebSocket 连接和事件
+            stream.cancel = (reason) => {
+                if (isReadableStreamCancelled) return;
+                log(`可读流被取消，原因是 ${reason}`);
+                isReadableStreamCancelled = true;
+                cleanup();
+                safeCloseWebSocket(webSocketServer);
+            };
         },
 
         pull(controller) {
-            // 实现反压机制
+            // 实现反压机制（这里暂时留空）
         },
 
         cancel(reason) {
+            // 取消流时调用，清理事件监听器并关闭 WebSocket
             if (isReadableStreamCancelled) return;
             log(`可读流被取消，原因是 ${reason}`);
             isReadableStreamCancelled = true;
@@ -494,6 +509,7 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
 
     return stream;
 }
+
 
 // https://xtls.github.io/development/protocols/维列斯.html
 // https://github.com/zizifn/excalidraw-backup/blob/main/v2ray-protocol.excalidraw
