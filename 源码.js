@@ -267,8 +267,8 @@ async function 维列斯OverWSHandler(request) {
     let address = '';
     let portWithRandomLog = '';
     // 日志函数，用于记录连接信息
-    const log = (info, event) => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+    const log = (info, event = '') => {
+        console.log(`[${address}:${portWithRandomLog}] ${info}`, event);
     };
     // 获取早期数据头部，可能包含了一些初始化数据
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -292,7 +292,7 @@ async function 维列斯OverWSHandler(request) {
             try {
                 if (isDns) {
                     // 如果是 DNS 查询，调用 DNS 处理函数
-                    return await handleDNSQuery(chunk, webSocket, null, log);
+                    return handleDNSQuery(chunk, webSocket, null, log);
                 }
                 if (remoteSocketWrapper.value) {
                     // 如果已有远程 Socket，直接写入数据
