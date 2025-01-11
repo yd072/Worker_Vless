@@ -587,9 +587,9 @@ function process维列斯Header(维列斯Buffer, userID) {
     };
 }
 
-async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
+async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
-    let 维列斯Header = 维列斯ResponseHeader;
+    let header = responseHeader;
 
     await remoteSocket.readable
         .pipeTo(
@@ -601,9 +601,9 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                         controller.error('webSocket.readyState is not open, maybe close');
                     }
 
-                    if (维列斯Header) {
-                        webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-                        维列斯Header = null;
+                    if (header) {
+                        webSocket.send(await new Blob([header, chunk]).arrayBuffer());
+                        header = null;
                     } else {
                         webSocket.send(chunk);
                     }
