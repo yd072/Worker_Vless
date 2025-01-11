@@ -730,41 +730,73 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {WebSocket} webSocket - 用于发送响应的 WebSocket 实例
- * @param {ArrayBuffer} responseHeader - 维列斯 协议的响应头部数据
- * @param {(string)=> void} log - 日志记录函数
+ * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
+ * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
+ * @param {(string) => void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, responseHeader, log) {
-    const dnsServer = '8.8.4.4'; // Google 的 DNS 服务器
-    const dnsPort = 53; // DNS 服务的标准端口
-    let header = responseHeader;
+async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+    const WS_READY_STATE_OPEN = 1; // WebSocket open state
 
     try {
+        const dnsServer = '8.8.4.4'; // Google DNS server
+        const dnsPort = 53; // Standard DNS port
+
+        let 维列斯Header = 维列斯ResponseHeader;
+
+        // 连接到 DNS 服务器
         const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
+
         log(`连接到 ${dnsServer}:${dnsPort}`);
 
         const writer = tcpSocket.writable.getWriter();
         await writer.write(udpChunk);
-        writer.releaseLock();
+        writer.releaseLock(); // 释放写入器锁
 
+        // 读取 DNS 响应并通过 WebSocket 发送
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                    const dataToSend = header ? new Blob([header, chunk]) : chunk;
-                    webSocket.send(await dataToSend.arrayBuffer());
-                    header = null;
+                    try {
+                        // 合并 维列斯 响应头与 DNS 响应数据
+                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
+                        
+                        webSocket.send(combinedData);
+
+                        // 只发送一次 维列斯 响应头
+                        if (维列斯Header) 维列斯Header = null;
+                    } catch (error) {
+                        console.error(`发送数据时发生错误: ${error.message}`);
+                        safeCloseWebSocket(webSocket);
+                    }
+                } else {
+                    console.warn('WebSocket 连接已关闭，无法发送数据');
                 }
             },
             close() {
                 log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
             },
             abort(reason) {
-                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断: ${reason}`);
-            },
+                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
+            }
         }));
     } catch (error) {
-        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`);
+        // 捕获所有异常并记录
+        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
+        safeCloseWebSocket(webSocket);
     }
+}
+
+/**
+ * 合并响应头与 DNS 响应数据
+ * @param {ArrayBuffer} header 响应头
+ * @param {ArrayBuffer} data DNS 响应数据
+ * @returns {ArrayBuffer} 合并后的数据
+ */
+function mergeData(header, data) {
+    const combinedData = new Uint8Array(header.byteLength + data.byteLength);
+    combinedData.set(new Uint8Array(header), 0);
+    combinedData.set(new Uint8Array(data), header.byteLength);
+    return combinedData.buffer;
 }
 
 /**
