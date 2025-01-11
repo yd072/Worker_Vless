@@ -646,15 +646,15 @@ function base64ToArrayBuffer(base64Str) {
 
         // 使用 atob 函数解码 Base64 字符串
         // atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
-        const decode = atob(base64Str);
+        const decoded = atob(base64Str);
 
         // 将二进制字符串转换为 Uint8Array
         // 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
-        const arryBuffer = Uint8Array.from(decode, c => c.charCodeAt(0));
+        const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
 
         // 返回 Uint8Array 的底层 ArrayBuffer
         // 这是实际的二进制数据，可以用于网络传输或其他二进制操作
-        return { earlyData: arryBuffer.buffer, error: null };
+        return { earlyData: arrayBuffer.buffer, error: null };
     } catch (error) {
         // 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
         return { earlyData: undefined, error };
