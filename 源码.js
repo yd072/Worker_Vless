@@ -404,21 +404,18 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
  */
 async function retry() {
     let tcpSocket;
-    if (enableSocks) {
+    if (useSocks) {
         // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
         // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
         if (!proxyIP || proxyIP === '') {
             proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
-        } else if (proxyIP.includes(']:')) {
-            portRemote = proxyIP.split(']:')[1] || portRemote;
-            proxyIP = proxyIP.split(']:')[0] || proxyIP;
-        } else if (proxyIP.split(':').length === 2) {
-            portRemote = proxyIP.split(':')[1] || portRemote;
-            proxyIP = proxyIP.split(':')[0] || proxyIP;
+        } else {
+            const parsed = parseProxyIP(proxyIP, portRemote);
+            proxyIP = parsed.proxyIP;
+            portRemote = parsed.port;
         }
-        if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
         tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
     // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
@@ -429,6 +426,20 @@ async function retry() {
     });
     // 建立从远程 Socket 到 WebSocket 的数据流
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+}
+
+// 提取 proxyIP 解析逻辑为独立函数
+function parseProxyIP(proxyIP, defaultPort) {
+    let port = defaultPort;
+    if (proxyIP.includes(']:')) {
+        [proxyIP, port] = proxyIP.split(']:');
+    } else if (proxyIP.split(':').length === 2) {
+        [proxyIP, port] = proxyIP.split(':');
+    }
+    if (proxyIP.includes('.tp')) {
+        port = proxyIP.split('.tp')[1].split('.')[0] || port;
+    }
+    return { proxyIP, port };
 }
 
 let useSocks = false;
@@ -576,9 +587,9 @@ function process维列斯Header(维列斯Buffer, userID) {
     };
 }
 
-async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
+async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
-    let 维列斯Header = 维列斯ResponseHeader;
+    let header = responseHeader;
 
     await remoteSocket.readable
         .pipeTo(
@@ -590,9 +601,9 @@ async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader
                         controller.error('webSocket.readyState is not open, maybe close');
                     }
 
-                    if (维列斯Header) {
-                        webSocket.send(await new Blob([维列斯Header, chunk]).arrayBuffer());
-                        维列斯Header = null;
+                    if (header) {
+                        webSocket.send(await new Blob([header, chunk]).arrayBuffer());
+                        header = null;
                     } else {
                         webSocket.send(chunk);
                     }
@@ -635,15 +646,15 @@ function base64ToArrayBuffer(base64Str) {
 
         // 使用 atob 函数解码 Base64 字符串
         // atob 将 Base64 编码的 ASCII 字符串转换为原始的二进制字符串
-        const decode = atob(base64Str);
+        const decoded = atob(base64Str);
 
         // 将二进制字符串转换为 Uint8Array
         // 这是通过遍历字符串中的每个字符并获取其 Unicode 编码值（0-255）来完成的
-        const arryBuffer = Uint8Array.from(decode, c => c.charCodeAt(0));
+        const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
 
         // 返回 Uint8Array 的底层 ArrayBuffer
         // 这是实际的二进制数据，可以用于网络传输或其他二进制操作
-        return { earlyData: arryBuffer.buffer, error: null };
+        return { earlyData: arrayBuffer.buffer, error: null };
     } catch (error) {
         // 如果在任何步骤中出现错误（如非法 Base64 字符），则返回错误
         return { earlyData: undefined, error };
@@ -656,11 +667,11 @@ function base64ToArrayBuffer(base64Str) {
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
  */
 function isValidUUID(uuid) {
-	// 定义一个正则表达式来匹配 UUID 格式
-	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    // 定义一个正则表达式来匹配 UUID 格式
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-	// 使用正则表达式测试 UUID 字符串
-	return uuidRegex.test(uuid);
+    // 使用正则表达式测试 UUID 字符串
+    return uuidPattern.test(uuid);
 }
 
 // WebSocket 的两个重要状态常量
@@ -680,7 +691,7 @@ function safeCloseWebSocket(socket) {
 }
 
 // 预计算 0-255 每个字节的十六进制表示
-const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
+const byteToHexArray = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 
 /**
  * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
@@ -690,12 +701,12 @@ const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).s
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-    return `${byteToHex[arr[offset + 0]]}${byteToHex[arr[offset + 1]]}${byteToHex[arr[offset + 2]]}${byteToHex[arr[offset + 3]]}-` +
-           `${byteToHex[arr[offset + 4]]}${byteToHex[arr[offset + 5]]}-` +
-           `${byteToHex[arr[offset + 6]]}${byteToHex[arr[offset + 7]]}-` +
-           `${byteToHex[arr[offset + 8]]}${byteToHex[arr[offset + 9]]}-` +
-           `${byteToHex[arr[offset + 10]]}${byteToHex[arr[offset + 11]]}${byteToHex[arr[offset + 12]]}` +
-           `${byteToHex[arr[offset + 13]]}${byteToHex[arr[offset + 14]]}${byteToHex[arr[offset + 15]]}`.toLowerCase();
+    return `${byteToHexArray[arr[offset + 0]]}${byteToHexArray[arr[offset + 1]]}${byteToHexArray[arr[offset + 2]]}${byteToHexArray[arr[offset + 3]]}-` +
+           `${byteToHexArray[arr[offset + 4]]}${byteToHexArray[arr[offset + 5]]}-` +
+           `${byteToHexArray[arr[offset + 6]]}${byteToHexArray[arr[offset + 7]]}-` +
+           `${byteToHexArray[arr[offset + 8]]}${byteToHexArray[arr[offset + 9]]}-` +
+           `${byteToHexArray[arr[offset + 10]]}${byteToHexArray[arr[offset + 11]]}${byteToHexArray[arr[offset + 12]]}` +
+           `${byteToHexArray[arr[offset + 13]]}${byteToHexArray[arr[offset + 14]]}${byteToHexArray[arr[offset + 15]]}`.toLowerCase();
 }
 
 /**
@@ -719,13 +730,14 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
+ * @param {WebSocket} webSocket - 用于发送响应的 WebSocket 实例
+ * @param {ArrayBuffer} responseHeader - 维列斯 协议的响应头部数据
  * @param {(string)=> void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+async function handleDNSQuery(udpChunk, webSocket, responseHeader, log) {
     const dnsServer = '8.8.4.4'; // Google 的 DNS 服务器
     const dnsPort = 53; // DNS 服务的标准端口
-    let 维列斯Header = 维列斯ResponseHeader;
+    let header = responseHeader;
 
     try {
         const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
@@ -738,16 +750,16 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                    const dataToSend = 维列斯Header ? new Blob([维列斯Header, chunk]).arrayBuffer() : chunk;
-                    webSocket.send(await dataToSend);
-                    维列斯Header = null;
+                    const dataToSend = header ? new Blob([header, chunk]) : chunk;
+                    webSocket.send(await dataToSend.arrayBuffer());
+                    header = null;
                 }
             },
             close() {
                 log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
             },
             abort(reason) {
-                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
+                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断: ${reason}`);
             },
         }));
     } catch (error) {
@@ -891,15 +903,18 @@ function socks5AddressParser(address) {
  * @returns {string} 恢复真实信息后的内容
  */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
-    if (isBase64) content = atob(content);
+    if (isBase64) {
+        content = atob(content);
+    }
 
     const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    content = content.replace(new RegExp(escapeRegExp(fakeUserID), 'g'), userID)
-                     .replace(new RegExp(escapeRegExp(fakeHostName), 'g'), hostName);
+    const fakeUserIDRegExp = new RegExp(escapeRegExp(fakeUserID), 'g');
+    const fakeHostNameRegExp = new RegExp(escapeRegExp(fakeHostName), 'g');
 
-    if (isBase64) content = btoa(content);
+    content = content.replace(fakeUserIDRegExp, userID)
+                     .replace(fakeHostNameRegExp, hostName);
 
-    return content;
+    return isBase64 ? btoa(content) : content;
 }
 
 /**
