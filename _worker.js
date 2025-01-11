@@ -404,7 +404,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
  */
 async function retry() {
     let tcpSocket;
-    if (enableSocks) {
+    if (useSocks) {
         // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
@@ -451,7 +451,6 @@ let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
 // 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
 // 如果连接失败或无数据，retry 函数将被调用进行重试
 remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-}
 
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let readableStreamCancel = false;
