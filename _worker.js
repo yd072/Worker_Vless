@@ -61,14 +61,14 @@ export default {
         try {
             const UA = request.headers.get('User-Agent') || 'null';
             const userAgent = UA.toLowerCase();
-            let userID = env.UUID || env.uuid || env.PASSWORD || env.pswd || userID;
+            userID = env.UUID || env.uuid || env.PASSWORD || env.pswd || userID;
             if (env.KEY || env.TOKEN || (userID && !isValidUUID(userID))) {
-                let 动态UUID = env.KEY || env.TOKEN || userID;
-                let 有效时间 = Number(env.TIME) || 有效时间;
-                let 更新时间 = Number(env.UPTIME) || 更新时间;
+                动态UUID = env.KEY || env.TOKEN || userID;
+                有效时间 = Number(env.TIME) || 有效时间;
+                更新时间 = Number(env.UPTIME) || 更新时间;
                 const userIDs = await 生成动态UUID(动态UUID);
                 userID = userIDs[0];
-                let userIDLow = userIDs[1];
+                userIDLow = userIDs[1];
             }
 
             if (!userID) {
@@ -79,6 +79,7 @@ export default {
                     }
                 });
             }
+
             const currentDate = new Date();
             currentDate.setHours(0, 0, 0, 0);
             const timestamp = Math.ceil(currentDate.getTime() / 1000);
@@ -93,22 +94,20 @@ export default {
 
             const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
 
-            let proxyIP = env.PROXYIP || env.proxyip || proxyIP;
-            let proxyIPs = await 整理(proxyIP);
+            proxyIP = env.PROXYIP || env.proxyip || proxyIP;
+            proxyIPs = await 整理(proxyIP);
             proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
 
-            let socks5Address = env.SOCKS5 || socks5Address;
-            let socks5s = await 整理(socks5Address);
+            socks5Address = env.SOCKS5 || socks5Address;
+            socks5s = await 整理(socks5Address);
             socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
             socks5Address = socks5Address.split('//')[1] || socks5Address;
-            let RproxyIP;
-            let enableSocks;
-            if (env.GO2SOCKS5) var go2Socks5s = await 整理(env.GO2SOCKS5);
-            if (env.CFPORTS) var httpsPorts = await 整理(env.CFPORTS);
-            if (env.BAN) var banHosts = await 整理(env.BAN);
+            if (env.GO2SOCKS5) go2Socks5s = await 整理(env.GO2SOCKS5);
+            if (env.CFPORTS) httpsPorts = await 整理(env.CFPORTS);
+            if (env.BAN) banHosts = await 整理(env.BAN);
             if (socks5Address) {
                 try {
-                    var parsedSocks5Address = socks5AddressParser(socks5Address);
+                    parsedSocks5Address = socks5AddressParser(socks5Address);
                     RproxyIP = env.RPROXYIP || 'false';
                     enableSocks = true;
                 } catch (err) {
@@ -123,32 +122,31 @@ export default {
             const upgradeHeader = request.headers.get('Upgrade');
             const url = new URL(request.url);
             if (!upgradeHeader || upgradeHeader !== 'websocket') {
-                if (env.ADD) var addresses = await 整理(env.ADD);
-                if (env.ADDAPI) var addressesapi = await 整理(env.ADDAPI);
-                if (env.ADDNOTLS) var addressesnotls = await 整理(env.ADDNOTLS);
-                if (env.ADDNOTLSAPI) var addressesnotlsapi = await 整理(env.ADDNOTLSAPI);
-                if (env.ADDCSV) var addressescsv = await 整理(env.ADDCSV);
-                var DLS = Number(env.DLS) || DLS;
-                var remarkIndex = Number(env.CSVREMARK) || remarkIndex;
-                var BotToken = env.TGTOKEN || BotToken;
-                var ChatID = env.TGID || ChatID;
-                var FileName = env.SUBNAME || FileName;
-                var subEmoji = env.SUBEMOJI || env.EMOJI || subEmoji;
+                if (env.ADD) addresses = await 整理(env.ADD);
+                if (env.ADDAPI) addressesapi = await 整理(env.ADDAPI);
+                if (env.ADDNOTLS) addressesnotls = await 整理(env.ADDNOTLS);
+                if (env.ADDNOTLSAPI) addressesnotlsapi = await 整理(env.ADDNOTLSAPI);
+                if (env.ADDCSV) addressescsv = await 整理(env.ADDCSV);
+                DLS = Number(env.DLS) || DLS;
+                remarkIndex = Number(env.CSVREMARK) || remarkIndex;
+                BotToken = env.TGTOKEN || BotToken;
+                ChatID = env.TGID || ChatID;
+                FileName = env.SUBNAME || FileName;
+                subEmoji = env.SUBEMOJI || env.EMOJI || subEmoji;
                 if (subEmoji == '0') subEmoji = 'false';
-                if (env.LINK) var link = await 整理(env.LINK);
+                if (env.LINK) link = await 整理(env.LINK);
                 let sub = env.SUB || '';
-                var subConverter = env.SUBAPI || subConverter;
+                subConverter = env.SUBAPI || subConverter;
                 if (subConverter.includes("http://")) {
                     subConverter = subConverter.split("//")[1];
-                    var subProtocol = 'http';
+                    subProtocol = 'http';
                 } else {
                     subConverter = subConverter.split("//")[1] || subConverter;
                 }
-                var subConfig = env.SUBCONFIG || subConfig;
+                subConfig = env.SUBCONFIG || subConfig;
                 if (url.searchParams.has('sub') && url.searchParams.get('sub') !== '') sub = url.searchParams.get('sub');
-                if (url.searchParams.has('notls')) var noTLS = 'true';
+                if (url.searchParams.has('notls')) noTLS = 'true';
 
-                let path;
                 if (url.searchParams.has('proxyip')) {
                     path = `/?ed=2560&proxyip=${url.searchParams.get('proxyip')}`;
                     RproxyIP = 'false';
@@ -215,8 +213,9 @@ export default {
                 }
             } else {
                 socks5Address = url.searchParams.get('socks5') || socks5Address;
-                if (new RegExp('/socks5=', 'i').test(url.pathname)) socks5Address = url.pathname.split('5=')[1];
-                else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
+                if (/\/socks5?=/.test(url.pathname)) {
+                    socks5Address = url.pathname.split('5=')[1];
+                } else if (/\/socks5?:\/\//.test(url.pathname)) {
                     socks5Address = url.pathname.split('://')[1].split('#')[0];
                     if (socks5Address.includes('@')) {
                         let userPassword = socks5Address.split('@')[0];
@@ -241,13 +240,10 @@ export default {
                 if (url.searchParams.has('proxyip')) {
                     proxyIP = url.searchParams.get('proxyip');
                     enableSocks = false;
-                } else if (new RegExp('/proxyip=', 'i').test(url.pathname)) {
-                    proxyIP = url.pathname.toLowerCase().split('/proxyip=')[1];
+                } else if (/\/proxyip[.=]/.test(url.pathname)) {
+                    proxyIP = url.pathname.toLowerCase().split(/\/proxyip[.=]/)[1];
                     enableSocks = false;
-                } else if (new RegExp('/proxyip.', 'i').test(url.pathname)) {
-                    proxyIP = `proxyip.${url.pathname.toLowerCase().split("/proxyip.")[1]}`;
-                    enableSocks = false;
-                } else if (new RegExp('/pyip=', 'i').test(url.pathname)) {
+                } else if (/\/pyip=/.test(url.pathname)) {
                     proxyIP = url.pathname.toLowerCase().split('/pyip=')[1];
                     enableSocks = false;
                 }
@@ -255,8 +251,7 @@ export default {
                 return await 维列斯OverWSHandler(request);
             }
         } catch (err) {
-            // 使用统一的错误处理函数
-            return handleError(err);
+            return new Response(err.toString());
         }
     },
 };
