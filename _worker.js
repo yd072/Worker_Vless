@@ -408,27 +408,44 @@ async function retry() {
         // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
-        // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
-        if (!proxyIP || proxyIP === '') {
-            proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
-        } else if (proxyIP.includes(']:')) {
-            portRemote = proxyIP.split(']:')[1] || portRemote;
-            proxyIP = proxyIP.split(']:')[0] || proxyIP;
-        } else if (proxyIP.split(':').length === 2) {
-            portRemote = proxyIP.split(':')[1] || portRemote;
-            proxyIP = proxyIP.split(':')[0] || proxyIP;
-        }
-        if (proxyIP.includes('.tp')) portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+        // 处理 proxyIP 和 portRemote 的逻辑
+        [proxyIP, portRemote] = parseProxyIPAndPort(proxyIP, portRemote);
+
+        // 尝试使用预设的代理 IP（如果有）或原始地址重试连接
         tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
+
     // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
     tcpSocket.closed.catch(error => {
         console.log('retry tcpSocket closed error', error);
     }).finally(() => {
         safeCloseWebSocket(webSocket);
     });
+
     // 建立从远程 Socket 到 WebSocket 的数据流
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+}
+
+/**
+ * 解析 proxyIP 和 portRemote
+ * @param {string} proxyIP - 代理 IP
+ * @param {number} portRemote - 远程端口
+ * @returns {[string, number]} - 解析后的 IP 和端口
+ */
+function parseProxyIPAndPort(proxyIP, portRemote) {
+    if (!proxyIP || proxyIP === '') {
+        proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+    } else if (proxyIP.includes(']:')) {
+        portRemote = proxyIP.split(']:')[1] || portRemote;
+        proxyIP = proxyIP.split(']:')[0] || proxyIP;
+    } else if (proxyIP.split(':').length === 2) {
+        portRemote = proxyIP.split(':')[1] || portRemote;
+        proxyIP = proxyIP.split(':')[0] || proxyIP;
+    }
+    if (proxyIP.includes('.tp')) {
+        portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+    }
+    return [proxyIP, portRemote];
 }
 
 let useSocks = false;
