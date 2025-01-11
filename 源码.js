@@ -269,8 +269,8 @@ async function 维列斯OverWSHandler(request) {
 
     let address = '';
     let portWithRandomLog = '';
-    const log = (info, event = '') => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event);
+    const log = (info, event = '', level = 'info') => {
+        console[level](`[${address}:${portWithRandomLog}] ${info}`, event);
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -285,7 +285,7 @@ async function 维列斯OverWSHandler(request) {
         async write(chunk, controller) {
             try {
                 if (isDns) {
-                    return handleDNSQuery(chunk, webSocket, null, log);
+                    return await handleDNSQuery(chunk, webSocket, null, log);
                 }
                 if (remoteSocketWrapper.value) {
                     const writer = remoteSocketWrapper.value.writable.getWriter();
@@ -321,16 +321,16 @@ async function 维列斯OverWSHandler(request) {
                 const rawClientData = chunk.slice(rawDataIndex);
 
                 if (isDns) {
-                    return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+                    return await handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
                 }
                 if (!banHostsSet.has(addressRemote)) {
                     log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                    handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
+                    await handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
                 } else {
                     throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
                 }
             } catch (error) {
-                log('处理数据时发生错误', error.message);
+                log('处理数据时发生错误', error.message, 'error');
                 webSocket.close(1011, '内部错误');
             }
         },
@@ -341,7 +341,7 @@ async function 维列斯OverWSHandler(request) {
             log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
         },
     })).catch((err) => {
-        log('readableWebSocketStream 管道错误', err);
+        log('readableWebSocketStream 管道错误', err, 'error');
         webSocket.close(1011, '管道错误');
     });
 
