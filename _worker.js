@@ -667,11 +667,11 @@ function base64ToArrayBuffer(base64Str) {
  * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
  */
 function isValidUUID(uuid) {
-	// 定义一个正则表达式来匹配 UUID 格式
-	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    // 定义一个正则表达式来匹配 UUID 格式
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-	// 使用正则表达式测试 UUID 字符串
-	return uuidRegex.test(uuid);
+    // 使用正则表达式测试 UUID 字符串
+    return uuidPattern.test(uuid);
 }
 
 // WebSocket 的两个重要状态常量
@@ -701,12 +701,12 @@ const byteToHexArray = Array.from({ length: 256 }, (_, i) => (i + 256).toString(
  * @returns {string} UUID 字符串
  */
 function unsafeStringify(arr, offset = 0) {
-    return `${byteToHex[arr[offset + 0]]}${byteToHex[arr[offset + 1]]}${byteToHex[arr[offset + 2]]}${byteToHex[arr[offset + 3]]}-` +
-           `${byteToHex[arr[offset + 4]]}${byteToHex[arr[offset + 5]]}-` +
-           `${byteToHex[arr[offset + 6]]}${byteToHex[arr[offset + 7]]}-` +
-           `${byteToHex[arr[offset + 8]]}${byteToHex[arr[offset + 9]]}-` +
-           `${byteToHex[arr[offset + 10]]}${byteToHex[arr[offset + 11]]}${byteToHex[arr[offset + 12]]}` +
-           `${byteToHex[arr[offset + 13]]}${byteToHex[arr[offset + 14]]}${byteToHex[arr[offset + 15]]}`.toLowerCase();
+    return `${byteToHexArray[arr[offset + 0]]}${byteToHexArray[arr[offset + 1]]}${byteToHexArray[arr[offset + 2]]}${byteToHexArray[arr[offset + 3]]}-` +
+           `${byteToHexArray[arr[offset + 4]]}${byteToHexArray[arr[offset + 5]]}-` +
+           `${byteToHexArray[arr[offset + 6]]}${byteToHexArray[arr[offset + 7]]}-` +
+           `${byteToHexArray[arr[offset + 8]]}${byteToHexArray[arr[offset + 9]]}-` +
+           `${byteToHexArray[arr[offset + 10]]}${byteToHexArray[arr[offset + 11]]}${byteToHexArray[arr[offset + 12]]}` +
+           `${byteToHexArray[arr[offset + 13]]}${byteToHexArray[arr[offset + 14]]}${byteToHexArray[arr[offset + 15]]}`.toLowerCase();
 }
 
 /**
