@@ -903,17 +903,19 @@ function socks5AddressParser(address) {
  * @returns {string} 恢复真实信息后的内容
  */
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
-    if (isBase64) content = atob(content);
+    if (isBase64) {
+        content = atob(content);
+    }
 
     const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    content = content.replace(new RegExp(escapeRegExp(fakeUserID), 'g'), userID)
-                     .replace(new RegExp(escapeRegExp(fakeHostName), 'g'), hostName);
+    const fakeUserIDRegExp = new RegExp(escapeRegExp(fakeUserID), 'g');
+    const fakeHostNameRegExp = new RegExp(escapeRegExp(fakeHostName), 'g');
 
-    if (isBase64) content = btoa(content);
+    content = content.replace(fakeUserIDRegExp, userID)
+                     .replace(fakeHostNameRegExp, hostName);
 
-    return content;
+    return isBase64 ? btoa(content) : content;
 }
-
 
 /**
  * 双重MD5哈希函数
