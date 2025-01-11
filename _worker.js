@@ -902,7 +902,7 @@ function socks5AddressParser(address) {
  * @param {boolean} isBase64 内容是否是Base64编码的
  * @returns {string} 恢复真实信息后的内容
  */
-function restoreDisguisedInfo(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
+function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     if (isBase64) content = atob(content);
 
     const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -913,6 +913,7 @@ function restoreDisguisedInfo(content, userID, hostName, fakeUserID, fakeHostNam
 
     return content;
 }
+
 
 /**
  * 双重MD5哈希函数
