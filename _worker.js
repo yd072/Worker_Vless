@@ -730,13 +730,14 @@ function stringify(arr, offset = 0) {
 /**
  * 处理 DNS 查询的函数
  * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
+ * @param {WebSocket} webSocket - 用于发送响应的 WebSocket 实例
+ * @param {ArrayBuffer} responseHeader - 维列斯 协议的响应头部数据
  * @param {(string)=> void} log - 日志记录函数
  */
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+async function handleDNSQuery(udpChunk, webSocket, responseHeader, log) {
     const dnsServer = '8.8.4.4'; // Google 的 DNS 服务器
     const dnsPort = 53; // DNS 服务的标准端口
-    let 维列斯Header = 维列斯ResponseHeader;
+    let header = responseHeader;
 
     try {
         const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
@@ -749,9 +750,9 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                    const dataToSend = 维列斯Header ? new Blob([维列斯Header, chunk]).arrayBuffer() : chunk;
+                    const dataToSend = header ? new Blob([header, chunk]).arrayBuffer() : chunk;
                     webSocket.send(await dataToSend);
-                    维列斯Header = null;
+                    header = null;
                 }
             },
             close() {
