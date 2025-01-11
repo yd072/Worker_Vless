@@ -750,8 +750,8 @@ async function handleDNSQuery(udpChunk, webSocket, responseHeader, log) {
         await tcpSocket.readable.pipeTo(new WritableStream({
             async write(chunk) {
                 if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                    const dataToSend = header ? new Blob([header, chunk]).arrayBuffer() : chunk;
-                    webSocket.send(await dataToSend);
+                    const dataToSend = header ? new Blob([header, chunk]) : chunk;
+                    webSocket.send(await dataToSend.arrayBuffer());
                     header = null;
                 }
             },
@@ -759,7 +759,7 @@ async function handleDNSQuery(udpChunk, webSocket, responseHeader, log) {
                 log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
             },
             abort(reason) {
-                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
+                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断: ${reason}`);
             },
         }));
     } catch (error) {
