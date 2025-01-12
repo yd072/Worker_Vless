@@ -262,15 +262,17 @@ export default {
 };
 
 async function 维列斯OverWSHandler(request) {
+    // @ts-ignore
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
+    // 接受 WebSocket 连接
     webSocket.accept();
 
     let address = '';
     let portWithRandomLog = '';
-    const log = (info, event = '', level = 'info') => {
-        console[level](`[${address}:${portWithRandomLog}] ${info}`, event);
+    const log = (info, event = '') => {
+        console.log(`[${address}:${portWithRandomLog}] ${info}`, event);
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -278,14 +280,13 @@ async function 维列斯OverWSHandler(request) {
 
     let remoteSocketWrapper = { value: null };
     let isDns = false;
-
     const banHostsSet = new Set(banHosts);
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
             try {
                 if (isDns) {
-                    return await handleDNSQuery(chunk, webSocket, null, log);
+                    return handleDNSQuery(chunk, webSocket, null, log);
                 }
                 if (remoteSocketWrapper.value) {
                     const writer = remoteSocketWrapper.value.writable.getWriter();
@@ -321,16 +322,16 @@ async function 维列斯OverWSHandler(request) {
                 const rawClientData = chunk.slice(rawDataIndex);
 
                 if (isDns) {
-                    return await handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
+                    return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
                 }
                 if (!banHostsSet.has(addressRemote)) {
                     log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                    await handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
+                    handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
                 } else {
                     throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
                 }
             } catch (error) {
-                log('处理数据时发生错误', error.message, 'error');
+                log('处理数据时发生错误', error.message);
                 webSocket.close(1011, '内部错误');
             }
         },
@@ -341,14 +342,65 @@ async function 维列斯OverWSHandler(request) {
             log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
         },
     })).catch((err) => {
-        log('readableWebSocketStream 管道错误', err, 'error');
+        log('readableWebSocketStream 管道错误', err);
         webSocket.close(1011, '管道错误');
     });
 
     return new Response(null, {
         status: 101,
+        // @ts-ignore
         webSocket: client,
     });
+}
+
+async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+    const WS_READY_STATE_OPEN = 1;
+
+    try {
+        const dnsServer = '8.8.4.4';
+        const dnsPort = 53;
+
+        let 维列斯Header = 维列斯ResponseHeader;
+        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
+
+        log(`连接到 ${dnsServer}:${dnsPort}`);
+
+        const writer = tcpSocket.writable.getWriter();
+        await writer.write(udpChunk);
+        writer.releaseLock();
+
+        await tcpSocket.readable.pipeTo(new WritableStream({
+            async write(chunk) {
+                if (webSocket.readyState === WS_READY_STATE_OPEN) {
+                    try {
+                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
+                        webSocket.send(combinedData);
+                        if (维列斯Header) 维列斯Header = null;
+                    } catch (error) {
+                        console.error(`发送数据时发生错误: ${error.message}`);
+                        safeCloseWebSocket(webSocket);
+                    }
+                } else {
+                    console.warn('WebSocket 连接已关闭，无法发送数据');
+                }
+            },
+            close() {
+                log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
+            },
+            abort(reason) {
+                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
+            }
+        }));
+    } catch (error) {
+        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
+        safeCloseWebSocket(webSocket);
+    }
+}
+
+// 假设有一个连接池管理函数
+async function getOrCreateConnection(hostname, port) {
+    // 实现连接池逻辑
+    // 返回一个可用的 TCP 连接
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
@@ -700,78 +752,6 @@ function stringify(arr, offset = 0) {
         throw new TypeError(`生成的 UUID 不符合规范: ${uuid}`);
     }
     return uuid;
-}
-
-/**
- * 处理 DNS 查询的函数
- * @param {ArrayBuffer} udpChunk - 客户端发送的 DNS 查询数据
- * @param {WebSocket} webSocket - 用于发送响应的 WebSocket
- * @param {ArrayBuffer} 维列斯ResponseHeader - 维列斯 协议的响应头部数据
- * @param {(string) => void} log - 日志记录函数
- */
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    const WS_READY_STATE_OPEN = 1; // WebSocket open state
-
-    try {
-        const dnsServer = '8.8.4.4'; // Google DNS server
-        const dnsPort = 53; // Standard DNS port
-
-        let 维列斯Header = 维列斯ResponseHeader;
-
-        // 连接到 DNS 服务器
-        const tcpSocket = connect({ hostname: dnsServer, port: dnsPort });
-
-        log(`连接到 ${dnsServer}:${dnsPort}`);
-
-        const writer = tcpSocket.writable.getWriter();
-        await writer.write(udpChunk);
-        writer.releaseLock(); // 释放写入器锁
-
-        // 读取 DNS 响应并通过 WebSocket 发送
-        await tcpSocket.readable.pipeTo(new WritableStream({
-            async write(chunk) {
-                if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                    try {
-                        // 合并 维列斯 响应头与 DNS 响应数据
-                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
-                        
-                        webSocket.send(combinedData);
-
-                        // 只发送一次 维列斯 响应头
-                        if (维列斯Header) 维列斯Header = null;
-                    } catch (error) {
-                        console.error(`发送数据时发生错误: ${error.message}`);
-                        safeCloseWebSocket(webSocket);
-                    }
-                } else {
-                    console.warn('WebSocket 连接已关闭，无法发送数据');
-                }
-            },
-            close() {
-                log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
-            },
-            abort(reason) {
-                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
-            }
-        }));
-    } catch (error) {
-        // 捕获所有异常并记录
-        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
-        safeCloseWebSocket(webSocket);
-    }
-}
-
-/**
- * 合并响应头与 DNS 响应数据
- * @param {ArrayBuffer} header 响应头
- * @param {ArrayBuffer} data DNS 响应数据
- * @returns {ArrayBuffer} 合并后的数据
- */
-function mergeData(header, data) {
-    const combinedData = new Uint8Array(header.byteLength + data.byteLength);
-    combinedData.set(new Uint8Array(header), 0);
-    combinedData.set(new Uint8Array(data), header.byteLength);
-    return combinedData.buffer;
 }
 
 /**
