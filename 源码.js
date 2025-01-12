@@ -436,8 +436,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
  * 这可能是因为某些网络问题导致的连接失败
  */
 async function retry() {
-    let tcpSocket;
-    if (useSocks) {
+    if (enableSocks) {
         // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
         tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
     } else {
@@ -445,9 +444,15 @@ async function retry() {
         if (!proxyIP || proxyIP === '') {
             proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
         } else {
-            const parsed = parseProxyIP(proxyIP, portRemote);
-            proxyIP = parsed.proxyIP;
-            portRemote = parsed.port;
+            const proxyParts = proxyIP.split(':');
+            if (proxyIP.includes(']:')) {
+                [proxyIP, portRemote] = proxyIP.split(']:');
+            } else if (proxyParts.length === 2) {
+                [proxyIP, portRemote] = proxyParts;
+            }
+            if (proxyIP.includes('.tp')) {
+                portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+            }
         }
         tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
@@ -461,24 +466,13 @@ async function retry() {
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
 }
 
-// 提取 proxyIP 解析逻辑为独立函数
-function parseProxyIP(proxyIP, defaultPort) {
-    let port = defaultPort;
-    if (proxyIP.includes(']:')) {
-        [proxyIP, port] = proxyIP.split(']:');
-    } else if (proxyIP.split(':').length === 2) {
-        [proxyIP, port] = proxyIP.split(':');
-    }
-    if (proxyIP.includes('.tp')) {
-        port = proxyIP.split('.tp')[1].split('.')[0] || port;
-    }
-    return { proxyIP, port };
+// 确保以下代码在函数或模块的正确位置
+let shouldUseSocks = false;
+if (go2Socks5s.length > 0 && enableSocks) {
+    shouldUseSocks = await useSocks5Pattern(addressRemote);
 }
-
-let useSocks = false;
-if (go2Socks5s.length > 0 && enableSocks) useSocks = await useSocks5Pattern(addressRemote);
 // 首次尝试连接远程服务器
-let tcpSocket = await connectAndWrite(addressRemote, portRemote, useSocks);
+let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
 
 // 当远程 Socket 就绪时，将其传递给 WebSocket
 // 建立从远程服务器到 WebSocket 的数据流，用于将远程服务器的响应发送回客户端
