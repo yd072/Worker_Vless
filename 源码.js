@@ -756,6 +756,15 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
     return socket;
 }
 
+/**
+ * SOCKS5 代理地址解析器
+ * 此函数用于解析 SOCKS5 代理地址字符串，提取出用户名、密码、主机名和端口号
+ * 
+ * @param {string} address SOCKS5 代理地址，格式可以是：
+ *   - "username:password@hostname:port" （带认证）
+ *   - "hostname:port" （不需认证）
+ *   - "username:password@[ipv6]:port" （IPv6 地址需要用方括号括起来）
+ */
 function socks5AddressParser(address) {
     let [latter, former] = address.split("@").reverse();
     let username, password, hostname, port;
