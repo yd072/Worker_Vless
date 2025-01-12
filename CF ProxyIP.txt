@@ -7,4 +7,4 @@ proxyip.digitalocean.hw.090227.xyz
 proxyip..fxxk.dedyn.io
 proxyip.oracle.fxxk.dedyn.io
 ipdb.rr.nu
-ircpipproxy.duckdns.org
+
