@@ -549,8 +549,8 @@ function process维列斯Header(维列斯Buffer, userID) {
     let isUDP = false;
 
     switch (command) {
-        case 1: break;
-        case 2: isUDP = true; break;
+        case 1: break; // TCP
+        case 2: isUDP = true; break; // UDP
         default:
             return { hasError: true, message: 'unsupported command' };
     }
