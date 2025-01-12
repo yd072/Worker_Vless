@@ -473,7 +473,7 @@ remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 
 function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     let readableStreamCancel = false;
-    let backpressure = false;
+    let backpressure = false; // 用于跟踪反压状态
 
     const stream = new ReadableStream({
         start(controller) {
@@ -485,6 +485,7 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
                 if (!backpressure) {
                     controller.enqueue(message);
                 } else {
+                    // 如果处于反压状态，暂时不处理新消息
                     log('反压状态，消息被丢弃');
                 }
             });
@@ -510,6 +511,7 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
         },
 
         pull(controller) {
+            // 当流的队列小于某个阈值时，解除反压
             if (controller.desiredSize > 0) {
                 backpressure = false;
             }
