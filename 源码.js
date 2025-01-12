@@ -677,25 +677,39 @@ function base64ToArrayBuffer(base64Str) {
 }
 
 function isValidUUID(uuid) {
+    // 定义一个正则表达式来匹配 UUID 格式
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    // 使用正则表达式测试 UUID 字符串
     return uuidPattern.test(uuid);
 }
 
-const WS_READY_STATE_OPEN = 1;
-const WS_READY_STATE_CLOSING = 2;
+// WebSocket 的两个重要状态常量
+const WS_READY_STATE_OPEN = 1;    // WebSocket 处于开放状态，可以发送和接收消息
+const WS_READY_STATE_CLOSING = 2; // WebSocket 正在关闭过程中
 
 function safeCloseWebSocket(socket) {
     try {
+        // 只有在 WebSocket 处于开放或正在关闭状态时才调用 close()
         if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
             socket.close();
         }
     } catch (error) {
+        // 记录任何可能发生的错误
         console.error('safeCloseWebSocket error', error);
     }
 }
 
+// 预计算 0-255 每个字节的十六进制表示
 const byteToHexArray = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 
+/**
+ * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
+ * 这是一个底层函数，直接操作字节，不做任何验证
+ * @param {Uint8Array} arr 包含 UUID 字节的数组
+ * @param {number} offset 数组中 UUID 开始的位置，默认为 0
+ * @returns {string} UUID 字符串
+ */
 function unsafeStringify(arr, offset = 0) {
     return `${byteToHexArray[arr[offset + 0]]}${byteToHexArray[arr[offset + 1]]}${byteToHexArray[arr[offset + 2]]}${byteToHexArray[arr[offset + 3]]}-` +
            `${byteToHexArray[arr[offset + 4]]}${byteToHexArray[arr[offset + 5]]}-` +
@@ -705,14 +719,23 @@ function unsafeStringify(arr, offset = 0) {
            `${byteToHexArray[arr[offset + 13]]}${byteToHexArray[arr[offset + 14]]}${byteToHexArray[arr[offset + 15]]}`.toLowerCase();
 }
 
+/**
+ * 将字节数组转换为 UUID 字符串，并验证其有效性
+ * 这是一个安全的函数，它确保返回的 UUID 格式正确
+ * @param {Uint8Array} arr 包含 UUID 字节的数组
+ * @param {number} offset 数组中 UUID 开始的位置，默认为 0
+ * @returns {string} 有效的 UUID 字符串
+ * @throws {TypeError} 如果生成的 UUID 字符串无效
+ */
 function stringify(arr, offset = 0) {
+    // 使用不安全的函数快速生成 UUID 字符串
     const uuid = unsafeStringify(arr, offset);
+    // 验证生成的 UUID 是否有效
     if (!isValidUUID(uuid)) {
         throw new TypeError(`生成的 UUID 不符合规范: ${uuid}`);
     }
     return uuid;
 }
-
 /**
  * 建立 SOCKS5 代理连接
  * @param {number} addressType 目标地址类型（1: IPv4, 2: 域名, 3: IPv6）
