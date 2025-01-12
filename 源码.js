@@ -417,27 +417,31 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         return tcpSocket;
     }
 
-    async function retry() {
-        let tcpSocket;
-        if (useSocks) {
-            tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+async function retry() {
+    let tcpSocket;
+    if (useSocks) {
+        // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
+        tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+    } else {
+        // 否则，尝试使用预设的代理 IP（如果有）或原始地址重试连接
+        if (!proxyIP || proxyIP === '') {
+            proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
         } else {
-            if (!proxyIP || proxyIP === '') {
-                proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
-            } else {
-                const parsed = parseProxyIP(proxyIP, portRemote);
-                proxyIP = parsed.proxyIP;
-                portRemote = parsed.port;
-            }
-            tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
+            const parsed = parseProxyIP(proxyIP, portRemote);
+            proxyIP = parsed.proxyIP;
+            portRemote = parsed.port;
         }
-        tcpSocket.closed.catch(error => {
-            console.log('retry tcpSocket closed error', error);
-        }).finally(() => {
-            safeCloseWebSocket(webSocket);
-        });
-        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+        tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
     }
+    // 无论重试是否成功，都要关闭 WebSocket（可能是为了重新建立连接）
+    tcpSocket.closed.catch(error => {
+        console.log('retry tcpSocket closed error', error);
+    }).finally(() => {
+        safeCloseWebSocket(webSocket);
+    });
+    // 建立从远程 Socket 到 WebSocket 的数据流
+    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+}
 
     function parseProxyIP(proxyIP, defaultPort) {
         let port = defaultPort;
