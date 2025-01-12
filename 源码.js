@@ -28,7 +28,7 @@ let addressesnotls = [];
 let addressesnotlsapi = [];
 let addressescsv = [];
 let DLS = 8;
-let remarkIndex = 1;//CSV备注所在列偏移量
+let remarkIndex = 1;
 let FileName = atob('ZWRnZXR1bm5lbA==');
 let BotToken;
 let ChatID;
@@ -45,7 +45,6 @@ let path = '/?ed=2560';
 let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
-// 定义一个统一的错误处理函数
 function handleError(err) {
     console.log(err.toString());
     return new Response(err.toString(), {
@@ -262,11 +261,9 @@ export default {
 };
 
 async function 维列斯OverWSHandler(request) {
-    // @ts-ignore
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
-    // 接受 WebSocket 连接
     webSocket.accept();
 
     let address = '';
@@ -397,10 +394,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     }
 }
 
-// 假设有一个连接池管理函数
 async function getOrCreateConnection(hostname, port) {
-    // 实现连接池逻辑
-    // 返回一个可用的 TCP 连接
+
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
