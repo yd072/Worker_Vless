@@ -269,7 +269,8 @@ async function 维列斯OverWSHandler(request) {
     let address = '';
     let portWithRandomLog = '';
     const log = (info, event = '') => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event);
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -278,23 +279,6 @@ async function 维列斯OverWSHandler(request) {
     let remoteSocketWrapper = { value: null };
     let isDns = false;
     const banHostsSet = new Set(banHosts);
-
-    let heartbeatInterval = setInterval(() => {
-        if (webSocket.readyState === WS_READY_STATE_OPEN) {
-            try {
-                webSocket.send(new Uint8Array([0x9])); // ping frame
-            } catch (e) {
-                clearInterval(heartbeatInterval);
-                safeCloseWebSocket(webSocket);
-            }
-        } else {
-            clearInterval(heartbeatInterval);
-        }
-    }, 30000); // 每30秒发送一次心跳
-
-    webSocket.addEventListener('close', () => {
-        clearInterval(heartbeatInterval);
-    });
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
@@ -416,9 +400,6 @@ async function getOrCreateConnection(hostname, port) {
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    const MAX_RETRIES = 3;
-    let retryCount = 0;
-
     async function useSocks5Pattern(address) {
         if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
         return go2Socks5s.some(pattern => {
@@ -440,17 +421,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
 
     async function retry() {
-        if (retryCount >= MAX_RETRIES) {
-            log('达到最大重试次数，放弃重试');
-            safeCloseWebSocket(webSocket);
-            return;
-        }
-        retryCount++;
-        log(`开始第 ${retryCount} 次重试`);
-        
         try {
-            await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, retryCount - 1), 10000)));
-            
             if (enableSocks) {
                 tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
             } else {
@@ -470,16 +441,13 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
             }
             tcpSocket.closed.catch(error => {
-                log(`重试连接关闭: ${error.message}`);
+                console.log('Retry tcpSocket closed error', error);
             }).finally(() => {
                 safeCloseWebSocket(webSocket);
             });
             remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
         } catch (error) {
-            log(`重试失败: ${error.message}`);
-            if (retryCount < MAX_RETRIES) {
-                retry();
-            }
+            log('Retry error:', error);
         }
     }
 
@@ -619,34 +587,8 @@ function process维列斯Header(维列斯Buffer, userID) {
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
     let header = responseHeader;
-    
-    const BUFFER_SIZE = 64 * 1024; // 64KB 缓冲区
-    
-    async function* bufferData(readable) {
-        const reader = readable.getReader();
-        let buffer = new Uint8Array(0);
-        
-        try {
-            while (true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-                
-                buffer = concatenateArrayBuffers(buffer, value);
-                
-                while (buffer.length >= BUFFER_SIZE) {
-                    yield buffer.slice(0, BUFFER_SIZE);
-                    buffer = buffer.slice(BUFFER_SIZE);
-                }
-            }
-            if (buffer.length > 0) {
-                yield buffer;
-            }
-        } finally {
-            reader.releaseLock();
-        }
-    }
 
-    remoteSocket.readable
+    await remoteSocket.readable
         .pipeTo(
             new WritableStream({
                 async write(chunk, controller) {
@@ -654,19 +596,13 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
 
                     if (webSocket.readyState !== WS_READY_STATE_OPEN) {
                         controller.error('WebSocket not open');
-                        return;
                     }
 
-                    try {
-                        if (header) {
-                            webSocket.send(await new Blob([header, chunk]).arrayBuffer());
-                            header = null;
-                        } else {
-                            webSocket.send(chunk);
-                        }
-                    } catch (error) {
-                        log(`发送数据错误: ${error.message}`);
-                        controller.error(error);
+                    if (header) {
+                        webSocket.send(await new Blob([header, chunk]).arrayBuffer());
+                        header = null;
+                    } else {
+                        webSocket.send(chunk);
                     }
                 },
                 close() {
@@ -678,7 +614,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
             })
         )
         .catch((error) => {
-            log(`数据传输错误: ${error.message}`);
+            console.error(`remoteSocketToWS exception`);
             safeCloseWebSocket(webSocket);
         });
 
@@ -907,13 +843,6 @@ async function 代理URL(代理网址, 目标网址) {
     新响应.headers.set('X-New-URL', 新网址);
 
     return 新响应;
-}
-
-function concatenateArrayBuffers(a, b) {
-    const result = new Uint8Array(a.length + b.length);
-    result.set(a, 0);
-    result.set(b, a.length);
-    return result;
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
