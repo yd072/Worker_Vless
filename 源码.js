@@ -1,4 +1,3 @@
-
 import { connect } from 'cloudflare:sockets';
 
 let userID = '';
@@ -45,14 +44,199 @@ let path = '/?ed=2560';
 let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
-function handleError(err) {
-    console.log(err.toString());
-    return new Response(err.toString(), {
-        status: 500,
-        headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-        }
-    });
+
+// 添加工具函数
+const utils = {
+	// UUID校验
+	isValidUUID(uuid) {
+		const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+		return uuidPattern.test(uuid);
+	},
+
+	// Base64处理
+	base64: {
+		encode: (str) => btoa(str),
+		decode: (str) => atob(str),
+		toArrayBuffer(base64Str) {
+			if (!base64Str) return { earlyData: undefined, error: null };
+			try {
+				base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+				const decoded = atob(base64Str);
+				const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
+				return { earlyData: arrayBuffer.buffer, error: null };
+			} catch (error) {
+				return { earlyData: undefined, error };
+			}
+		}
+	},
+
+	// WebSocket相关
+	ws: {
+		safeClose(socket) {
+			try {
+				if (socket.readyState === WS_READY_STATE_OPEN || 
+					socket.readyState === WS_READY_STATE_CLOSING) {
+					socket.close();
+				}
+			} catch (error) {
+				console.error('safeCloseWebSocket error', error);
+			}
+		}
+	}
+};
+
+// 统一的错误处理函数
+async function handleError(err, type = 'general') {
+	console.error(`[${type}] Error:`, err);
+	
+	const errorResponse = {
+		status: 500,
+		headers: { "Content-Type": "text/plain;charset=utf-8" },
+		body: err.toString()
+	};
+
+	// 根据错误类型返回不同的错误信息
+	switch(type) {
+		case 'auth':
+			errorResponse.status = 401;
+			errorResponse.body = '认证失败';
+			break;
+		case 'websocket':
+			errorResponse.status = 400; 
+			errorResponse.body = 'WebSocket连接错误';
+			break;
+		default:
+			// 使用默认的500错误
+	}
+
+	return new Response(errorResponse.body, {
+		status: errorResponse.status,
+		headers: errorResponse.headers
+	});
+}
+
+// WebSocket连接管理类
+class WebSocketManager {
+	constructor(webSocket, log) {
+		this.webSocket = webSocket;
+		this.log = log;
+		this.readableStreamCancel = false;
+		this.backpressure = false;
+	}
+
+	makeReadableStream(earlyDataHeader) {
+		return new ReadableStream({
+			start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
+			pull: (controller) => this.handleStreamPull(controller),
+			cancel: (reason) => this.handleStreamCancel(reason)
+		});
+	}
+
+	handleStreamStart(controller, earlyDataHeader) {
+		// 处理消息事件
+		this.webSocket.addEventListener('message', (event) => {
+			if (this.readableStreamCancel) return;
+			if (!this.backpressure) {
+				controller.enqueue(event.data);
+			} else {
+				this.log('Backpressure, message discarded');
+			}
+		});
+
+		// 处理关闭事件
+		this.webSocket.addEventListener('close', () => {
+			utils.ws.safeClose(this.webSocket);
+			if (!this.readableStreamCancel) {
+				controller.close();
+			}
+		});
+
+		// 处理错误事件
+		this.webSocket.addEventListener('error', (err) => {
+			this.log('WebSocket server error');
+			controller.error(err);
+		});
+
+		// 处理早期数据
+		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
+		if (error) {
+			controller.error(error);
+		} else if (earlyData) {
+			controller.enqueue(earlyData);
+		}
+	}
+
+	handleStreamPull(controller) {
+		if (controller.desiredSize > 0) {
+			this.backpressure = false;
+		}
+	}
+
+	handleStreamCancel(reason) {
+		if (this.readableStreamCancel) return;
+		this.log(`Readable stream canceled, reason: ${reason}`);
+		this.readableStreamCancel = true;
+		utils.ws.safeClose(this.webSocket);
+	}
+}
+
+// 配置管理类
+class ConfigManager {
+	constructor(env) {
+		this.env = env;
+		this.config = this.initConfig();
+	}
+
+	initConfig() {
+		return {
+			uuid: this.env.UUID || this.env.uuid || this.env.PASSWORD || this.env.pswd || '',
+			proxyIP: this.env.PROXYIP || this.env.proxyip || '',
+			socks5: this.env.SOCKS5 || '',
+			httpsPorts: this.parseArray(this.env.CFPORTS) || ["2053", "2083", "2087", "2096", "8443"],
+			banHosts: this.parseArray(this.env.BAN) || [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')],
+			// ... 其他配置项
+		};
+	}
+
+	parseArray(str) {
+		if (!str) return null;
+		return str.split(',').map(item => item.trim());
+	}
+
+	get(key) {
+		return this.config[key];
+	}
+
+	set(key, value) {
+		this.config[key] = value;
+	}
+}
+
+// 添加缓存机制
+const globalCache = new Map();
+
+// 添加连接池
+class ConnectionPool {
+	constructor(maxSize = 100) {
+		this.pool = new Map();
+		this.maxSize = maxSize;
+	}
+
+	async getConnection(key) {
+		if (this.pool.has(key)) {
+			return this.pool.get(key);
+		}
+		
+		const conn = await this.createConnection(key);
+		if (this.pool.size >= this.maxSize) {
+			const oldestKey = this.pool.keys().next().value;
+			this.pool.delete(oldestKey);
+		}
+		this.pool.set(key, conn);
+		return conn;
+	}
+
+	// ... 其他连接池方法
 }
 
 export default {
@@ -61,7 +245,7 @@ export default {
 			const UA = request.headers.get('User-Agent') || 'null';
 			const userAgent = UA.toLowerCase();
 			userID = env.UUID || env.uuid || env.PASSWORD || env.pswd || userID;
-			if (env.KEY || env.TOKEN || (userID && !isValidUUID(userID))) {
+			if (env.KEY || env.TOKEN || (userID && !utils.isValidUUID(userID))) {
 				动态UUID = env.KEY || env.TOKEN || userID;
 				有效时间 = Number(env.TIME) || 有效时间;
 				更新时间 = Number(env.UPTIME) || 更新时间;
@@ -274,7 +458,7 @@ async function 维列斯OverWSHandler(request) {
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
-    const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+    const readableWebSocketStream = new WebSocketManager(webSocket, log).makeReadableStream(earlyDataHeader);
 
     let remoteSocketWrapper = { value: null };
     let isDns = false;
@@ -457,59 +641,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
     let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-}
-
-function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
-    let readableStreamCancel = false;
-    let backpressure = false;
-
-    const stream = new ReadableStream({
-        start(controller) {
-            webSocketServer.addEventListener('message', (event) => {
-                if (readableStreamCancel) return;
-                const message = event.data;
-                if (!backpressure) {
-                    controller.enqueue(message);
-                } else {
-                    log('Backpressure, message discarded');
-                }
-            });
-
-            webSocketServer.addEventListener('close', () => {
-                safeCloseWebSocket(webSocketServer);
-                if (!readableStreamCancel) {
-                    controller.close();
-                }
-            });
-
-            webSocketServer.addEventListener('error', (err) => {
-                log('WebSocket server error');
-                controller.error(err);
-            });
-
-            const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
-            if (error) {
-                controller.error(error);
-            } else if (earlyData) {
-                controller.enqueue(earlyData);
-            }
-        },
-
-        pull(controller) {
-            if (controller.desiredSize > 0) {
-                backpressure = false;
-            }
-        },
-
-        cancel(reason) {
-            if (readableStreamCancel) return;
-            log(`Readable stream canceled, reason: ${reason}`);
-            readableStreamCancel = true;
-            safeCloseWebSocket(webSocketServer);
-        }
-    });
-
-    return stream;
 }
 
 function process维列斯Header(维列斯Buffer, userID) {
@@ -876,80 +1007,60 @@ function 配置信息(UUID, 域名地址) {
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
-const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
+const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
+	const uniqueAddresses = new Set();
+
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
-		if (match) {
-			sub = match[1];
-		}
+		sub = match ? match[1] : sub;
 		const subs = await 整理(sub);
-		if (subs.length > 1) sub = subs[0];
-	} else {
-		if (env.KV) {
-			await 迁移地址列表(env);
-			const 优选地址列表 = await env.KV.get('ADD.txt');
-			if (优选地址列表) {
-				const 优选地址数组 = await 整理(优选地址列表);
-				const 分类地址 = {
-					接口地址: new Set(),
-					链接地址: new Set(),
-					优选地址: new Set()
-				};
-
-				for (const 元素 of 优选地址数组) {
-					if (元素.startsWith('https://')) {
-						分类地址.接口地址.add(元素);
-					} else if (元素.includes('://')) {
-						分类地址.链接地址.add(元素);
-					} else {
-						分类地址.优选地址.add(元素);
-					}
-				}
-
-				addressesapi = [...分类地址.接口地址];
-				link = [...分类地址.链接地址];
-				addresses = [...分类地址.优选地址];
-			}
+		sub = subs.length > 1 ? subs[0] : sub;
+	} else if (env.KV) {
+		await 迁移地址列表(env);
+		const 优选地址列表 = await env.KV.get('ADD.txt');
+		if (优选地址列表) {
+			const 分类地址 = await 处理地址列表(优选地址列表);
+			addressesapi = [...分类地址.接口地址];
+			link = [...分类地址.链接地址];
+			addresses = [...分类地址.优选地址];
 		}
+	}
 
-		if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
-			let cfips = [
-				'103.21.244.0/23',
-				'104.16.0.0/13',
-				'104.24.0.0/14',
-				'172.64.0.0/14',
-				'103.21.244.0/23',
-				'104.16.0.0/14',
-				'104.24.0.0/15',
-				'141.101.64.0/19',
-				'172.64.0.0/14',
-				'188.114.96.0/21',
-				'190.93.240.0/21',
-			];
+	if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
+		let cfips = [
+			'103.21.244.0/23',
+			'104.16.0.0/13',
+			'104.24.0.0/14',
+			'172.64.0.0/14',
+			'103.21.244.0/23',
+			'104.16.0.0/14',
+			'104.24.0.0/15',
+			'141.101.64.0/19',
+			'172.64.0.0/14',
+			'188.114.96.0/21',
+			'190.93.240.0/21',
+		];
 
-			function generateRandomIPFromCIDR(cidr) {
-				const [base, mask] = cidr.split('/');
-				const baseIP = base.split('.').map(Number);
-				const subnetMask = 32 - parseInt(mask, 10);
-				const maxHosts = Math.pow(2, subnetMask) - 1;
-				const randomHost = Math.floor(Math.random() * maxHosts);
+		function generateRandomIPFromCIDR(cidr) {
+			const [base, mask] = cidr.split('/');
+			const baseIP = base.split('.').map(Number);
+			const subnetMask = 32 - parseInt(mask, 10);
+			const maxHosts = Math.pow(2, subnetMask) - 1;
+			const randomHost = Math.floor(Math.random() * maxHosts);
 
-				const randomIP = baseIP.map((octet, index) => {
-					if (index < 2) return octet;
-					if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-					return (octet & (255 << subnetMask)) + (randomHost & 255);
-				});
-
-				return randomIP.join('.');
-			}
-			addresses = addresses.concat('127.0.0.1:1234#CFnat');
-			if (hostName.includes(".workers.dev")) {
-				addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-			} else {
-				addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
-			}
+			return baseIP.map((octet, index) => {
+				if (index < 2) return octet;
+				if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
+				return (octet & (255 << subnetMask)) + (randomHost & 255);
+			}).join('.');
+		}
+		addresses = addresses.concat('127.0.0.1:1234#CFnat');
+		if (hostName.includes(".workers.dev")) {
+			addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+		} else {
+			addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
 		}
 	}
 
@@ -981,7 +1092,8 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		if (proxyhosts.length != 0) proxyhost = proxyhosts[Math.floor(Math.random() * proxyhosts.length)] + "/";
 	}
 
-	if (userAgent.includes('mozilla') && !subParams.some(_searchParams => _url.searchParams.has(_searchParams))) {
+	const isUserAgentMozilla = userAgent.includes('mozilla');
+	if (isUserAgentMozilla && !subParams.some(_searchParams => _url.searchParams.has(_searchParams))) {
 		const newSocks5s = socks5s.map(socks5Address => {
 			if (socks5Address.includes('@')) return socks5Address.split('@')[1];
 			else if (socks5Address.includes('//')) return socks5Address.split('//')[1];
@@ -1473,15 +1585,24 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	return btoa(base64Response);
 }
 
-async function 整理(内容) {
-	var 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',');
-
-	if (替换后的内容.charAt(0) == ',') 替换后的内容 = 替换后的内容.slice(1);
-	if (替换后的内容.charAt(替换后的内容.length - 1) == ',') 替换后的内容 = 替换后的内容.slice(0, 替换后的内容.length - 1);
-
-	const 地址数组 = 替换后的内容.split(',');
-
-	return 地址数组;
+// 优化 整理 函数
+async function 整理(内容, cacheKey = null) {
+    if (cacheKey && globalCache.has(cacheKey)) {
+        return globalCache.get(cacheKey);
+    }
+    
+    const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
+        .replace(/^,|,$/g, '');
+    
+    const 地址数组 = 替换后的内容.split(',');
+    
+    if (cacheKey) {
+        globalCache.set(cacheKey, 地址数组);
+        // 设置缓存过期时间
+        setTimeout(() => globalCache.delete(cacheKey), 300000); // 5分钟后过期
+    }
+    
+    return 地址数组;
 }
 
 async function sendMessage(type, ip, add_data = "") {
@@ -1564,256 +1685,9 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 async function KV(request, env, txt = 'ADD.txt') {
 	try {
 		if (request.method === "POST") {
-			if (!env.KV) return new Response("未绑定KV空间", { status: 400 });
-			try {
-				const content = await request.text();
-				await env.KV.put(txt, content);
-				return new Response("保存成功");
-			} catch (error) {
-				console.error('保存KV时发生错误:', error);
-				return new Response("保存失败: " + error.message, { status: 500 });
-			}
+			return await handlePostRequest(request, env, txt);
 		}
-
-		let content = '';
-		let hasKV = !!env.KV;
-
-		if (hasKV) {
-			try {
-				content = await env.KV.get(txt) || '';
-			} catch (error) {
-				console.error('读取KV时发生错误:', error);
-				content = '读取数据时发生错误: ' + error.message;
-			}
-		}
-
-		const html = `
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<title>优选订阅列表</title>
-				<meta charset="utf-8">
-				<meta name="viewport" content="width=device-width, initial-scale=1">
-				<style>
-					body {
-						margin: 0;
-						padding: 15px; /* 调整padding */
-						box-sizing: border-box;
-						font-size: 13px; /* 设置全局字体大小 */
-					}
-					.editor-container {
-						width: 100%;
-						max-width: 100%;
-						margin: 0 auto;
-					}
-					.editor {
-						width: 100%;
-						height: 520px; /* 调整高度 */
-						margin: 15px 0; /* 调整margin */
-						padding: 10px; /* 调整padding */
-						box-sizing: border-box;
-						border: 1px solid #ccc;
-						border-radius: 4px;
-						font-size: 13px;
-						line-height: 1.5;
-						overflow-y: auto;
-						resize: none;
-					}
-					.save-container {
-						margin-top: 8px; /* 调整margin */
-						display: flex;
-						align-items: center;
-						gap: 10px; /* 调整gap */
-					}
-					.save-btn, .back-btn {
-						padding: 6px 15px; /* 调整padding */
-						color: white;
-						border: none;
-						border-radius: 4px;
-						cursor: pointer;
-					}
-					.save-btn {
-						background: #4CAF50;
-					}
-					.save-btn:hover {
-						background: #45a049;
-					}
-					.back-btn {
-						background: #666;
-					}
-					.back-btn:hover {
-						background: #555;
-					}
-					.save-status {
-						color: #666;
-					}
-					.notice-content {
-						display: none;
-						margin-top: 10px;
-						font-size: 13px;
-						color: #333;
-					}
-				</style>
-			</head>
-			<body>
-				################################################################<br>
-				${FileName} 优选订阅列表:<br>
-				---------------------------------------------------------------<br>
-				&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
-				<div id="noticeContent" class="notice-content">
-					${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOUUlOUMlRTYlOTglQUYlRTUlOEYlOEQlRTQlQkIlQTNJUCVFRiVCQyU4QyVFNSU4RiVBRiVFNCVCRCU5QyVFNCVCOCVCQVBST1hZSVAlRTclOUElODQlRTglQUYlOUQlRUYlQkMlOEMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwcm94eWlwJTNEdHJ1ZSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzQ3N0cm9uZyUzRSUzRnByb3h5aXAlM0R0cnVlJTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJTI3aHR0cHMlM0ElMkYlMkZnaXRodWIuY29tJTJGWElVMiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QlMjclM0VDbG91ZGZsYXJlU3BlZWRUZXN0JTNDJTJGYSUzRSUyMCVFNyU5QSU4NCUyMGNzdiUyMCVFNyVCQiU5MyVFNiU5RSU5QyVFNiU5NiU4NyVFNCVCQiVCNiVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NiciUzRSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCLSUyMCVFNSVBNiU4MiVFOSU5QyU4MCVFNiU4QyU4NyVFNSVBRSU5QTIwNTMlRTclQUIlQUYlRTUlOEYlQTMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwb3J0JTNEMjA1MyUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0Zwb3J0JTNEMjA1MyUzQyUyRnN0cm9uZyUzRSUzQ2JyJTNFJTNDYnIlM0UKJTA5JTA5JTA5JTA5JTA5JTI2bmJzcCUzQiUyNm5ic3AlM0ItJTIwJUU1JUE2JTgyJUU5JTlDJTgwJUU2JThDJTg3JUU1JUFFJTlBJUU4JThBJTgyJUU3JTgyJUI5JUU1JUE0JTg3JUU2JUIzJUE4JUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NzdHJvbmclM0UlM0ZpZCUzRENGJUU0JUJDJTk4JUU5JTgwJTg5JTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQi0lMjAlRTUlQTYlODIlRTklOUMlODAlRTYlOEMlODclRTUlQUUlOUElRTUlQTQlOUElRTQlQjglQUElRTUlOEYlODIlRTYlOTUlQjAlRTUlODglOTklRTklOUMlODAlRTglQTYlODElRTQlQkQlQkYlRTclOTQlQTglMjclMjYlMjclRTUlODElOUElRTklOTclQjQlRTklOUElOTQlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMDklMDklMDklMDklMDklMjZuYnNwJTNCJTI2bmJzcCUzQmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QuY3N2JTNGaWQlM0RDRiVFNCVCQyU5OCVFOSU4MCU4OSUzQ3N0cm9uZyUzRSUyNiUzQyUyRnN0cm9uZyUzRXBvcnQlM0QyMDUzJTNDYnIlM0U='))}
-				</div>
-				<div class="editor-container">
-					${hasKV ? `
-					<textarea class="editor" 
-						placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
-						id="content">${content}</textarea>
-					<div class="save-container">
-						<button class="back-btn" onclick="goBack()">返回配置页</button>
-						<button class="save-btn" onclick="saveContent(this)">保存</button>
-						<span class="save-status" id="saveStatus"></span>
-					</div>
-					<br>
-					################################################################<br>
-					${cmad}
-					` : '<p>未绑定KV空间</p>'}
-				</div>
-		
-				<script>
-				if (document.querySelector('.editor')) {
-					let timer;
-					const textarea = document.getElementById('content');
-					const originalContent = textarea.value;
-		
-					function goBack() {
-						const currentUrl = window.location.href;
-						const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
-						window.location.href = parentUrl;
-					}
-		
-					function replaceFullwidthColon() {
-						const text = textarea.value;
-						textarea.value = text.replace(/：/g, ':');
-					}
-					
-					function saveContent(button) {
-						try {
-							const updateButtonText = (step) => {
-								button.textContent = \`保存中: \${step}\`;
-							};
-							// 检测是否为iOS设备
-							const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-							
-							// 仅在非iOS设备上执行replaceFullwidthColon
-							if (!isIOS) {
-								replaceFullwidthColon();
-							}
-							updateButtonText('开始保存');
-							button.disabled = true;
-							// 获取textarea内容和原始内容
-							const textarea = document.getElementById('content');
-							if (!textarea) {
-								throw new Error('找不到文本编辑区域');
-							}
-							updateButtonText('获取内容');
-							let newContent;
-							let originalContent;
-							try {
-								newContent = textarea.value || '';
-								originalContent = textarea.defaultValue || '';
-							} catch (e) {
-								console.error('获取内容错误:', e);
-								throw new Error('无法获取编辑内容');
-							}
-							updateButtonText('准备状态更新函数');
-							const updateStatus = (message, isError = false) => {
-								const statusElem = document.getElementById('saveStatus');
-								if (statusElem) {
-									statusElem.textContent = message;
-									statusElem.style.color = isError ? 'red' : '#666';
-								}
-							};
-							updateButtonText('准备按钮重置函数');
-							const resetButton = () => {
-								button.textContent = '保存';
-								button.disabled = false;
-							};
-							if (newContent !== originalContent) {
-								updateButtonText('发送保存请求');
-								fetch(window.location.href, {
-									method: 'POST',
-									body: newContent,
-									headers: {
-										'Content-Type': 'text/plain;charset=UTF-8'
-									},
-									cache: 'no-cache'
-								})
-								.then(response => {
-									updateButtonText('检查响应状态');
-									if (!response.ok) {
-										throw new Error(\`HTTP error! status: \${response.status}\`);
-									}
-									updateButtonText('更新保存状态');
-									const now = new Date().toLocaleString();
-									document.title = \`编辑已保存 \${now}\`;
-									updateStatus(\`已保存 \${now}\`);
-								})
-								.catch(error => {
-									updateButtonText('处理错误');
-									console.error('Save error:', error);
-									updateStatus(\`保存失败: \${error.message}\`, true);
-								})
-								.finally(() => {
-									resetButton();
-								});
-							} else {
-								updateButtonText('检查内容变化');
-								updateStatus('内容未变化');
-								resetButton();
-							}
-						} catch (error) {
-							console.error('保存过程出错:', error);
-							button.textContent = '保存';
-							button.disabled = false;
-							const statusElem = document.getElementById('saveStatus');
-							if (statusElem) {
-								statusElem.textContent = \`错误: \${error.message}\`;
-								statusElem.style.color = 'red';
-							}
-						}
-					}
-		
-					textarea.addEventListener('blur', saveContent);
-					textarea.addEventListener('input', () => {
-						clearTimeout(timer);
-						timer = setTimeout(saveContent, 5000);
-					});
-				}
-		
-				function toggleNotice() {
-					const noticeContent = document.getElementById('noticeContent');
-					const noticeToggle = document.getElementById('noticeToggle');
-					if (noticeContent.style.display === 'none' || noticeContent.style.display === '') {
-						noticeContent.style.display = 'block';
-						noticeToggle.textContent = '注意事项∧';
-					} else {
-						noticeContent.style.display = 'none';
-						noticeToggle.textContent = '注意事项∨';
-					}
-				}
-		
-				// 初始化 noticeContent 的 display 属性
-				document.addEventListener('DOMContentLoaded', () => {
-					document.getElementById('noticeContent').style.display = 'none';
-				});
-				</script>
-			</body>
-			</html>
-		`;
-
-		return new Response(html, {
-			headers: { "Content-Type": "text/html;charset=utf-8" }
-		});
+		return await handleGetRequest(env, txt);
 	} catch (error) {
 		console.error('处理请求时发生错误:', error);
 		return new Response("服务器错误: " + error.message, {
@@ -1821,4 +1695,281 @@ async function KV(request, env, txt = 'ADD.txt') {
 			headers: { "Content-Type": "text/plain;charset=utf-8" }
 		});
 	}
+}
+
+async function handlePostRequest(request, env, txt) {
+	if (!env.KV) {
+		return new Response("未绑定KV空间", { status: 400 });
+	}
+	try {
+		const content = await request.text();
+		await env.KV.put(txt, content);
+		return new Response("保存成功");
+	} catch (error) {
+		console.error('保存KV时发生错误:', error);
+		return new Response("保存失败: " + error.message, { status: 500 });
+	}
+}
+
+async function handleGetRequest(env, txt) {
+	let content = '';
+	let hasKV = !!env.KV;
+
+	if (hasKV) {
+		try {
+			content = await env.KV.get(txt) || '';
+		} catch (error) {
+			console.error('读取KV时发生错误:', error);
+			content = '读取数据时发生错误: ' + error.message;
+		}
+	}
+
+	const html = `
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>优选订阅列表</title>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<style>
+				body {
+					margin: 0;
+					padding: 15px; /* 调整padding */
+					box-sizing: border-box;
+					font-size: 13px; /* 设置全局字体大小 */
+				}
+				.editor-container {
+					width: 100%;
+					max-width: 100%;
+					margin: 0 auto;
+				}
+				.editor {
+					width: 100%;
+					height: 520px; /* 调整高度 */
+					margin: 15px 0; /* 调整margin */
+					padding: 10px; /* 调整padding */
+					box-sizing: border-box;
+					border: 1px solid #ccc;
+					border-radius: 4px;
+					font-size: 13px;
+					line-height: 1.5;
+					overflow-y: auto;
+					resize: none;
+				}
+				.save-container {
+					margin-top: 8px; /* 调整margin */
+					display: flex;
+					align-items: center;
+					gap: 10px; /* 调整gap */
+				}
+				.save-btn, .back-btn {
+					padding: 6px 15px; /* 调整padding */
+					color: white;
+					border: none;
+					border-radius: 4px;
+					cursor: pointer;
+				}
+				.save-btn {
+					background: #4CAF50;
+				}
+				.save-btn:hover {
+					background: #45a049;
+				}
+				.back-btn {
+					background: #666;
+				}
+				.back-btn:hover {
+					background: #555;
+				}
+				.save-status {
+					color: #666;
+				}
+				.notice-content {
+					display: none;
+					margin-top: 10px;
+					font-size: 13px;
+					color: #333;
+				}
+			</style>
+		</head>
+		<body>
+			################################################################<br>
+			${FileName} 优选订阅列表:<br>
+			---------------------------------------------------------------<br>
+			&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
+			<div id="noticeContent" class="notice-content">
+				${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOUUlOUMlRTYlOTglQUYlRTUlOEYlOEQlRTQlQkIlQTNJUCVFRiVCQyU4QyVFNSU4RiVBRiVFNCVCRCU5QyVFNCVCOCVCQVBST1hZSVAlRTclOUElODQlRTglQUYlOUQlRUYlQkMlOEMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwcm94eWlwJTNEdHJ1ZSUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzQ3N0cm9uZyUzRSUzRnByb3h5aXAlM0R0cnVlJTNDJTJGc3Ryb25nJTNFJTNDYnIlM0UlM0NiciUzRQolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJTI3aHR0cHMlM0ElMkYlMkZnaXRodWIuY29tJTJGWElVMiUyRkNsb3VkZmxhcmVTcGVlZFRlc3QlMjclM0VDbG91ZGZsYXJlU3BlZWRUZXN0JTNDJTJGYSUzRSUyMCVFNyU5QSU4NCUyMGNzdiUyMCVFNyVCQiU5MyVFNiU5RSU5QyVFNiU5NiU4NyVFNCVCQiVCNiVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGQ2xvdWRmbGFyZVNwZWVkVGVzdC5jc3YlM0NiciUzRSUzQ2JyJTNFCiUwOSUwOSUwOSUwOSUwOSUyNm5ic3AlM0IlMjZuYnNwJTNCLSUyMCVFNSVBNiU4MiVFOSU5QyU4MCVFNiU4QyU4NyVFNSVBRSU5QTIwNTMlRTclQUIlQUYlRTUlOEYlQTMlRTUlOEYlQUYlRTUlQjAlODYlMjIlM0Zwb3J0JTNEMjA1MyUyMiVFNSU4RiU4MiVFNiU5NSVCMCVFNiVCNyVCQiVFNSU4QSVBMCVFNSU4OCVCMCVFOSU5MyVCRSVFNiU4RSVBNSVFNiU5QyVBQiVFNSVCMCVCRSVFRiVCQyU4QyVFNCVCRSU4QiVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}
+			</div>
+			<div class="editor-container">
+				${hasKV ? `
+				<textarea class="editor" 
+					placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
+					id="content">${content}</textarea>
+				<div class="save-container">
+					<button class="back-btn" onclick="goBack()">返回配置页</button>
+					<button class="save-btn" onclick="saveContent(this)">保存</button>
+					<span class="save-status" id="saveStatus"></span>
+				</div>
+				<br>
+				################################################################<br>
+				${cmad}
+				` : '<p>未绑定KV空间</p>'}
+			</div>
+	
+			<script>
+			if (document.querySelector('.editor')) {
+				let timer;
+				const textarea = document.getElementById('content');
+				const originalContent = textarea.value;
+		
+				function goBack() {
+					const currentUrl = window.location.href;
+					const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
+					window.location.href = parentUrl;
+				}
+		
+				function replaceFullwidthColon() {
+					const text = textarea.value;
+					textarea.value = text.replace(/：/g, ':');
+				}
+				
+				function saveContent(button) {
+					try {
+						const updateButtonText = (step) => {
+							button.textContent = \`保存中: \${step}\`;
+						};
+						// 检测是否为iOS设备
+						const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+						
+						// 仅在非iOS设备上执行replaceFullwidthColon
+						if (!isIOS) {
+							replaceFullwidthColon();
+						}
+						updateButtonText('开始保存');
+						button.disabled = true;
+						// 获取textarea内容和原始内容
+						const textarea = document.getElementById('content');
+						if (!textarea) {
+							throw new Error('找不到文本编辑区域');
+						}
+						updateButtonText('获取内容');
+						let newContent;
+						let originalContent;
+						try {
+							newContent = textarea.value || '';
+							originalContent = textarea.defaultValue || '';
+						} catch (e) {
+							console.error('获取内容错误:', e);
+							throw new Error('无法获取编辑内容');
+						}
+						updateButtonText('准备状态更新函数');
+						const updateStatus = (message, isError = false) => {
+							const statusElem = document.getElementById('saveStatus');
+							if (statusElem) {
+								statusElem.textContent = message;
+								statusElem.style.color = isError ? 'red' : '#666';
+							}
+						};
+						updateButtonText('准备按钮重置函数');
+						const resetButton = () => {
+							button.textContent = '保存';
+							button.disabled = false;
+						};
+						if (newContent !== originalContent) {
+							updateButtonText('发送保存请求');
+							fetch(window.location.href, {
+								method: 'POST',
+								body: newContent,
+								headers: {
+									'Content-Type': 'text/plain;charset=UTF-8'
+								},
+								cache: 'no-cache'
+							})
+							.then(response => {
+								updateButtonText('检查响应状态');
+								if (!response.ok) {
+									throw new Error(\`HTTP error! status: \${response.status}\`);
+								}
+								updateButtonText('更新保存状态');
+								const now = new Date().toLocaleString();
+								document.title = \`编辑已保存 \${now}\`;
+								updateStatus(\`已保存 \${now}\`);
+							})
+							.catch(error => {
+								updateButtonText('处理错误');
+								console.error('Save error:', error);
+								updateStatus(\`保存失败: \${error.message}\`, true);
+							})
+							.finally(() => {
+								resetButton();
+							});
+						} else {
+							updateButtonText('检查内容变化');
+							updateStatus('内容未变化');
+							resetButton();
+						}
+					} catch (error) {
+						console.error('保存过程出错:', error);
+						button.textContent = '保存';
+						button.disabled = false;
+						const statusElem = document.getElementById('saveStatus');
+						if (statusElem) {
+							statusElem.textContent = \`错误: \${error.message}\`;
+							statusElem.style.color = 'red';
+						}
+					}
+				}
+		
+				textarea.addEventListener('blur', saveContent);
+				textarea.addEventListener('input', () => {
+					clearTimeout(timer);
+					timer = setTimeout(saveContent, 5000);
+				});
+			}
+		
+			function toggleNotice() {
+				const noticeContent = document.getElementById('noticeContent');
+				const noticeToggle = document.getElementById('noticeToggle');
+				if (noticeContent.style.display === 'none' || noticeContent.style.display === '') {
+					noticeContent.style.display = 'block';
+					noticeToggle.textContent = '注意事项∧';
+				} else {
+					noticeContent.style.display = 'none';
+					noticeToggle.textContent = '注意事项∨';
+				}
+			}
+		
+			// 初始化 noticeContent 的 display 属性
+			document.addEventListener('DOMContentLoaded', () => {
+				document.getElementById('noticeContent').style.display = 'none';
+			});
+			</script>
+		</body>
+		</html>
+	`;
+
+	return new Response(html, {
+		headers: { "Content-Type": "text/html;charset=utf-8" }
+	});
+}
+
+async function 处理地址列表(地址列表) {
+	const 分类地址 = {
+		接口地址: new Set(),
+		链接地址: new Set(),
+		优选地址: new Set()
+	};
+	
+	const 地址数组 = await 整理(地址列表);
+	for (const 地址 of 地址数组) {
+		if (地址.startsWith('https://')) {
+			分类地址.接口地址.add(地址);
+		} else if (地址.includes('://')) {
+			分类地址.链接地址.add(地址);
+		} else {
+			分类地址.优选地址.add(地址);
+		}
+	}
+	
+	return 分类地址;
 }
