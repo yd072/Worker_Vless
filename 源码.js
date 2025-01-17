@@ -88,31 +88,7 @@ const utils = {
 // 统一的错误处理函数
 async function handleError(err, type = 'general') {
 	console.error(`[${type}] Error:`, err);
-	
-	const errorResponse = {
-		status: 500,
-		headers: { "Content-Type": "text/plain;charset=utf-8" },
-		body: err.toString()
-	};
-
-	// 根据错误类型返回不同的错误信息
-	switch(type) {
-		case 'auth':
-			errorResponse.status = 401;
-			errorResponse.body = '认证失败';
-			break;
-		case 'websocket':
-			errorResponse.status = 400; 
-			errorResponse.body = 'WebSocket连接错误';
-			break;
-		default:
-			// 使用默认的500错误
-	}
-
-	return new Response(errorResponse.body, {
-		status: errorResponse.status,
-		headers: errorResponse.headers
-	});
+	return new Response('Internal Server Error', { status: 500 });
 }
 
 // WebSocket连接管理类
@@ -217,6 +193,10 @@ class ConnectionPool {
 		}
 		this.pool.set(key, conn);
 		return conn;
+	}
+
+	async createConnection(key) {
+		// 创建连接的逻辑
 	}
 
 	// ... 其他连接池方法
@@ -1983,4 +1963,48 @@ const metrics = {
 // 建议添加结构化日志
 function logEvent(type, data) {
     // ...
+}
+
+// 优化异步处理
+async function fetchData(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        return await response.json();
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+    }
+}
+
+// 使用连接池
+class ConnectionPool {
+    constructor(maxSize = 100) {
+        this.pool = new Map();
+        this.maxSize = maxSize;
+    }
+
+    async getConnection(key) {
+        if (this.pool.has(key)) {
+            return this.pool.get(key);
+        }
+        
+        const conn = await this.createConnection(key);
+        if (this.pool.size >= this.maxSize) {
+            const oldestKey = this.pool.keys().next().value;
+            this.pool.delete(oldestKey);
+        }
+        this.pool.set(key, conn);
+        return conn;
+    }
+
+    async createConnection(key) {
+        // 创建连接的逻辑
+    }
+}
+
+// 统一错误处理
+async function handleError(err, type = 'general') {
+    console.error(`[${type}] Error:`, err);
+    return new Response('Internal Server Error', { status: 500 });
 }
