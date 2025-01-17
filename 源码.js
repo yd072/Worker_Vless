@@ -203,68 +203,13 @@ class Config {
     }
 }
 
-// 改进缓存管理
-class CacheManager {
-    constructor() {
-        this.cache = new Map();
-        this.ttl = new Map();
-    }
-
-    set(key, value, ttlMs = 300000) {
-        this.cache.set(key, value);
-        this.ttl.set(key, Date.now() + ttlMs);
-        
-        setTimeout(() => {
-            if (this.ttl.get(key) <= Date.now()) {
-                this.cache.delete(key);
-                this.ttl.delete(key);
-            }
-        }, ttlMs);
-    }
-
-    get(key) {
-        if (this.ttl.get(key) <= Date.now()) {
-            this.cache.delete(key);
-            this.ttl.delete(key);
-            return null;
-        }
-        return this.cache.get(key);
-    }
-}
-
-const globalCache = new CacheManager();
-
-// 添加连接池
-class ConnectionPool {
-	constructor(maxSize = 100) {
-		this.pool = new Map();
-		this.maxSize = maxSize;
-	}
-
-	async getConnection(key) {
-		if (this.pool.has(key)) {
-			return this.pool.get(key);
-		}
-		
-		const conn = await this.createConnection(key);
-		if (this.pool.size >= this.maxSize) {
-			const oldestKey = this.pool.keys().next().value;
-			this.pool.delete(oldestKey);
-		}
-		this.pool.set(key, conn);
-		return conn;
-	}
-
-	// ... 其他连接池方法
-}
-
 // 添加统一的错误处理类
 class ErrorHandler {
     static async handle(operation, fallback = null) {
         try {
             return await operation();
         } catch (error) {
-            console.error(`Operation failed: ${error.message}`);
+            console.error(`操作失败: ${error.message}`);
             return fallback;
         }
     }
@@ -272,9 +217,12 @@ class ErrorHandler {
 
 // 使用示例
 async function handleRequest(request) {
-    return await ErrorHandler.handle(async () => {
-        // 请求处理逻辑
-    }, new Response("Internal Error", {status: 500}));
+    return await ErrorHandler.handle(
+        async () => {
+            // 请求处理逻辑
+        },
+        new Response("内部错误", {status: 500})
+    );
 }
 
 export default {
@@ -1624,22 +1572,11 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 }
 
 // 优化 整理 函数
-async function 整理(内容, cacheKey = null) {
-    if (cacheKey && globalCache.has(cacheKey)) {
-        return globalCache.get(cacheKey);
-    }
-    
+async function 整理(内容) {
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
     
     const 地址数组 = 替换后的内容.split(',');
-    
-    if (cacheKey) {
-        globalCache.set(cacheKey, 地址数组);
-        // 设置缓存过期时间
-        setTimeout(() => globalCache.delete(cacheKey), 300000); // 5分钟后过期
-    }
-    
     return 地址数组;
 }
 
