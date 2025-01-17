@@ -88,16 +88,68 @@ const utils = {
 // 统一的错误处理函数
 async function handleError(err, type = 'general') {
 	console.error(`[${type}] Error:`, err);
-	return new Response('Internal Server Error', { status: 500 });
+	
+	const errorResponse = {
+		status: 500,
+		headers: { "Content-Type": "text/plain;charset=utf-8" },
+		body: err.toString()
+	};
+
+	// 根据错误类型返回不同的错误信息
+	switch(type) {
+		case 'auth':
+			errorResponse.status = 401;
+			errorResponse.body = '认证失败';
+			break;
+		case 'websocket':
+			errorResponse.status = 400; 
+			errorResponse.body = 'WebSocket连接错误';
+			break;
+		default:
+			// 使用默认的500错误
+	}
+
+	return new Response(errorResponse.body, {
+		status: errorResponse.status,
+		headers: errorResponse.headers
+	});
 }
 
-// WebSocket连接管理类
+// 建议优化 WebSocket 管理
 class WebSocketManager {
 	constructor(webSocket, log) {
 		this.webSocket = webSocket;
 		this.log = log;
 		this.readableStreamCancel = false;
 		this.backpressure = false;
+		this.lastPingTime = Date.now();
+		this.setupHeartbeat();
+	}
+
+	setupHeartbeat() {
+		this.heartbeatInterval = setInterval(() => {
+			if (Date.now() - this.lastPingTime > 30000) {
+				this.log('WebSocket heartbeat timeout');
+				this.close();
+			} else {
+				this.ping();
+			}
+		}, 15000);
+	}
+
+	ping() {
+		try {
+			this.webSocket.send('ping');
+			this.lastPingTime = Date.now();
+		} catch (err) {
+			this.log('Ping failed:', err);
+			this.close();
+		}
+	}
+
+	close() {
+		clearInterval(this.heartbeatInterval);
+		utils.ws.safeClose(this.webSocket);
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -164,15 +216,22 @@ class WebSocketManager {
 // 配置管理类
 class ConfigManager {
 	constructor(env) {
-		// 建议添加配置验证
-		// 建议添加配置热更新
+		this.config = {
+			userID: env.UUID || env.uuid || env.PASSWORD || env.pswd || '',
+			proxyIP: env.PROXYIP || env.proxyip || '',
+			socks5Address: env.SOCKS5 || '',
+			// ... 其他配置项
+		};
+	}
+
+	get(key) {
+		return this.config[key];
+	}
+
+	set(key, value) {
+		this.config[key] = value;
 	}
 }
-
-// 添加缓存机制
-const globalCache = new Map();
-// 建议添加 LRU 缓存
-// 建议添加缓存过期清理
 
 // 添加连接池
 class ConnectionPool {
@@ -187,16 +246,25 @@ class ConnectionPool {
 		}
 		
 		const conn = await this.createConnection(key);
+		
 		if (this.pool.size >= this.maxSize) {
 			const oldestKey = this.pool.keys().next().value;
 			this.pool.delete(oldestKey);
 		}
+		
 		this.pool.set(key, conn);
 		return conn;
 	}
 
-	async createConnection(key) {
-		// 创建连接的逻辑
+	// 添加连接健康检查
+	async healthCheck() {
+		for (const [key, conn] of this.pool.entries()) {
+			try {
+				await this.pingConnection(conn);
+			} catch (err) {
+				this.pool.delete(key);
+			}
+		}
 	}
 
 	// ... 其他连接池方法
@@ -1564,23 +1632,11 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 }
 
 // 优化 整理 函数
-async function 整理(内容, cacheKey = null) {
-    if (cacheKey && globalCache.has(cacheKey)) {
-        return globalCache.get(cacheKey);
-    }
-    
+async function 整理(内容) {
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
     
-    const 地址数组 = 替换后的内容.split(',');
-    
-    if (cacheKey) {
-        globalCache.set(cacheKey, 地址数组);
-        // 设置缓存过期时间
-        setTimeout(() => globalCache.delete(cacheKey), 300000); // 5分钟后过期
-    }
-    
-    return 地址数组;
+    return 替换后的内容.split(',');
 }
 
 async function sendMessage(type, ip, add_data = "") {
@@ -1952,59 +2008,3 @@ async function 处理地址列表(地址列表) {
 	return 分类地址;
 }
 
-// 建议添加性能监控
-const metrics = {
-    activeConnections: 0,
-    totalRequests: 0,
-    failedRequests: 0,
-    avgResponseTime: 0
-};
-
-// 建议添加结构化日志
-function logEvent(type, data) {
-    // ...
-}
-
-// 优化异步处理
-async function fetchData(url) {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Network response was not ok');
-        return await response.json();
-    } catch (error) {
-        console.error('Fetch error:', error);
-        throw error;
-    }
-}
-
-// 使用连接池
-class ConnectionPool {
-    constructor(maxSize = 100) {
-        this.pool = new Map();
-        this.maxSize = maxSize;
-    }
-
-    async getConnection(key) {
-        if (this.pool.has(key)) {
-            return this.pool.get(key);
-        }
-        
-        const conn = await this.createConnection(key);
-        if (this.pool.size >= this.maxSize) {
-            const oldestKey = this.pool.keys().next().value;
-            this.pool.delete(oldestKey);
-        }
-        this.pool.set(key, conn);
-        return conn;
-    }
-
-    async createConnection(key) {
-        // 创建连接的逻辑
-    }
-}
-
-// 统一错误处理
-async function handleError(err, type = 'general') {
-    console.error(`[${type}] Error:`, err);
-    return new Response('Internal Server Error', { status: 500 });
-}
