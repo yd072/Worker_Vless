@@ -91,7 +91,10 @@ async function handleError(err, type = 'general') {
     
     const errorResponse = {
         status: 500,
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        headers: { 
+            "Content-Type": "text/plain;charset=utf-8",
+            "Cache-Control": "no-store" // 添加缓存控制
+        },
         body: err.toString()
     };
 
@@ -102,8 +105,12 @@ async function handleError(err, type = 'general') {
             errorResponse.body = '认证失败';
             break;
         case 'websocket':
-            errorResponse.status = 400; 
+            errorResponse.status = 400;
             errorResponse.body = 'WebSocket连接错误';
+            break;
+        case 'network':
+            errorResponse.status = 503;
+            errorResponse.body = '网络连接错误';
             break;
         default:
             // 使用默认的500错误
@@ -122,6 +129,32 @@ class WebSocketManager {
         this.log = log;
         this.readableStreamCancel = false;
         this.backpressure = false;
+        this.messageQueue = []; // 添加消息队列
+    }
+
+    // 优化消息处理
+    handleMessage(event) {
+        if (this.readableStreamCancel) return;
+        
+        if (!this.backpressure) {
+            this.controller.enqueue(event.data);
+        } else {
+            // 当出现背压时,将消息加入队列
+            this.messageQueue.push(event.data);
+            this.log('消息已加入队列');
+        }
+    }
+
+    // 优化流控制
+    handleStreamPull(controller) {
+        if (controller.desiredSize > 0) {
+            this.backpressure = false;
+            // 处理队列中的消息
+            while (this.messageQueue.length > 0 && !this.backpressure) {
+                const data = this.messageQueue.shift();
+                controller.enqueue(data);
+            }
+        }
     }
 
     makeReadableStream(earlyDataHeader) {
@@ -166,12 +199,6 @@ class WebSocketManager {
         }
     }
 
-    handleStreamPull(controller) {
-        if (controller.desiredSize > 0) {
-            this.backpressure = false;
-        }
-    }
-
     handleStreamCancel(reason) {
         if (this.readableStreamCancel) return;
         this.log(`Readable stream canceled, reason: ${reason}`);
@@ -185,6 +212,7 @@ class ConfigManager {
     constructor(env) {
         this.env = env;
         this.config = this.initConfig();
+        this.cache = new Map(); // 添加配置缓存
     }
 
     initConfig() {
@@ -203,12 +231,20 @@ class ConfigManager {
         return str.split(',').map(item => item.trim());
     }
 
+    // 获取配置时先检查缓存
     get(key) {
-        return this.config[key];
+        if (this.cache.has(key)) {
+            return this.cache.get(key);
+        }
+        const value = this.config[key];
+        this.cache.set(key, value);
+        return value;
     }
 
+    // 设置配置时更新缓存
     set(key, value) {
         this.config[key] = value;
+        this.cache.set(key, value);
     }
 }
 
