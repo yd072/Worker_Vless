@@ -209,12 +209,20 @@ class WebSocketManager {
 
 // 配置管理类
 class ConfigManager {
+    /**
+     * 配置管理器构造函数
+     * @param {Object} env - 环境变量对象
+     */
     constructor(env) {
         this.env = env;
         this.config = this.initConfig();
-        this.cache = new Map(); // 添加配置缓存
+        this.cache = new Map(); // 配置缓存，提高访问性能
     }
 
+    /**
+     * 初始化配置
+     * @returns {Object} 配置对象
+     */
     initConfig() {
         return {
             uuid: this.env.UUID || this.env.uuid || this.env.PASSWORD || this.env.pswd || '',
@@ -222,7 +230,6 @@ class ConfigManager {
             socks5: this.env.SOCKS5 || '',
             httpsPorts: this.parseArray(this.env.CFPORTS) || ["2053", "2083", "2087", "2096", "8443"],
             banHosts: this.parseArray(this.env.BAN) || [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')],
-            // ... 其他配置项
         };
     }
 
