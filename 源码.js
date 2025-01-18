@@ -87,11 +87,13 @@ async function handleError(err, type = 'general') {
     const errorResponse = {
         status: 500,
         headers: { 
-            "Content-Type": "text/plain;charset=utf-8"
+            "Content-Type": "text/plain;charset=utf-8",
+            "Connection": "close" // 确保连接关闭
         },
         body: err.toString()
     };
 
+    // 添加更详细的错误处理
     switch(type) {
         case 'auth':
             errorResponse.status = 401;
@@ -105,7 +107,28 @@ async function handleError(err, type = 'general') {
             errorResponse.status = 503;
             errorResponse.body = '网络连接错误';
             break;
+        case 'timeout':
+            errorResponse.status = 504;
+            errorResponse.body = '连接超时';
+            break;
+        case 'rate_limit':
+            errorResponse.status = 429;
+            errorResponse.body = '请求过于频繁';
+            break;
         default:
+            // 保持默认错误处理
+    }
+
+    // 记录错误日志
+    try {
+        await logError({
+            type,
+            message: err.message,
+            stack: err.stack,
+            timestamp: new Date().toISOString()
+        });
+    } catch (logError) {
+        console.error('Error logging failed:', logError);
     }
 
     return new Response(errorResponse.body, {
@@ -120,7 +143,49 @@ class WebSocketManager {
         this.log = log;
         this.readableStreamCancel = false;
         this.backpressure = false;
-        this.messageQueue = []; // 添加消息队列
+        this.messageQueue = [];
+        this.isConnected = true; // 添加连接状态标记
+        this.pingInterval = null; // 添加心跳检测间隔
+        this.setupHeartbeat(); // 初始化心跳检测
+    }
+
+    // 添加心跳检测机制
+    setupHeartbeat() {
+        this.pingInterval = setInterval(() => {
+            if (this.isConnected && this.webSocket.readyState === WS_READY_STATE_OPEN) {
+                try {
+                    this.webSocket.send(new Uint8Array([0])); // 发送心跳包
+                } catch (error) {
+                    this.log('Heartbeat failed:', error);
+                    this.handleDisconnection();
+                }
+            }
+        }, 30000); // 每30秒发送一次心跳
+    }
+
+    handleDisconnection() {
+        this.isConnected = false;
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+        }
+        this.reconnect();
+    }
+
+    // 添加重连机制
+    async reconnect(maxAttempts = 3) {
+        let attempts = 0;
+        while (attempts < maxAttempts && !this.isConnected) {
+            try {
+                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempts))); // 指数退避
+                // 重新建立连接的逻辑
+                this.isConnected = true;
+                this.setupHeartbeat();
+                break;
+            } catch (error) {
+                this.log(`Reconnection attempt ${attempts + 1} failed:`, error);
+                attempts++;
+            }
+        }
     }
 
     handleMessage(event) {
@@ -135,12 +200,42 @@ class WebSocketManager {
         }
     }
 
-    handleStreamPull(controller) {
+    async handleStreamPull(controller) {
+        const BATCH_SIZE = 64 * 1024; // 64KB batch size
+        
         if (controller.desiredSize > 0) {
             this.backpressure = false;
+            
+            // 批量处理队列中的消息
             while (this.messageQueue.length > 0 && !this.backpressure) {
-                const data = this.messageQueue.shift();
-                controller.enqueue(data);
+                let batchSize = 0;
+                const batch = [];
+                
+                while (this.messageQueue.length > 0 && batchSize < BATCH_SIZE) {
+                    const data = this.messageQueue[0];
+                    if (batchSize + data.byteLength > BATCH_SIZE) break;
+                    
+                    batch.push(this.messageQueue.shift());
+                    batchSize += data.byteLength;
+                }
+                
+                if (batch.length > 0) {
+                    try {
+                        for (const data of batch) {
+                            controller.enqueue(data);
+                        }
+                    } catch (error) {
+                        this.log('Error processing batch:', error);
+                        this.backpressure = true;
+                        break;
+                    }
+                }
+                
+                // 检查流控制
+                if (controller.desiredSize <= 0) {
+                    this.backpressure = true;
+                    break;
+                }
             }
         }
     }
@@ -154,25 +249,45 @@ class WebSocketManager {
     }
 
     handleStreamStart(controller, earlyDataHeader) {
-        this.webSocket.addEventListener('message', (event) => {
-            if (this.readableStreamCancel) return;
-            if (!this.backpressure) {
-                controller.enqueue(event.data);
-            } else {
-                this.log('Backpressure, message discarded');
-            }
-        });
+        // 添加错误重试机制
+        const maxRetries = 3;
+        let retryCount = 0;
 
-        this.webSocket.addEventListener('close', () => {
-            utils.ws.safeClose(this.webSocket);
-            if (!this.readableStreamCancel) {
-                controller.close();
-            }
-        });
-        this.webSocket.addEventListener('error', (err) => {
-            this.log('WebSocket server error');
-            controller.error(err);
-        });
+        const setupEventListeners = () => {
+            this.webSocket.addEventListener('message', (event) => {
+                if (this.readableStreamCancel) return;
+                if (!this.backpressure) {
+                    controller.enqueue(event.data);
+                } else {
+                    this.messageQueue.push(event.data);
+                    this.log('Message queued due to backpressure');
+                }
+            });
+
+            this.webSocket.addEventListener('close', () => {
+                this.log('WebSocket connection closed');
+                this.handleDisconnection();
+                if (!this.readableStreamCancel) {
+                    controller.close();
+                }
+            });
+
+            this.webSocket.addEventListener('error', async (err) => {
+                this.log('WebSocket error:', err);
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    this.log(`Retrying connection (${retryCount}/${maxRetries})`);
+                    await this.reconnect();
+                    setupEventListeners();
+                } else {
+                    controller.error(err);
+                }
+            });
+        };
+
+        setupEventListeners();
+
+        // 处理早期数据
         const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
         if (error) {
             controller.error(error);
