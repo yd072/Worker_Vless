@@ -143,7 +143,7 @@ class WebSocketManager {
         this.log = log;
         this.readableStreamCancel = false;
         this.backpressure = false;
-        this.messageQueue = [];
+        this.messageQueue = []; // 保持原有的消息队列
         this.isConnected = true; // 添加连接状态标记
         this.pingInterval = null; // 添加心跳检测间隔
         this.setupHeartbeat(); // 初始化心跳检测
@@ -177,7 +177,6 @@ class WebSocketManager {
         while (attempts < maxAttempts && !this.isConnected) {
             try {
                 await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempts))); // 指数退避
-                // 重新建立连接的逻辑
                 this.isConnected = true;
                 this.setupHeartbeat();
                 break;
@@ -194,58 +193,21 @@ class WebSocketManager {
         if (!this.backpressure) {
             this.controller.enqueue(event.data);
         } else {
-            // 当出现背压时,将消息加入队列
             this.messageQueue.push(event.data);
             this.log('消息已加入队列');
         }
     }
 
-    async handleStreamPull(controller) {
-        const BATCH_SIZE = 64 * 1024; // 64KB batch size
-        
+    // 保持原有的handleStreamPull实现
+    handleStreamPull(controller) {
         if (controller.desiredSize > 0) {
             this.backpressure = false;
-            
-            // 批量处理队列中的消息
+            // 处理队列中的消息
             while (this.messageQueue.length > 0 && !this.backpressure) {
-                let batchSize = 0;
-                const batch = [];
-                
-                while (this.messageQueue.length > 0 && batchSize < BATCH_SIZE) {
-                    const data = this.messageQueue[0];
-                    if (batchSize + data.byteLength > BATCH_SIZE) break;
-                    
-                    batch.push(this.messageQueue.shift());
-                    batchSize += data.byteLength;
-                }
-                
-                if (batch.length > 0) {
-                    try {
-                        for (const data of batch) {
-                            controller.enqueue(data);
-                        }
-                    } catch (error) {
-                        this.log('Error processing batch:', error);
-                        this.backpressure = true;
-                        break;
-                    }
-                }
-                
-                // 检查流控制
-                if (controller.desiredSize <= 0) {
-                    this.backpressure = true;
-                    break;
-                }
+                const data = this.messageQueue.shift();
+                controller.enqueue(data);
             }
         }
-    }
-
-    makeReadableStream(earlyDataHeader) {
-        return new ReadableStream({
-            start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
-            pull: (controller) => this.handleStreamPull(controller),
-            cancel: (reason) => this.handleStreamCancel(reason)
-        });
     }
 
     handleStreamStart(controller, earlyDataHeader) {
@@ -260,7 +222,7 @@ class WebSocketManager {
                     controller.enqueue(event.data);
                 } else {
                     this.messageQueue.push(event.data);
-                    this.log('Message queued due to backpressure');
+                    this.log('Message queued');
                 }
             });
 
@@ -287,13 +249,20 @@ class WebSocketManager {
 
         setupEventListeners();
 
-        // 处理早期数据
         const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
         if (error) {
             controller.error(error);
         } else if (earlyData) {
             controller.enqueue(earlyData);
         }
+    }
+
+    makeReadableStream(earlyDataHeader) {
+        return new ReadableStream({
+            start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
+            pull: (controller) => this.handleStreamPull(controller),
+            cancel: (reason) => this.handleStreamCancel(reason)
+        });
     }
 
     handleStreamCancel(reason) {
