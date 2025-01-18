@@ -45,15 +45,12 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
-// 添加工具函数
 const utils = {
-	// UUID校验
 	isValidUUID(uuid) {
 		const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 		return uuidPattern.test(uuid);
 	},
 
-	// Base64处理
 	base64: {
 		encode: (str) => btoa(str),
 		decode: (str) => atob(str),
@@ -70,7 +67,6 @@ const utils = {
 		}
 	},
 
-	// WebSocket相关
 	ws: {
 		safeClose(socket) {
 			try {
@@ -85,7 +81,6 @@ const utils = {
 	}
 };
 
-// 统一的错误处理函数
 async function handleError(err, type = 'general') {
     console.error(`[${type}] Error:`, err);
     
@@ -97,7 +92,6 @@ async function handleError(err, type = 'general') {
         body: err.toString()
     };
 
-    // 根据错误类型返回不同的错误信息
     switch(type) {
         case 'auth':
             errorResponse.status = 401;
@@ -112,7 +106,6 @@ async function handleError(err, type = 'general') {
             errorResponse.body = '网络连接错误';
             break;
         default:
-            // 使用默认的500错误
     }
 
     return new Response(errorResponse.body, {
@@ -121,7 +114,6 @@ async function handleError(err, type = 'general') {
     });
 }
 
-// WebSocket连接管理类
 class WebSocketManager {
     constructor(webSocket, log) {
         this.webSocket = webSocket;
@@ -131,7 +123,6 @@ class WebSocketManager {
         this.messageQueue = []; // 添加消息队列
     }
 
-    // 优化消息处理
     handleMessage(event) {
         if (this.readableStreamCancel) return;
         
@@ -144,11 +135,9 @@ class WebSocketManager {
         }
     }
 
-    // 优化流控制
     handleStreamPull(controller) {
         if (controller.desiredSize > 0) {
             this.backpressure = false;
-            // 处理队列中的消息
             while (this.messageQueue.length > 0 && !this.backpressure) {
                 const data = this.messageQueue.shift();
                 controller.enqueue(data);
@@ -165,7 +154,6 @@ class WebSocketManager {
     }
 
     handleStreamStart(controller, earlyDataHeader) {
-        // 处理消息事件
         this.webSocket.addEventListener('message', (event) => {
             if (this.readableStreamCancel) return;
             if (!this.backpressure) {
@@ -175,21 +163,16 @@ class WebSocketManager {
             }
         });
 
-        // 处理关闭事件
         this.webSocket.addEventListener('close', () => {
             utils.ws.safeClose(this.webSocket);
             if (!this.readableStreamCancel) {
                 controller.close();
             }
         });
-
-        // 处理错误事件
         this.webSocket.addEventListener('error', (err) => {
             this.log('WebSocket server error');
             controller.error(err);
         });
-
-        // 处理早期数据
         const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
         if (error) {
             controller.error(error);
@@ -205,8 +188,6 @@ class WebSocketManager {
         utils.ws.safeClose(this.webSocket);
     }
 }
-
-// 配置管理类
 class ConfigManager {
     constructor(env) {
         this.env = env;
@@ -1583,7 +1564,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	return btoa(base64Response);
 }
 
-// 优化 整理 函数
 async function 整理(内容) {
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
