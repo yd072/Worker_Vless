@@ -92,8 +92,7 @@ async function handleError(err, type = 'general') {
     const errorResponse = {
         status: 500,
         headers: { 
-            "Content-Type": "text/plain;charset=utf-8",
-            "Cache-Control": "no-store" // 添加缓存控制
+            "Content-Type": "text/plain;charset=utf-8"
         },
         body: err.toString()
     };
@@ -209,20 +208,11 @@ class WebSocketManager {
 
 // 配置管理类
 class ConfigManager {
-    /**
-     * 配置管理器构造函数
-     * @param {Object} env - 环境变量对象
-     */
     constructor(env) {
         this.env = env;
         this.config = this.initConfig();
-        this.cache = new Map(); // 配置缓存，提高访问性能
     }
 
-    /**
-     * 初始化配置
-     * @returns {Object} 配置对象
-     */
     initConfig() {
         return {
             uuid: this.env.UUID || this.env.uuid || this.env.PASSWORD || this.env.pswd || '',
@@ -238,21 +228,36 @@ class ConfigManager {
         return str.split(',').map(item => item.trim());
     }
 
-    // 获取配置时先检查缓存
     get(key) {
-        if (this.cache.has(key)) {
-            return this.cache.get(key);
-        }
-        const value = this.config[key];
-        this.cache.set(key, value);
-        return value;
+        return this.config[key];
     }
 
-    // 设置配置时更新缓存
     set(key, value) {
         this.config[key] = value;
-        this.cache.set(key, value);
     }
+}
+// 添加连接池
+class ConnectionPool {
+	constructor(maxSize = 100) {
+		this.pool = new Map();
+		this.maxSize = maxSize;
+	}
+
+	async getConnection(key) {
+		if (this.pool.has(key)) {
+			return this.pool.get(key);
+		}
+		
+		const conn = await this.createConnection(key);
+		if (this.pool.size >= this.maxSize) {
+			const oldestKey = this.pool.keys().next().value;
+			this.pool.delete(oldestKey);
+		}
+		this.pool.set(key, conn);
+		return conn;
+	}
+
+	// ... 其他连接池方法
 }
 
 export default {
