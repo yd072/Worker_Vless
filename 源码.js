@@ -236,29 +236,6 @@ class ConfigManager {
         this.config[key] = value;
     }
 }
-// 添加连接池
-class ConnectionPool {
-	constructor(maxSize = 100) {
-		this.pool = new Map();
-		this.maxSize = maxSize;
-	}
-
-	async getConnection(key) {
-		if (this.pool.has(key)) {
-			return this.pool.get(key);
-		}
-		
-		const conn = await this.createConnection(key);
-		if (this.pool.size >= this.maxSize) {
-			const oldestKey = this.pool.keys().next().value;
-			this.pool.delete(oldestKey);
-		}
-		this.pool.set(key, conn);
-		return conn;
-	}
-
-	// ... 其他连接池方法
-}
 
 export default {
 	async fetch(request, env, ctx) {
