@@ -120,31 +120,7 @@ class WebSocketManager {
         this.log = log;
         this.readableStreamCancel = false;
         this.backpressure = false;
-        this.messageQueue = [];
-        // 添加心跳检测
-        this.heartbeatInterval = 30000; // 30秒
-        this.startHeartbeat();
-        this.maxQueueSize = 100; // 限制消息队列大小
-    }
-
-    // 添加心跳检测方法
-    startHeartbeat() {
-        this.heartbeatTimer = setInterval(() => {
-            if (this.webSocket.readyState === 1) { // WebSocket.OPEN
-                try {
-                    this.webSocket.send('ping');
-                } catch (error) {
-                    this.log('Heartbeat error:', error);
-                    this.stopHeartbeat();
-                }
-            }
-        }, this.heartbeatInterval);
-    }
-
-    stopHeartbeat() {
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-        }
+        this.messageQueue = []; // 添加消息队列
     }
 
     handleMessage(event) {
@@ -153,13 +129,9 @@ class WebSocketManager {
         if (!this.backpressure) {
             this.controller.enqueue(event.data);
         } else {
-            // 限制队列大小,防止内存泄漏
-            if (this.messageQueue.length < this.maxQueueSize) {
-                this.messageQueue.push(event.data);
-                this.log('消息已加入队列');
-            } else {
-                this.log('队列已满,丢弃消息');
-            }
+            // 当出现背压时,将消息加入队列
+            this.messageQueue.push(event.data);
+            this.log('消息已加入队列');
         }
     }
 
@@ -213,7 +185,6 @@ class WebSocketManager {
         if (this.readableStreamCancel) return;
         this.log(`Readable stream canceled, reason: ${reason}`);
         this.readableStreamCancel = true;
-        this.stopHeartbeat();
         utils.ws.safeClose(this.webSocket);
     }
 }
@@ -592,55 +563,63 @@ async function getOrCreateConnection(hostname, port) {
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    // 添加连接超时处理
-    const CONNECT_TIMEOUT = 5000; // 5秒超时
-    
-    async function connectWithTimeout(address, port, socks = false) {
-        return Promise.race([
-            connectAndWrite(address, port, socks),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Connection timeout')), CONNECT_TIMEOUT)
-            )
-        ]);
+    async function useSocks5Pattern(address) {
+        if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
+        return go2Socks5s.some(pattern => {
+            let regexPattern = pattern.replace(/\*/g, '.*');
+            let regex = new RegExp(`^${regexPattern}$`, 'i');
+            return regex.test(address);
+        });
     }
 
-    // 添加错误重试机制
-    const MAX_RETRIES = 3;
-    let retryCount = 0;
-    
-    async function retryWithBackoff() {
-        while (retryCount < MAX_RETRIES) {
-            try {
-                if (enableSocks) {
-                    tcpSocket = await connectWithTimeout(addressRemote, portRemote, true);
+    async function connectAndWrite(address, port, socks = false) {
+        log(`Connecting to ${address}:${port}`);
+        const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
+            : connect({ hostname: address, port: port });
+        remoteSocket.value = tcpSocket;
+        const writer = tcpSocket.writable.getWriter();
+        await writer.write(rawClientData);
+        writer.releaseLock();
+        return tcpSocket;
+    }
+
+    async function retry() {
+        try {
+            if (enableSocks) {
+                tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+            } else {
+                if (!proxyIP || proxyIP === '') {
+                    proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
                 } else {
-                    if (!proxyIP || proxyIP === '') {
-                        proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+                    const proxyParts = proxyIP.split(':');
+                    if (proxyIP.includes(']:')) {
+                        [proxyIP, portRemote] = proxyIP.split(']:');
+                    } else if (proxyParts.length === 2) {
+                        [proxyIP, portRemote] = proxyParts;
                     }
-                    tcpSocket = await connectWithTimeout(proxyIP || addressRemote, portRemote);
+                    if (proxyIP.includes('.tp')) {
+                        portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+                    }
                 }
-                return tcpSocket;
-            } catch (error) {
-                retryCount++;
-                if (retryCount === MAX_RETRIES) throw error;
-                // 指数退避重试
-                await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+                tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
             }
+            tcpSocket.closed.catch(error => {
+                console.log('Retry tcpSocket closed error', error);
+            }).finally(() => {
+                safeCloseWebSocket(webSocket);
+            });
+            remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+        } catch (error) {
+            log('Retry error:', error);
         }
     }
 
-    try {
-        const tcpSocket = await retryWithBackoff();
-        tcpSocket.closed.catch(error => {
-            console.log('TCP socket closed error', error);
-        }).finally(() => {
-            safeCloseWebSocket(webSocket);
-        });
-        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-    } catch (error) {
-        log('All retries failed:', error);
-        safeCloseWebSocket(webSocket);
+    let shouldUseSocks = false;
+    if (go2Socks5s.length > 0 && enableSocks) {
+        shouldUseSocks = await useSocks5Pattern(addressRemote);
     }
+    let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
+    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
 function process维列斯Header(维列斯Buffer, userID) {
