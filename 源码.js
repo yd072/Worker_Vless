@@ -120,7 +120,7 @@ class WebSocketManager {
         this.log = log;
         this.readableStreamCancel = false;
         this.backpressure = false;
-        this.messageQueue = []; // 添加消息队列
+        this.messageQueue = []; // 添加消息队列来处理背压
     }
 
     handleMessage(event) {
@@ -138,6 +138,7 @@ class WebSocketManager {
     handleStreamPull(controller) {
         if (controller.desiredSize > 0) {
             this.backpressure = false;
+            // 处理队列中的消息
             while (this.messageQueue.length > 0 && !this.backpressure) {
                 const data = this.messageQueue.shift();
                 controller.enqueue(data);
