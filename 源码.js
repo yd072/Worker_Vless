@@ -494,7 +494,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     
     try {
         // 使用更快的 DNS 服务器组合
-        const dnsServers = ['8.8.4.4', '8.8.8.8', '1.1.1.1'];
+        const dnsServers = ['8.8.4.4'];  // '8.8.8.8', '1.1.1.1'
         const dnsPort = 53;
         
         let 维列斯Header = 维列斯ResponseHeader;
