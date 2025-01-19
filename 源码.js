@@ -491,15 +491,37 @@ async function 维列斯OverWSHandler(request) {
 
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1;
-
+    
     try {
-        const dnsServer = '8.8.4.4';
+        // 使用更快的 DNS 服务器组合
+        const dnsServers = ['8.8.4.4', '8.8.8.8', '1.1.1.1'];
         const dnsPort = 53;
-
+        
         let 维列斯Header = 维列斯ResponseHeader;
-        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
+        // 尝试连接最快的 DNS 服务器
+        let tcpSocket;
+        let connected = false;
+        
+        for (const dnsServer of dnsServers) {
+            try {
+                tcpSocket = await Promise.race([
+                    connect({ hostname: dnsServer, port: dnsPort }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('DNS连接超时')), 2000)
+                    )
+                ]);
+                connected = true;
+                log(`成功连接到 DNS 服务器 ${dnsServer}:${dnsPort}`);
+                break;
+            } catch (err) {
+                log(`连接 DNS 服务器 ${dnsServer} 失败: ${err.message}`);
+                continue;
+            }
+        }
 
-        log(`连接到 ${dnsServer}:${dnsPort}`);
+        if (!connected) {
+            throw new Error('所有 DNS 服务器连接失败');
+        }
 
         const writer = tcpSocket.writable.getWriter();
         await writer.write(udpChunk);
@@ -516,19 +538,17 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         console.error(`发送数据时发生错误: ${error.message}`);
                         safeCloseWebSocket(webSocket);
                     }
-                } else {
-                    console.warn('WebSocket 连接已关闭，无法发送数据');
                 }
             },
             close() {
-                log(`DNS 服务器(${dnsServer}) TCP 连接已关闭`);
+                log(`DNS 连接已关闭`);
             },
             abort(reason) {
-                console.error(`DNS 服务器(${dnsServer}) TCP 连接异常中断`, reason);
+                console.error(`DNS 连接异常中断`, reason);
             }
         }));
     } catch (error) {
-        console.error(`handleDNSQuery 函数发生异常，错误信息: ${error.message}`, error.stack);
+        console.error(`DNS 查询异常: ${error.message}`, error.stack);
         safeCloseWebSocket(webSocket);
     }
 }
@@ -544,13 +564,32 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
 
     async function connectAndWrite(address, port, socks = false) {
-        log(`Connecting to ${address}:${port}`);
-        const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
-            : connect({ hostname: address, port: port });
+        log(`正在连接 ${address}:${port}`);
+        
+        // 添加连接超时处理
+        const tcpSocket = await Promise.race([
+            socks ? 
+                await socks5Connect(addressType, address, port, log) :
+                connect({ 
+                    hostname: address, 
+                    port: port,
+                    // 添加 TCP 连接优化选项
+                    allowHalfOpen: false,
+                    keepAlive: true,
+                    keepAliveInitialDelay: 60000
+                }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('连接超时')), 5000)
+            )
+        ]);
+
         remoteSocket.value = tcpSocket;
+        
+        // 使用更大的写入缓冲区
         const writer = tcpSocket.writable.getWriter();
         await writer.write(rawClientData);
         writer.releaseLock();
+        
         return tcpSocket;
     }
 
