@@ -489,6 +489,13 @@ async function 维列斯OverWSHandler(request) {
     });
 }
 
+function mergeData(header, chunk) {
+    const merged = new Uint8Array(header.length + chunk.length);
+    merged.set(header);
+    merged.set(chunk, header.length);
+    return merged;
+}
+
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1;
     
