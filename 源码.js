@@ -500,60 +500,51 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     const WS_READY_STATE_OPEN = 1;
     
     try {
-        // 使用更快的 DNS 服务器组合
-        const dnsServers = ['8.8.4.4'];  // '8.8.8.8', '1.1.1.1'
+        // 只使用一个快速的DNS服务器
+        const dnsServer = '8.8.4.4';  // Google DNS
         const dnsPort = 53;
         
         let 维列斯Header = 维列斯ResponseHeader;
-        // 尝试连接最快的 DNS 服务器
-        let tcpSocket;
-        let connected = false;
         
-        for (const dnsServer of dnsServers) {
-            try {
-                tcpSocket = await Promise.race([
-                    connect({ hostname: dnsServer, port: dnsPort }),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('DNS连接超时')), 2000)
-                    )
-                ]);
-                connected = true;
-                log(`成功连接到 DNS 服务器 ${dnsServer}:${dnsPort}`);
-                break;
-            } catch (err) {
-                log(`连接 DNS 服务器 ${dnsServer} 失败: ${err.message}`);
-                continue;
-            }
-        }
+        try {
+            const tcpSocket = await Promise.race([
+                connect({ hostname: dnsServer, port: dnsPort }),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('DNS连接超时')), 2000)
+                )
+            ]);
+            
+            log(`成功连接到 DNS 服务器 ${dnsServer}:${dnsPort}`);
 
-        if (!connected) {
-            throw new Error('所有 DNS 服务器连接失败');
-        }
+            const writer = tcpSocket.writable.getWriter();
+            await writer.write(udpChunk);
+            writer.releaseLock();
 
-        const writer = tcpSocket.writable.getWriter();
-        await writer.write(udpChunk);
-        writer.releaseLock();
-
-        await tcpSocket.readable.pipeTo(new WritableStream({
-            async write(chunk) {
-                if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                    try {
-                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
-                        webSocket.send(combinedData);
-                        if (维列斯Header) 维列斯Header = null;
-                    } catch (error) {
-                        console.error(`发送数据时发生错误: ${error.message}`);
-                        safeCloseWebSocket(webSocket);
+            await tcpSocket.readable.pipeTo(new WritableStream({
+                async write(chunk) {
+                    if (webSocket.readyState === WS_READY_STATE_OPEN) {
+                        try {
+                            const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
+                            webSocket.send(combinedData);
+                            if (维列斯Header) 维列斯Header = null;
+                        } catch (error) {
+                            console.error(`发送数据时发生错误: ${error.message}`);
+                            safeCloseWebSocket(webSocket);
+                        }
                     }
+                },
+                close() {
+                    log(`DNS 连接已关闭`);
+                },
+                abort(reason) {
+                    console.error(`DNS 连接异常中断`, reason);
                 }
-            },
-            close() {
-                log(`DNS 连接已关闭`);
-            },
-            abort(reason) {
-                console.error(`DNS 连接异常中断`, reason);
-            }
-        }));
+            }));
+
+        } catch (error) {
+            throw new Error(`DNS 服务器连接失败: ${error.message}`);
+        }
+
     } catch (error) {
         console.error(`DNS 查询异常: ${error.message}`, error.stack);
         safeCloseWebSocket(webSocket);
