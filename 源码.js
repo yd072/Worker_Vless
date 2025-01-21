@@ -1791,15 +1791,6 @@ async function handleGetRequest(env, txt) {
 				<br>
 				<strong>3.</strong> ADDAPI 如果是 CloudflareSpeedTest 的 csv 结果文件。例如：<br>
 				&nbsp;&nbsp;https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/CloudflareSpeedTest.csv<br>
-				<br>
-				&nbsp;&nbsp;- 如需指定2053端口可将"?port=2053"参数添加到链接末尾。例如：<br>
-				&nbsp;&nbsp;https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/CloudflareSpeedTest.csv?port=2053<br>
-				<br>
-				&nbsp;&nbsp;- 如需指定节点备注可将"?id=CF优选"参数添加到链接末尾。例如：<br>
-				&nbsp;&nbsp;https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/CloudflareSpeedTest.csv?id=CF优选<br>
-				<br>
-				&nbsp;&nbsp;- 如需指定多个参数则需要使用'&'做间隔。例如：<br>
-				&nbsp;&nbsp;https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/CloudflareSpeedTest.csv?id=CF优选&port=2053
 			</div>
 			<div class="editor-container">
 				${hasKV ? `
