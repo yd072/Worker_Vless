@@ -1,10 +1,7 @@
 name: Obfuscate and Commit
 
 on:
-    #push:
-    #    paths:
-    #        - '源码.js'
-    workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   obfuscate:
@@ -23,7 +20,12 @@ jobs:
           node-version: "16"
 
       - name: Install dependencies
-        run: npm install -g javascript-obfuscator
+        run: |
+          npm install -g javascript-obfuscator
+
+      - name: Check if 节点订阅.js exists
+        run: |
+          ls -alh 源码.js
 
       - name: Obfuscate code
         run: |
@@ -41,11 +43,15 @@ jobs:
           --transform-object-keys true \
           --unicode-escape-sequence true
 
+      - name: Check if _worker.js was generated
+        run: |
+          ls -alh _worker.js
+
       - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add _worker.js
+          git add _worker.js || echo "No changes to commit"
           git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
 
       - name: Push changes
