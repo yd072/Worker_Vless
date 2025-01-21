@@ -23,7 +23,7 @@ jobs:
         run: |
           npm install -g javascript-obfuscator
 
-      - name: Check if 节点订阅.js exists
+      - name: Check if 源码.js exists
         run: |
           ls -alh 源码.js
 
