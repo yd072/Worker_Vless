@@ -20,12 +20,10 @@ jobs:
           node-version: "16"
 
       - name: Install dependencies
-        run: |
-          npm install -g javascript-obfuscator
+        run: npm install -g javascript-obfuscator
 
       - name: Check if 源码.js exists
-        run: |
-          ls -alh 源码.js
+        run: ls -alh 源码.js || exit 1
 
       - name: Obfuscate code
         run: |
