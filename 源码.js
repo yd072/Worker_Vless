@@ -407,8 +407,10 @@ async function 维列斯OverWSHandler(request) {
     let address = '';
     let portWithRandomLog = '';
     const log = (info, event = '') => {
+	if (process.env.NODE_ENV !== 'production') {    
         const timestamp = new Date().toISOString();
         console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
+	}	
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -575,7 +577,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                     keepAliveInitialDelay: 60000
                 }),
             new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('连接超时')), 5000)
+                setTimeout(() => reject(new Error('连接超时')), 3000)
             )
         ]);
 
