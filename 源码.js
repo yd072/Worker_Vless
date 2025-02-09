@@ -558,10 +558,6 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    // 添加重试配置
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY = 1000; // 1秒
-    
     async function useSocks5Pattern(address) {
         if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
         return go2Socks5s.some(pattern => {
@@ -571,50 +567,38 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         });
     }
 
-    async function connectAndWrite(address, port, socks = false, retryCount = 0) {
-        log(`Connecting to ${address}:${port} (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+    async function connectAndWrite(address, port, socks = false) {
+        log(`正在连接 ${address}:${port}`);
         
-        try {
-            const tcpSocket = await Promise.race([
-                socks ? 
-                    await socks5Connect(addressType, address, port, log) :
-                    connect({ 
-                        hostname: address, 
-                        port: port,
-                        allowHalfOpen: false,
-                        keepAlive: true,
-                        keepAliveInitialDelay: 60000,
-                        onError: (error) => {
-                            log(`TCP connection error: ${error.message}`);
-                            throw error;
-                        }
-                    }),
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Connection timeout')), 3000)
-                )
-            ]);
+        // 添加连接超时处理
+        const tcpSocket = await Promise.race([
+            socks ? 
+                await socks5Connect(addressType, address, port, log) :
+                connect({ 
+                    hostname: address, 
+                    port: port,
+                    // 添加 TCP 连接优化选项
+                    allowHalfOpen: false,
+                    keepAlive: true,
+                    keepAliveInitialDelay: 60000
+                }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('连接超时')), 3000)
+            )
+        ]);
 
-            remoteSocket.value = tcpSocket;
-            
-            // 使用更大的写入缓冲区
-            const writer = tcpSocket.writable.getWriter();
-            await writer.write(rawClientData);
-            writer.releaseLock();
-            
-            return tcpSocket;
-        } catch (error) {
-            if (retryCount < MAX_RETRIES - 1) {
-                log(`Connection failed: ${error.message}, retrying in ${RETRY_DELAY/1000}s...`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                return connectAndWrite(address, port, socks, retryCount + 1);
-            }
-            throw error;
-        }
+        remoteSocket.value = tcpSocket;
+        
+        // 使用更大的写入缓冲区
+        const writer = tcpSocket.writable.getWriter();
+        await writer.write(rawClientData);
+        writer.releaseLock();
+        
+        return tcpSocket;
     }
 
     async function retry() {
         try {
-            let tcpSocket;
             if (enableSocks) {
                 tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
             } else {
@@ -633,21 +617,14 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 }
                 tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
             }
-
-            // 改进错误处理
-            tcpSocket.closed
-                .catch(error => {
-                    log('TCP socket closed with error', error);
-                })
-                .finally(() => {
-                    log('TCP connection closed, cleaning up');
-                    safeCloseWebSocket(webSocket);
-                });
-
+            tcpSocket.closed.catch(error => {
+                console.log('Retry tcpSocket closed error', error);
+            }).finally(() => {
+                safeCloseWebSocket(webSocket);
+            });
             remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
         } catch (error) {
-            log('重试连接失败:', error);
-            safeCloseWebSocket(webSocket);
+            log('Retry error:', error);
         }
     }
 
@@ -655,14 +632,8 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     if (go2Socks5s.length > 0 && enableSocks) {
         shouldUseSocks = await useSocks5Pattern(addressRemote);
     }
-
-    try {
-        let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
-        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
-    } catch (error) {
-        log(`初始连接失败: ${error.message}, 尝试重试...`);
-        retry();
-    }
+    let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
+    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
 function process维列斯Header(维列斯Buffer, userID) {
@@ -740,57 +711,40 @@ function process维列斯Header(维列斯Buffer, userID) {
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
     let header = responseHeader;
-    let isSocketClosed = false;
 
-    try {
-        await remoteSocket.readable
-            .pipeTo(
-                new WritableStream({
-                    async write(chunk, controller) {
-                        if (isSocketClosed) {
-                            controller.error('Socket closed');
-                            return;
-                        }
+    await remoteSocket.readable
+        .pipeTo(
+            new WritableStream({
+                async write(chunk, controller) {
+                    hasIncomingData = true;
 
-                        hasIncomingData = true;
+                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                        controller.error('WebSocket not open');
+                    }
 
-                        if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                            controller.error('WebSocket not open');
-                            return;
-                        }
+                    if (header) {
+                        webSocket.send(await new Blob([header, chunk]).arrayBuffer());
+                        header = null;
+                    } else {
+                        webSocket.send(chunk);
+                    }
+                },
+                close() {
+                    log(`Remote connection closed, data received: ${hasIncomingData}`);
+                },
+                abort(reason) {
+                    console.error(`Remote connection aborted`);
+                },
+            })
+        )
+        .catch((error) => {
+            console.error(`remoteSocketToWS exception`);
+            safeCloseWebSocket(webSocket);
+        });
 
-                        try {
-                            if (header) {
-                                webSocket.send(await new Blob([header, chunk]).arrayBuffer());
-                                header = null;
-                            } else {
-                                webSocket.send(chunk);
-                            }
-                        } catch (error) {
-                            log(`Send data error: ${error.message}`);
-                            controller.error(error);
-                        }
-                    },
-                    close() {
-                        isSocketClosed = true;
-                        log(`Remote connection closed, data received: ${hasIncomingData}`);
-                    },
-                    abort(reason) {
-                        isSocketClosed = true;
-                        log(`Remote connection aborted: ${reason}`);
-                    },
-                })
-            )
-            .catch((error) => {
-                log(`Data transmission error: ${error.message}`);
-                if (!hasIncomingData && retry) {
-                    log(`No data received, retrying connection`);
-                    retry();
-                }
-            });
-    } catch (error) {
-        log(`remoteSocketToWS exception: ${error.message}`);
-        safeCloseWebSocket(webSocket);
+    if (!hasIncomingData && retry) {
+        log(`Retrying connection`);
+        retry();
     }
 }
 
