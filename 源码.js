@@ -496,6 +496,19 @@ function mergeData(header, chunk) {
     return merged;
 }
 
+// 优化 fetch 请求，添加超时处理
+async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 3000 } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal  
+    });
+    clearTimeout(id);
+    return response;
+}
+
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1;
     
@@ -508,13 +521,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         
         // 使用Promise.race设置2秒超时
         const tcpSocket = await Promise.race([
-            connect({
-                hostname: dnsServer,
-                port: dnsPort
-            }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('DNS连接超时')), 2000)
-            )
+            connect({ hostname: dnsServer, port: dnsPort }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
         ]);
 
         log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
