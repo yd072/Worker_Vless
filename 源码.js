@@ -496,30 +496,34 @@ function mergeData(header, chunk) {
     return merged;
 }
 
-// 优化 fetch 请求，添加超时处理
+// 优化 fetchWithTimeout 函数，添加默认超时和错误处理
 async function fetchWithTimeout(resource, options = {}) {
     const { timeout = 3000 } = options;
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(resource, {
-        ...options,
-        signal: controller.signal  
-    });
-    clearTimeout(id);
-    return response;
+    try {
+        const response = await fetch(resource, {
+            ...options,
+            signal: controller.signal  
+        });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        console.error(`Fetch error: ${error.message}`);
+        throw error;
+    }
 }
 
+// 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1;
     
     try {
-        // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
         const dnsPort = 53;
         
         let 维列斯Header = 维列斯ResponseHeader;
         
-        // 使用Promise.race设置2秒超时
         const tcpSocket = await Promise.race([
             connect({ hostname: dnsServer, port: dnsPort }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
