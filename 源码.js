@@ -406,11 +406,9 @@ async function 维列斯OverWSHandler(request) {
 
     let address = '';
     let portWithRandomLog = '';
-    const log = (info, event = '') => {
-	if (process.env.NODE_ENV !== 'production') {    
+    const log = (info, event = '') => { 
         const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
-	}	
+        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);	
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
