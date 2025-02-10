@@ -145,10 +145,8 @@ class WebSocketManager {
 		} else if (earlyData) {
 			controller.enqueue(earlyData);
 		}
-
 		
-		this.webSocket.addEventListener('open', () => {
-			
+		this.webSocket.addEventListener('open', () => {			
 			this.webSocket.send(JSON.stringify({ 
 				alpn: ['h3', 'h2', 'http/1.1']   
 			}));
