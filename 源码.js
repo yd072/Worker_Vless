@@ -998,7 +998,6 @@ function 配置信息(UUID, 域名地址) {
 	let 传输层安全 = ['tls', true];
 	const SNI = 域名地址;
 	const 指纹 = 'randomized';
-	const ALPN = 'h3'; // 设置 ALPN 为 h3 
 
 	if (域名地址.includes('.workers.dev')) {
 		地址 = atob('dmlzYS5jbg==');
