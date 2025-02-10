@@ -150,7 +150,7 @@ class WebSocketManager {
 		this.webSocket.addEventListener('open', () => {
 			
 			this.webSocket.send(JSON.stringify({ 
-				alpn: ['h3', 'h2', 'http/1.1']  // 
+				alpn: ['h3', 'h2', 'http/1.1']   
 			}));
 		});
 	}
