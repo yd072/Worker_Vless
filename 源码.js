@@ -44,7 +44,6 @@ let path = '/?ed=2560';
 let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
-let alpn = ['h3', 'h2', 'http/1.1'];
 
 // 添加工具函数
 const utils = {
