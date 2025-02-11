@@ -145,12 +145,6 @@ class WebSocketManager {
 		} else if (earlyData) {
 			controller.enqueue(earlyData);
 		}
-		
-		this.webSocket.addEventListener('open', () => {			
-			this.webSocket.send(JSON.stringify({ 
-				alpn: ['h3', 'h2', 'http/1.1']   
-			}));
-		});
 	}
 
 	handleStreamPull(controller) {
@@ -408,20 +402,13 @@ async function 维列斯OverWSHandler(request) {
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
-    // 确保接受WebSocket连接
     webSocket.accept();
 
-    // 添加HTTP/2支持
-    const headers = new Headers(request.headers);
-    headers.set('Upgrade', 'websocket');
-    headers.set('Connection', 'Upgrade');
-
-    // 继续处理WebSocket连接
     let address = '';
     let portWithRandomLog = '';
-    const log = (info, event = '') => { 
+    const log = (info, event = '') => {
         const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);    
+        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -517,12 +504,7 @@ async function fetchWithTimeout(resource, options = {}) {
     try {
         const response = await fetch(resource, {
             ...options,
-            signal: controller.signal,
-            // 添加 h3 支持
-            headers: {
-                ...options.headers,
-                'alpn': 'h3'
-            }
+            signal: controller.signal  
         });
         clearTimeout(id);
         return response;
@@ -537,11 +519,13 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     const WS_READY_STATE_OPEN = 1;
     
     try {
+        // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
         const dnsPort = 53;
         
         let 维列斯Header = 维列斯ResponseHeader;
         
+        // 使用Promise.race设置2秒超时
         const tcpSocket = await Promise.race([
             connect({ hostname: dnsServer, port: dnsPort }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
@@ -590,9 +574,25 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
 
     async function connectAndWrite(address, port, socks = false) {
-        log(`Connecting to ${address}:${port}`);
-        const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
-            : connect({ hostname: address, port: port });
+        log(`正在连接 ${address}:${port}`);
+        
+        // 添加连接超时处理
+        const tcpSocket = await Promise.race([
+            socks ? 
+                await socks5Connect(addressType, address, port, log) :
+                connect({ 
+                    hostname: address, 
+                    port: port,
+                    // 添加 TCP 连接优化选项
+                    allowHalfOpen: false,
+                    keepAlive: true,
+                    keepAliveInitialDelay: 60000
+                }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('连接超时')), 3000)
+            )
+        ]);
+
         remoteSocket.value = tcpSocket;
         
         // 使用更大的写入缓冲区
@@ -977,38 +977,36 @@ async function 代理URL(代理网址, 目标网址) {
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
-    const 协议类型 = atob(啥啥啥_写的这是啥啊);
+	const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-    const 别名 = FileName;
-    let 地址 = 域名地址;
-    let 端口 = 443;
+	const 别名 = FileName;
+	let 地址 = 域名地址;
+	let 端口 = 443;
 
-    const 用户ID = UUID;
-    const 加密方式 = 'none';
+	const 用户ID = UUID;
+	const 加密方式 = 'none';
 
-    const 传输层协议 = 'ws';
-    const 伪装域名 = 域名地址;
-    const 路径 = path;
+	const 传输层协议 = 'ws';
+	const 伪装域名 = 域名地址;
+	const 路径 = path;
 
-    let 传输层安全 = ['tls', true];
-    const SNI = 域名地址;
-    const 指纹 = 'randomized';
-    // 修改 alpn 顺序,将 h3 放在最前面
-    const alpn = ['h3', 'h2', 'http/1.1'];
+	let 传输层安全 = ['tls', true];
+	const SNI = 域名地址;
+	const 指纹 = 'randomized';
 
-    if (域名地址.includes('.workers.dev')) {
-        地址 = atob('dmlzYS5jbg==');
-        端口 = 80;
-        传输层安全 = ['', false];
-    }
+	if (域名地址.includes('.workers.dev')) {
+		地址 = atob('dmlzYS5jbg==');
+		端口 = 80;
+		传输层安全 = ['', false];
+	}
 
-    const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079p${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&alpn=${alpn.join(',')}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
-    const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [${alpn.join(',')}], udp: false, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
-    return [威图瑞, 猫猫猫];
+	const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079` + 'p' + `${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
+	const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3], udp: false, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
+	return [威图瑞, 猫猫猫];
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
-const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
+const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 	const uniqueAddresses = new Set();
@@ -1802,7 +1800,7 @@ async function handleGetRequest(env, txt) {
 			<div class="editor-container">
 				${hasKV ? `
 				<textarea class="editor" 
-					placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCNyVCNCVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
+					placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
 					id="content">${content}</textarea>
 				<div class="save-container">
 					<button class="back-btn" onclick="goBack()">返回配置页</button>
