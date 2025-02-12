@@ -522,6 +522,47 @@ async function fetchWithTimeout(resource, options = {}) {
     }
 }
 
+// 使用 async/await 处理异步操作
+async function fetchData(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+    }
+}
+
+// 并行处理多个异步请求
+async function fetchMultipleData(urls) {
+    try {
+        const promises = urls.map(url => fetchData(url));
+        const results = await Promise.all(promises);
+        return results;
+    } catch (error) {
+        console.error('Error fetching multiple data:', error);
+    }
+}
+
+// 使用流处理大数据
+function processLargeDataStream(dataStream) {
+    const reader = dataStream.getReader();
+    const decoder = new TextDecoder();
+    let result = '';
+
+    return reader.read().then(function processText({ done, value }) {
+        if (done) {
+            console.log('Stream complete');
+            return result;
+        }
+        result += decoder.decode(value, { stream: true });
+        return reader.read().then(processText);
+    });
+}
+
 // 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1;
@@ -1012,7 +1053,7 @@ function 配置信息(UUID, 域名地址) {
   
     const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}?encryption=${加密方式}&security=${传输层安全[0]}&sni=${SNI}&fp=${指纹}&alpn=${encodeURIComponent(协议.join(','))}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
     const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3,h2,http/1.1], udp: true, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
-	
+  
     return [威图瑞, 猫猫猫];
 }
 
