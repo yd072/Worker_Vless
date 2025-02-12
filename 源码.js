@@ -45,6 +45,9 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
+// 添加这个常量定义在文件开头
+const 啥啥啥_写的这是啥啊 = 'dmxlc3M='; // 这是 'vless' 的 base64 编码
+
 // 添加工具函数
 const utils = {
 	// UUID校验
@@ -984,7 +987,7 @@ async function 代理URL(代理网址, 目标网址) {
 }
 
 function 配置信息(UUID, 域名地址) {
-    const 协议类型 = 'vless';
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);  // 解码得到 'vless'
     const 别名 = FileName;
     let 地址 = 域名地址;
     let 端口 = 443;
@@ -998,7 +1001,7 @@ function 配置信息(UUID, 域名地址) {
     
     let 传输层安全 = ['tls', true];
     const SNI = 域名地址;
-    const 指纹 = 'random';  // 改为 'random' 而不是 'randomized'
+    const 指纹 = 'random';
     
     // 定义 ALPN，确保它是一个数组
     const alpn = ['h3', 'h2', 'http/1.1'];
