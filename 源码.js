@@ -45,6 +45,9 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
+// 修改全局变量定义
+let alpn = 'h3'; // 设置默认值包含多个协议
+
 // 添加工具函数
 const utils = {
 	// UUID校验
@@ -984,14 +987,14 @@ async function 代理URL(代理网址, 目标网址) {
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
-function 配置信息(UUID, 域名地址) {
+function 配置信息(用户ID, 域名地址) {
     const 协议类型 = atob(啥啥啥_写的这是啥啊);
   
     const 别名 = FileName;
     let 地址 = 域名地址;
     let 端口 = 443;
   
-    const 用户ID = UUID;
+    const 用户ID = 用户ID;
     const 加密方式 = 'none';
   
     const 传输层协议 = 'ws';
@@ -1520,7 +1523,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 节点备注 = '';
 			const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==') + 伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
 
