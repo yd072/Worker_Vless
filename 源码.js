@@ -45,9 +45,6 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
-// 添加这个常量定义在文件开头
-const 啥啥啥_写的这是啥啊 = 'dmxlc3M='; // 这是 'vless' 的 base64 编码
-
 // 添加工具函数
 const utils = {
 	// UUID校验
@@ -986,63 +983,37 @@ async function 代理URL(代理网址, 目标网址) {
     return 新响应;
 }
 
+const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
-    const 协议类型 = atob(啥啥啥_写的这是啥啊);  // 解码得到 'vless'
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);
+  
     const 别名 = FileName;
     let 地址 = 域名地址;
     let 端口 = 443;
-    
+  
     const 用户ID = UUID;
     const 加密方式 = 'none';
-    
+  
     const 传输层协议 = 'ws';
     const 伪装域名 = 域名地址;
     const 路径 = path;
-    
+  
     let 传输层安全 = ['tls', true];
     const SNI = 域名地址;
-    const 指纹 = 'random';
-    
-    // 定义 ALPN，确保它是一个数组
-    const alpn = ['h3', 'h2', 'http/1.1'];
-    
+    const 指纹 = 'randomized';
+    // 添加 ALPN 配置
+    const 协议 = ['h3,h2,http/1.1'];
+  
     if (域名地址.includes('.workers.dev')) {
         地址 = atob('dmlzYS5jbg==');
         端口 = 80;
         传输层安全 = ['', false];
     }
-    
-    // 构建 vless URL
-    const vlessURL = `${协议类型}://${用户ID}@${地址}:${端口}?` + 
-        `encryption=${加密方式}` +
-        `&security=${传输层安全[0]}` +
-        `&sni=${SNI}` +
-        `&fp=${指纹}` +
-        `&alpn=${encodeURIComponent(alpn.join(','))}` +
-        `&type=${传输层协议}` +
-        `&host=${伪装域名}` +
-        `&path=${encodeURIComponent(路径)}` +
-        `#${encodeURIComponent(别名)}`;
-    
-    // 构建 clash 配置
-    const clashConfig = [
-        `- name: ${FileName}`,
-        `  type: ${协议类型}`,
-        `  server: ${地址}`,
-        `  port: ${端口}`,
-        `  uuid: ${用户ID}`,
-        `  tls: ${传输层安全[1]}`,
-        `  servername: ${伪装域名}`,
-        `  network: ${传输层协议}`,
-        `  client-fingerprint: ${指纹}`,
-        `  alpn: ${JSON.stringify(alpn)}`,
-        `  ws-opts:`,
-        `    path: "${路径}"`,
-        `    headers:`,
-        `      Host: "${伪装域名}"`
-    ].join('\n');
-    
-    return [vlessURL, clashConfig];
+  
+    const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}?encryption=${加密方式}&security=${传输层安全[0]}&sni=${SNI}&fp=${指纹}&alpn=${encodeURIComponent(协议.join(','))}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
+    const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3,h2,http/1.1], udp: true, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
+  
+    return [威图瑞, 猫猫猫];
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
