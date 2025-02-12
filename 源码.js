@@ -984,7 +984,7 @@ async function 代理URL(代理网址, 目标网址) {
 }
 
 function 配置信息(UUID, 域名地址) {
-    const 协议类型 = 'vless';  // 直接使用明文，不用 atob 解码
+    const 协议类型 = 'vless';
   
     const 别名 = FileName;
     let 地址 = 域名地址;
@@ -1000,7 +1000,8 @@ function 配置信息(UUID, 域名地址) {
     let 传输层安全 = ['tls', true];
     const SNI = 域名地址;
     const 指纹 = 'randomized';
-    const 协议 = 'h3,h2,http/1.1';
+    // 使用数组形式，这样在 clash 配置中可以直接使用
+    const alpn = ['h3', 'h2', 'http/1.1'];
   
     if (域名地址.includes('.workers.dev')) {
         地址 = atob('dmlzYS5jbg==');
@@ -1008,8 +1009,13 @@ function 配置信息(UUID, 域名地址) {
         传输层安全 = ['', false];
     }
   
-    const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}?encryption=${加密方式}&security=${传输层安全[0]}&sni=${SNI}&fp=${指纹}&alpn=${协议}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
-    const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3,h2,http/1.1], udp: true, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {host: "${伪装域名}"}}}`;
+    // URL 中使用逗号分隔的字符串，并进行 URL 编码
+    const alpnStr = encodeURIComponent(alpn.join(','));
+    
+    const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}?encryption=${加密方式}&security=${传输层安全[0]}&sni=${SNI}&fp=${指纹}&alpn=${alpnStr}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
+    
+    // clash 配置中直接使用数组形式
+    const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: ${JSON.stringify(alpn)}, udp: true, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {host: "${伪装域名}"}}}`;
   
     return [威图瑞, 猫猫猫];
 }
