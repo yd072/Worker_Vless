@@ -1627,7 +1627,21 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 		}
 
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
-		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+			`encryption=none&` +
+			`security=tls&` +
+			`sni=${伪装域名}&` +
+			`fp=randomized&` +
+			`type=ws&` +
+			`host=${伪装域名}&` +
+			`path=${encodeURIComponent(最终路径)}&` +
+			`alpn=h3,h2,http/1.1&` +
+			`allowInsecure=false&` +
+			`tfo=true&` + // TCP Fast Open
+			`keepAlive=true&` +
+			`congestion_control=bbr&` + // BBR拥塞控制
+			`udp_relay=true` + // UDP转发
+			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
 	}).join('\n');
