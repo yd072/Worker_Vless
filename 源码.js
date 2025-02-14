@@ -70,24 +70,10 @@ const utils = {
 		}
 	},
 
-	// WebSocket相关
-	ws: {
-		safeClose(socket) {
-			try {
-				if (socket.readyState === WS_READY_STATE_OPEN || 
-					socket.readyState === WS_READY_STATE_CLOSING) {
-					socket.close();
-				}
-			} catch (error) {
-				console.error('safeCloseWebSocket error', error);
-			}
-		}
-	},
-
 	// 错误处理
 	error: {
 		handle(err, type = 'general') {
-	console.error(`[${type}] Error:`, err);
+			console.error(`[${type}] Error:`, err);
 			return new Response(err.toString(), {
 				status: type === 'auth' ? 401 : 500,
 				headers: { "Content-Type": "text/plain;charset=utf-8" }
@@ -562,8 +548,6 @@ function processLargeDataStream(dataStream) {
 
 // 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    const WS_READY_STATE_OPEN = 1;
-    
     try {
         // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
@@ -592,7 +576,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         if (维列斯Header) 维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
-                        utils.ws.safeClose(webSocket);
+                        safeCloseWebSocket(webSocket); // 使用 safeCloseWebSocket
                     }
                 }
             },
@@ -605,7 +589,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         }));
     } catch (error) {
         console.error(`DNS查询异常: ${error.message}`, error.stack);
-        utils.ws.safeClose(webSocket);
+        safeCloseWebSocket(webSocket); // 使用 safeCloseWebSocket
     }
 }
 
@@ -672,7 +656,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             tcpSocket.closed.catch(error => {
                 console.log('Retry tcpSocket closed error', error);
             }).finally(() => {
-                utils.ws.safeClose(webSocket);
+                safeCloseWebSocket(webSocket); // 使用 safeCloseWebSocket
             });
             remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
         } catch (error) {
@@ -791,18 +775,13 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         )
         .catch((error) => {
             console.error(`remoteSocketToWS exception`);
-            utils.ws.safeClose(webSocket);
+            safeCloseWebSocket(webSocket); // 使用 safeCloseWebSocket
         });
 
     if (!hasIncomingData && retry) {
         log(`Retrying connection`);
         retry();
     }
-}
-
-function isValidUUID(uuid) {
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return uuidPattern.test(uuid);
 }
 
 const WS_READY_STATE_OPEN = 1;
@@ -831,7 +810,7 @@ function unsafeStringify(arr, offset = 0) {
 
 function stringify(arr, offset = 0) {
     const uuid = unsafeStringify(arr, offset);
-    if (!isValidUUID(uuid)) {
+    if (!utils.isValidUUID(uuid)) {
         throw new TypeError(`Invalid UUID: ${uuid}`);
     }
     return uuid;
