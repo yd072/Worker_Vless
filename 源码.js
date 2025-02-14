@@ -1585,6 +1585,14 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
 		}
 
+		// 添加分片配置
+		const fragmentConfig = {
+			enabled: true,
+			packets: "tlshello", // 分片数量范围
+			length: "100-200", // 每个分片的长度范围
+			interval: "10-20" // 分片发送间隔(ms)
+		};
+
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
         const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
             `${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
@@ -1599,8 +1607,13 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
             `tfo=true&` + // TCP Fast Open
             `keepAlive=true&` +  
             `congestion_control=bbr&` + // BBR拥塞控制
-            `udp_relay=true` + // UDP转发
-            `#${encodeURIComponent(addressid + 节点备注)}`;
+			`udp_relay=true&` + // UDP转发
+			// 添加分片参数
+			`fragment=true&` +
+			`fragmentPackets=${fragmentConfig.packets}&` +
+			`fragmentLength=${fragmentConfig.length}&` +
+			`fragmentInterval=${fragmentConfig.interval}` +
+			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
 	}).join('\n');
