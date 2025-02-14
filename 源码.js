@@ -1624,21 +1624,22 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 		}
 
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
-                const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}\u003f` + 
-                      `encryption=${btoa('none')}&` + 
-                      `\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${btoa('tls')}&` + 
-                      `sni=${伪装域名}&` + 
-                      `\u0066\u0070\u003drandomized&` + 
-                      `type=${btoa('ws')}&` + 
-                      `host=${btoa(伪装域名)}&` + 
+                const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+                      `${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
+                      `${atob('c2VjdXJpdHk9dGxz')}&` + 
+                      `${atob('c25pPQ==')}${伪装域名}&` + 
+                      `fp=randomized&` + 
+                      `type=ws&` + 
+                      `host=${伪装域名}&` + 
                       `path=${encodeURIComponent(最终路径)}&` + 
-                      `\u0061\u006c\u0070\u006e\u003d${btoa('h3')}&` + 
-                      `allowInsecure=${btoa('false')}&` + 
-                      `\u0074\u0066\u006f\u003d${btoa('true')}&` +  
-                      `keepAlive=${btoa('true')}&` +  
-                      `congestion_control=${btoa('bbr')}&` +  
-                      `udp_relay=${btoa('true')}` +  
+                      `alpn=h3&` + 
+                      `allowInsecure=false&` + 
+                      `tfo=true&` +  // TCP Fast Open
+                      `keepAlive=true&` +  
+                      `congestion_control=bbr&` +  // BBR拥塞控制
+                      `udp_relay=true` +  // UDP转发
                       `#${encodeURIComponent(addressid + 节点备注)}`;
+
 
 		return 维列斯Link;
 	}).join('\n');
