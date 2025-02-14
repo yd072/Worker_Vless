@@ -775,7 +775,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         )
         .catch((error) => {
             console.error(`remoteSocketToWS exception`);
-            safeCloseWebSocket(webSocket); // 使用 safeCloseWebSocket
+            safeCloseWebSocket(webSocket); 
         });
 
     if (!hasIncomingData && retry) {
