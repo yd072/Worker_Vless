@@ -1465,14 +1465,6 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
-// 删除重复的 fragmentConfig 对象定义，只保留一个全局的配置
-const fragmentConfig = {
-    enabled: true,
-    packets: "tlshello", 
-    length: "100-200", 
-    interval: "10-20" 
-};
-
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
 	const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
 	addresses = addresses.concat(newAddressesapi);
@@ -1543,11 +1535,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 				`keepAlive=true&` + 
 				`congestion_control=bbr&` + 
 				`udp_relay=true&` + 
-				// 使用全局的 fragmentConfig
-				`fragment=true&` +
-				`fragmentPackets=${fragmentConfig.packets}&` +
-				`fragmentLength=${fragmentConfig.length}&` +
-				 `fragmentInterval=${fragmentConfig.interval}` +
 				`#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
@@ -1625,11 +1612,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`keepAlive=true&` + // 保持连接
 			`congestion_control=bbr&` + // BBR拥塞控制
 			`udp_relay=true&` + // UDP转发
-			// 使用全局的 fragmentConfig
-			`fragment=true&` +
-			`fragmentPackets=${fragmentConfig.packets}&` +
-			`fragmentLength=${fragmentConfig.length}&` +
-			`fragmentInterval=${fragmentConfig.interval}` +
 			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
