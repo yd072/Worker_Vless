@@ -575,7 +575,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                     keepAliveInitialDelay: 60000
                 }),
             new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('连接超时')), 3000)
+                setTimeout(() => reject(new Error('连接超时')), 5000)
             )
         ]);
 
