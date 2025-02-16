@@ -1540,19 +1540,9 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 伪装域名 = host;
 			let 最终路径 = path;
 			let 节点备注 = '';
+            const 协议类型 = atob(啥啥啥_写的这是啥啊);
+			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}&udp=true&security=none&tfo=true&keepAlive=true&congestion_control=bbr&udp_relay=true&#${encodeURIComponent(addressid + 节点备注)}`;
 
-			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-				`encryption=none&` + 
-				`type=ws&` +
-				`host=${伪装域名}&` +
-				`path=${encodeURIComponent(最终路径)}&` +
-				`udp=true&` +  // 保留UDP支持
-				`security=none&` + 
-				`tfo=true&` +
-				`keepAlive=true&` + // 保持连接
-				`congestion_control=bbr&` + // BBR拥塞控制
-				`udp_relay=true&` + // UDP转发
-				`#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
 
@@ -1614,23 +1604,10 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
 			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
 		}
+        
+		const 协议类型 = atob(啥啥啥_写的这是啥啊);
+		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&security=tls&sni=${伪装域名}&fp=randomized&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}&alpn=h3&udp=true&allowInsecure=false&tfo=true&keepAlive=true&congestion_control=bbr&udp_relay=true&#${encodeURIComponent(addressid + 节点备注)}`;
 
-		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-			`encryption=none&` + 
-			`security=tls&` + 
-			`sni=${伪装域名}&` + 
-			`fp=randomized&` + 
-			`type=ws&` +
-			`host=${伪装域名}&` +
-			`path=${encodeURIComponent(最终路径)}&` +
-			`alpn=h3&` +
-			`udp=true&` +  // 保留UDP支持
-			`allowInsecure=false&` +
-			`tfo=true&` + 
-			`keepAlive=true&` + // 保持连接
-			`congestion_control=bbr&` + // BBR 拥塞控制
-			`udp_relay=true&` + // UDP 转发
-			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
 	}).join('\n');
