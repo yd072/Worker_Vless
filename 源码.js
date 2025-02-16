@@ -45,6 +45,16 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
+// 流量优化配置
+let enableTrafficOptimizer = true; // 默认开启
+let trafficPatterns = [{
+    type: "random",     
+    minSize: 64,        
+    maxSize: 256,       
+    delay: "2-5",      
+    count: "3"         
+}];
+
 // 添加工具函数
 const utils = {
 	// UUID校验
@@ -669,6 +679,12 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         shouldUseSocks = await useSocks5Pattern(addressRemote);
     }
     let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
+    
+    // 使用新的StreamMultiplexer
+    const multiplexer = new StreamMultiplexer();
+    const streamId = multiplexer.createStream();
+    await multiplexer.sendData(tcpSocket, rawClientData, streamId);
+    
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
@@ -1158,22 +1174,23 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			<a href="javascript:void(0)" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?sb','qrcode_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${proxyhost}${hostName}/${uuid}?sb</a><br>
 			<div id="qrcode_3" style="margin: 10px 10px 10px 10px;"></div>
 			<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">实用订阅技巧∨</a></strong><br>
-			<div id="noticeContent" class="notice-content" style="display: none;">
-				<strong>1.</strong> 如您使用的是 PassWall、PassWall2 路由插件，订阅编辑的 <strong>用户代理(User-Agent)</strong> 设置为 <strong>PassWall</strong> 即可；<br>
-				<strong>2.</strong> 如您使用的是 SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
-				<br>
-				<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
-				&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?sub=sub.google.com</strong><br>
-				<br>
-				<strong>4.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
-				&nbsp;&nbsp; https://${proxyhost}${hostName}/${uuid}<strong>?proxyip=proxyip.fxxk.dedyn.io:443</strong><br>
-				<br>
-				<strong>5.</strong> 快速更换 SOCKS5 至：user:password@127.0.0.1:1080，您可将"?socks5=user:password@127.0.0.1:1080"参数添加到链接末尾，例如：<br>
-				&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?socks5=user:password@127.0.0.1:1080</strong><br>
-				<br>
-				<strong>6.</strong> 如需指定多个参数则需要使用'&'做间隔，例如：<br>
-				&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}?sub=sub.google.com<strong>&</strong>proxyip=proxyip.fxxk.dedyn.io<br>
-			</div>
+				<div id="noticeContent" class="notice-content" style="display: none;">
+                    <strong>1.</strong> 如您使用的是 PassWall、PassWall2 路由插件，订阅编辑的 <strong>用户代理(User-Agent)</strong> 设置为 <strong>PassWall</strong> 即可；<br>
+					<br>
+					<strong>2.</strong> 如您使用的是 SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
+					<br>
+					<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
+					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?sub=sub.google.com</strong><br>
+					<br>
+					<strong>4.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
+					&nbsp;&nbsp; https://${proxyhost}${hostName}/${uuid}<strong>?proxyip=proxyip.fxxk.dedyn.io:443</strong><br>
+					<br>
+					<strong>5.</strong> 快速更换 SOCKS5 至：user:password@127.0.0.1:1080，您可将"?socks5=user:password@127.0.0.1:1080"参数添加到链接末尾，例如：<br>
+					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?socks5=user:password@127.0.0.1:1080</strong><br>
+					<br>
+					<strong>6.</strong> 如需指定多个参数则需要使用'&'做间隔，例如：<br>
+					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}?sub=sub.google.com<strong>&</strong>proxyip=proxyip.fxxk.dedyn.io<br>
+				</div>
 			<script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
 			<script>
 			function copyToClipboard(text, qrcode) {
@@ -1583,7 +1600,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
 			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
 		}
-		
+
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
 		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?security=tls&sni=${伪装域名}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
 
@@ -1807,7 +1824,7 @@ async function handleGetRequest(env, txt) {
 			---------------------------------------------------------------<br>
 			&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
 			<div id="noticeContent" class="notice-content">
-				${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQVjYlM0NiciUzRSUzQ2JyJTNFCglMDQlMDQlMDQlMDQlMDQlM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5OCVBRiVFNiU5OCVBRiVFNCVCQiVBMyVFNCVCRCU5Q0lQJUVGJUJDJThDJUU1JThGJUFGJUU0JUJEJTlDJUU0JUI4JUJBUFJPWFlJUCVFNyU5QSU4NCVFOCVBRiU5RCVFRiVCQyU4QyVFNSU4RiVBRiVFNSVCMCU4NiUyMiUzRnByb3h5aXAlM0R0cnVlJTIyJUU1JThGJTgyJUU2JTk1JUIwJUU2JUI3JUJCJUU1JThBJUEwJUU1JTg4JUIwJUU5JTkzJUJFJUU2JThFJUE1JUU2JTlDJUFCJUU1JUIwJUJFJUVGJUJDJThDJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzRnByb3h5aXAlM0R0cnVlJTNDYnIlM0UlM0NiciUzRQoKJTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMy4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOTglQUYlMjAlM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JTI3JTNFQ2xvdWRmbGFyZVNwZWVkVGVzdCUzQyUyRmElM0UlMjAlRTclOUElODQlMjBjc3YlMjAlRTclQkIlOTMlRTYlOUUlOUMlRTYlOTYlODclRTQlQkIlQjclRTMlODAlODIlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMjAlMjBodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
+				${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}
 			</div>
 			<div class="editor-container">
 				${hasKV ? `
@@ -1981,4 +1998,160 @@ async function 处理地址列表(地址列表) {
 	}
 	
 	return 分类地址;
+}
+
+function updateTrafficPattern(patternConfig) {
+    try {
+        trafficPatterns = JSON.parse(patternConfig);
+    } catch(error) {
+        console.error('Invalid traffic pattern config:', error);
+        trafficPatterns = [{
+            type: "random",
+            minSize: 64,
+            maxSize: 256,
+            delay: "2-5",
+            count: "3"
+        }];
+    }
+}
+
+async function applyTrafficPattern(socket) {
+    if(!enableTrafficOptimizer || !trafficPatterns || trafficPatterns.length === 0) return;
+    
+    for(const pattern of trafficPatterns) {
+        try {
+            const [minDelay, maxDelay] = pattern.delay.split('-').map(Number);
+            const count = parseInt(pattern.count);
+            
+            for(let i = 0; i < count; i++) {
+                let packetData;
+                switch(pattern.type) {
+                    case 'random':
+                        const size = Math.floor(Math.random() * (pattern.maxSize - pattern.minSize + 1)) + pattern.minSize;
+                        packetData = crypto.getRandomValues(new Uint8Array(size));
+                        break;
+                    case 'base64':
+                        packetData = new Uint8Array(atob(pattern.packet).split('').map(c => c.charCodeAt(0)));
+                        break;
+                    case 'string':
+                        packetData = new Uint8Array(pattern.packet.split('').map(c => c.charCodeAt(0)));
+                        break;
+                }
+                
+                const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
+                await new Promise(resolve => setTimeout(resolve, delay * 1000));
+                
+                try {
+                    await socket.write(packetData);
+                } catch(error) {
+                    console.error('Failed to apply traffic pattern:', error);
+                }
+            }
+        } catch(error) {
+            console.error('Traffic pattern error:', error);
+        }
+    }
+}
+
+class StreamMultiplexer {
+    constructor() {
+        this.streams = new Map();
+        this.currentStreamId = 0;
+    }
+
+    createStream(priority = 1) {
+        const streamId = this.currentStreamId++;
+        const stream = {
+            id: streamId,
+            priority: priority,
+            buffer: []
+        };
+        this.streams.set(streamId, stream);
+        return streamId;
+    }
+
+    // 动态分片算法
+    dynamicSplit(data) {
+        const minSize = 128;  // 增加最小包大小
+        const maxSize = 1400; // 调整到MTU附近
+        const chunks = [];
+        let offset = 0;
+
+        while (offset < data.length) {
+            const chunkSize = this.getOptimalChunkSize(minSize, maxSize);
+            chunks.push(data.slice(offset, offset + chunkSize));
+            offset += chunkSize;
+        }
+        return chunks;
+    }
+
+    // 基于网络特征的最优分片大小
+    getOptimalChunkSize(min, max) {
+        // 模拟正常HTTPS流量的包大小分布
+        const distribution = [
+            {size: 100, weight: 0.3},
+            {size: 300, weight: 0.4},
+            {size: 600, weight: 0.2},
+            {size: 900, weight: 0.1}
+        ];
+
+        let size = min;
+        const random = Math.random();
+        let accumWeight = 0;
+
+        for (const {size: s, weight} of distribution) {
+            accumWeight += weight;
+            if (random <= accumWeight) {
+                size = s;
+                break;
+            }
+        }
+
+        return Math.min(Math.max(size, min), max);
+    }
+
+    // 优化延迟控制
+    async dynamicDelay() {
+        const baseDelay = 0.5;  // 减少基础延迟
+        const jitter = Math.random();  // 减少抖动范围
+        await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
+    }
+
+    // 优化填充大小
+    addRandomPadding(chunk) {
+        const paddingSize = Math.floor(Math.random() * 16); // 减少填充大小以提高性能
+        const paddedData = new Uint8Array(chunk.length + paddingSize);
+        paddedData.set(chunk);
+        crypto.getRandomValues(paddedData.subarray(chunk.length));
+        return paddedData;
+    }
+
+    // 动态调整数据包大小和发送间隔
+    async sendData(socket, data, streamId) {
+        const stream = this.streams.get(streamId);
+        if (!stream) return;
+
+        try {
+            const chunks = this.dynamicSplit(data);
+            
+            for (const chunk of chunks) {
+                const paddedChunk = this.addRandomPadding(chunk);
+                await this.dynamicDelay();
+                
+                try {
+                    await socket.write(paddedChunk);
+                } catch (error) {
+                    if (error.message.includes('closed')) {
+                        throw error; // 连接关闭时直接抛出
+                    }
+                    console.warn('Chunk send error:', error);
+                    continue; // 其他错误继续发送
+                }
+            }
+        } catch (error) {
+            console.error('Stream send error:', error);
+            this.streams.delete(streamId); // 清理失败的流
+            throw error;
+        }
+    }
 }
