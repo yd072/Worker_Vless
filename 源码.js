@@ -1557,19 +1557,9 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 伪装域名 = host;
 			let 最终路径 = path;
 			let 节点备注 = '';
+			const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-				`${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
-				`type=ws&` +
-				`host=${伪装域名}&` +
-				`path=${encodeURIComponent(最终路径)}&` +
-				`udp=true&` +  // 保留UDP支持
-				`security=none&` + 
-				`tfo=true&` + 
-				`keepAlive=true&` + // 保持连接
-				`congestion_control=bbr&` + // BBR拥塞控制
-				`udp_relay=true&` + // UDP转发
-				`#${encodeURIComponent(addressid + 节点备注)}`;
+			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==') + 伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
 
