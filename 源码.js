@@ -45,6 +45,16 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
+// 流量优化配置
+let enableTrafficOptimizer = true; // 默认开启
+let trafficPatterns = [{
+    type: "random",     
+    minSize: 64,        
+    maxSize: 256,       
+    delay: "2-5",      
+    count: "3"         
+}];
+
 // 添加工具函数
 const utils = {
 	// UUID校验
@@ -112,7 +122,7 @@ class WebSocketManager {
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
-			utils.ws.safeClose(this.webSocket);
+			safeCloseWebSocket(this.webSocket); 
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
@@ -143,7 +153,7 @@ class WebSocketManager {
 		if (this.readableStreamCancel) return;
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		utils.ws.safeClose(this.webSocket);
+		safeCloseWebSocket(this.webSocket); 
 	}
 }
 
@@ -669,6 +679,12 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         shouldUseSocks = await useSocks5Pattern(addressRemote);
     }
     let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
+    
+    // 使用新的StreamMultiplexer
+    const multiplexer = new StreamMultiplexer();
+    const streamId = multiplexer.createStream();
+    await multiplexer.sendData(tcpSocket, rawClientData, streamId);
+    
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
@@ -1004,6 +1020,8 @@ function 配置信息(UUID, 域名地址) {
     let 传输层安全 = ['tls', true];
     const SNI = 域名地址;
     const 指纹 = 'randomized';
+	// 添加 ALPN 配置
+	const ALPN = ['h3,h2,http/1.1'];
   
     if (域名地址.includes('.workers.dev')) {
         地址 = atob('dmlzYS5jbg==');
@@ -1011,13 +1029,13 @@ function 配置信息(UUID, 域名地址) {
         传输层安全 = ['', false];
     }
   
-	const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079` + 'p' + `${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
-	const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3], udp: false, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
+	const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079` + 'p' + `${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&alpn=${encodeURIComponent(ALPN.join(','))}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
+	const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3,h2,http/1.1], udp: true, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
     return [威图瑞, 猫猫猫];
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
-const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
+const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 	const uniqueAddresses = new Set();
@@ -1530,11 +1548,12 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 				`type=ws&` +
 				`host=${伪装域名}&` +
 				`path=${encodeURIComponent(最终路径)}&` +
+				`udp=true&` +  // 保留UDP支持
 				`security=none&` + 
-				`tfo=true&` + 
-				`keepAlive=true&` + 
-				`congestion_control=bbr&` + 
-				`udp_relay=true&` + 
+				`tfo=true&` +
+				`keepAlive=true&` + // 保持连接
+				`congestion_control=bbr&` + // BBR拥塞控制
+				`udp_relay=true&` + // UDP转发
 				`#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
@@ -1607,10 +1626,11 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`host=${伪装域名}&` +
 			`path=${encodeURIComponent(最终路径)}&` +
 			`alpn=h3&` +
+			`udp=true&` +  // 保留UDP支持
 			`allowInsecure=false&` +
 			`tfo=true&` + 
 			`keepAlive=true&` + // 保持连接
-			`congestion_control=bbr&` + // BBR拥塞控制
+			`congestion_control=bbr&` + // BBR拥塞控制 
 			`udp_relay=true&` + // UDP转发
 			`#${encodeURIComponent(addressid + 节点备注)}`;
 
@@ -2008,4 +2028,160 @@ async function 处理地址列表(地址列表) {
 	}
 	
 	return 分类地址;
+}
+
+function updateTrafficPattern(patternConfig) {
+    try {
+        trafficPatterns = JSON.parse(patternConfig);
+    } catch(error) {
+        console.error('Invalid traffic pattern config:', error);
+        trafficPatterns = [{
+            type: "random",
+            minSize: 64,
+            maxSize: 256,
+            delay: "2-5",
+            count: "3"
+        }];
+    }
+}
+
+async function applyTrafficPattern(socket) {
+    if(!enableTrafficOptimizer || !trafficPatterns || trafficPatterns.length === 0) return;
+    
+    for(const pattern of trafficPatterns) {
+        try {
+            const [minDelay, maxDelay] = pattern.delay.split('-').map(Number);
+            const count = parseInt(pattern.count);
+            
+            for(let i = 0; i < count; i++) {
+                let packetData;
+                switch(pattern.type) {
+                    case 'random':
+                        const size = Math.floor(Math.random() * (pattern.maxSize - pattern.minSize + 1)) + pattern.minSize;
+                        packetData = crypto.getRandomValues(new Uint8Array(size));
+                        break;
+                    case 'base64':
+                        packetData = new Uint8Array(atob(pattern.packet).split('').map(c => c.charCodeAt(0)));
+                        break;
+                    case 'string':
+                        packetData = new Uint8Array(pattern.packet.split('').map(c => c.charCodeAt(0)));
+                        break;
+                }
+                
+                const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
+                await new Promise(resolve => setTimeout(resolve, delay * 1000));
+                
+                try {
+                    await socket.write(packetData);
+                } catch(error) {
+                    console.error('Failed to apply traffic pattern:', error);
+                }
+            }
+        } catch(error) {
+            console.error('Traffic pattern error:', error);
+        }
+    }
+}
+
+class StreamMultiplexer {
+    constructor() {
+        this.streams = new Map();
+        this.currentStreamId = 0;
+    }
+
+    createStream(priority = 1) {
+        const streamId = this.currentStreamId++;
+        const stream = {
+            id: streamId,
+            priority: priority,
+            buffer: []
+        };
+        this.streams.set(streamId, stream);
+        return streamId;
+    }
+
+    // 动态分片算法
+    dynamicSplit(data) {
+        const minSize = 128;  // 增加最小包大小
+        const maxSize = 1400; // 调整到MTU附近
+        const chunks = [];
+        let offset = 0;
+
+        while (offset < data.length) {
+            const chunkSize = this.getOptimalChunkSize(minSize, maxSize);
+            chunks.push(data.slice(offset, offset + chunkSize));
+            offset += chunkSize;
+        }
+        return chunks;
+    }
+
+    // 基于网络特征的最优分片大小
+    getOptimalChunkSize(min, max) {
+        // 模拟正常HTTPS流量的包大小分布
+        const distribution = [
+            {size: 100, weight: 0.3},
+            {size: 300, weight: 0.4},
+            {size: 600, weight: 0.2},
+            {size: 900, weight: 0.1}
+        ];
+
+        let size = min;
+        const random = Math.random();
+        let accumWeight = 0;
+
+        for (const {size: s, weight} of distribution) {
+            accumWeight += weight;
+            if (random <= accumWeight) {
+                size = s;
+                break;
+            }
+        }
+
+        return Math.min(Math.max(size, min), max);
+    }
+
+    // 优化延迟控制
+    async dynamicDelay() {
+        const baseDelay = 0.5;  // 减少基础延迟
+        const jitter = Math.random();  // 减少抖动范围
+        await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
+    }
+
+    // 优化填充大小
+    addRandomPadding(chunk) {
+        const paddingSize = Math.floor(Math.random() * 16); // 减少填充大小以提高性能
+        const paddedData = new Uint8Array(chunk.length + paddingSize);
+        paddedData.set(chunk);
+        crypto.getRandomValues(paddedData.subarray(chunk.length));
+        return paddedData;
+    }
+
+    // 动态调整数据包大小和发送间隔
+    async sendData(socket, data, streamId) {
+        const stream = this.streams.get(streamId);
+        if (!stream) return;
+
+        try {
+            const chunks = this.dynamicSplit(data);
+            
+            for (const chunk of chunks) {
+                const paddedChunk = this.addRandomPadding(chunk);
+                await this.dynamicDelay();
+                
+                try {
+                    await socket.write(paddedChunk);
+                } catch (error) {
+                    if (error.message.includes('closed')) {
+                        throw error; // 连接关闭时直接抛出
+                    }
+                    console.warn('Chunk send error:', error);
+                    continue; // 其他错误继续发送
+                }
+            }
+        } catch (error) {
+            console.error('Stream send error:', error);
+            this.streams.delete(streamId); // 清理失败的流
+            throw error;
+        }
+    }
 }
