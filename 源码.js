@@ -45,16 +45,6 @@ let 动态UUID;
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 
-// 流量优化配置
-let enableTrafficOptimizer = true; // 默认开启
-let trafficPatterns = [{
-    type: "random",     
-    minSize: 64,        
-    maxSize: 256,       
-    delay: "2-5",      
-    count: "3"         
-}];
-
 // 添加工具函数
 const utils = {
 	// UUID校验
@@ -626,12 +616,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                     // 添加 TCP 连接优化选项
                     allowHalfOpen: false,
                     keepAlive: true,
-                    keepAliveInitialDelay: 60000,
-                    // TCP Fast Open 相关优化
-                    tcpFastOpen: true,           // 启用 TCP Fast Open
-                    noDelay: true               // 禁用 Nagle 算法
-                    
-
+                    keepAliveInitialDelay: 60000
                 }),
             new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('连接超时')), 3000)
@@ -684,12 +669,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         shouldUseSocks = await useSocks5Pattern(addressRemote);
     }
     let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
-    
-    // 使用新的StreamMultiplexer
-    const multiplexer = new StreamMultiplexer();
-    const streamId = multiplexer.createStream();
-    await multiplexer.sendData(tcpSocket, rawClientData, streamId);
-    
     remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
@@ -1553,7 +1532,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 				`path=${encodeURIComponent(最终路径)}&` +
 				`udp=true&` +  // 保留UDP支持
 				`security=none&` + 
-				`tfo=true&` +
+				`tfo=true&` + 
 				`keepAlive=true&` + // 保持连接
 				`congestion_control=bbr&` + // BBR拥塞控制
 				`udp_relay=true&` + // UDP转发
@@ -1633,7 +1612,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`allowInsecure=false&` +
 			`tfo=true&` + 
 			`keepAlive=true&` + // 保持连接
-			`congestion_control=bbr&` + // BBR拥塞控制 
+			`congestion_control=bbr&` + // BBR拥塞控制
 			`udp_relay=true&` + // UDP转发
 			`#${encodeURIComponent(addressid + 节点备注)}`;
 
@@ -2031,160 +2010,4 @@ async function 处理地址列表(地址列表) {
 	}
 	
 	return 分类地址;
-}
-
-function updateTrafficPattern(patternConfig) {
-    try {
-        trafficPatterns = JSON.parse(patternConfig);
-    } catch(error) {
-        console.error('Invalid traffic pattern config:', error);
-        trafficPatterns = [{
-            type: "random",
-            minSize: 64,
-            maxSize: 256,
-            delay: "2-5",
-            count: "3"
-        }];
-    }
-}
-
-async function applyTrafficPattern(socket) {
-    if(!enableTrafficOptimizer || !trafficPatterns || trafficPatterns.length === 0) return;
-    
-    for(const pattern of trafficPatterns) {
-        try {
-            const [minDelay, maxDelay] = pattern.delay.split('-').map(Number);
-            const count = parseInt(pattern.count);
-            
-            for(let i = 0; i < count; i++) {
-                let packetData;
-                switch(pattern.type) {
-                    case 'random':
-                        const size = Math.floor(Math.random() * (pattern.maxSize - pattern.minSize + 1)) + pattern.minSize;
-                        packetData = crypto.getRandomValues(new Uint8Array(size));
-                        break;
-                    case 'base64':
-                        packetData = new Uint8Array(atob(pattern.packet).split('').map(c => c.charCodeAt(0)));
-                        break;
-                    case 'string':
-                        packetData = new Uint8Array(pattern.packet.split('').map(c => c.charCodeAt(0)));
-                        break;
-                }
-                
-                const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
-                await new Promise(resolve => setTimeout(resolve, delay * 1000));
-                
-                try {
-                    await socket.write(packetData);
-                } catch(error) {
-                    console.error('Failed to apply traffic pattern:', error);
-                }
-            }
-        } catch(error) {
-            console.error('Traffic pattern error:', error);
-        }
-    }
-}
-
-class StreamMultiplexer {
-    constructor() {
-        this.streams = new Map();
-        this.currentStreamId = 0;
-    }
-
-    createStream(priority = 1) {
-        const streamId = this.currentStreamId++;
-        const stream = {
-            id: streamId,
-            priority: priority,
-            buffer: []
-        };
-        this.streams.set(streamId, stream);
-        return streamId;
-    }
-
-    // 动态分片算法
-    dynamicSplit(data) {
-        const minSize = 128;  // 增加最小包大小
-        const maxSize = 1400; // 调整到MTU附近
-        const chunks = [];
-        let offset = 0;
-
-        while (offset < data.length) {
-            const chunkSize = this.getOptimalChunkSize(minSize, maxSize);
-            chunks.push(data.slice(offset, offset + chunkSize));
-            offset += chunkSize;
-        }
-        return chunks;
-    }
-
-    // 基于网络特征的最优分片大小
-    getOptimalChunkSize(min, max) {
-        // 模拟正常HTTPS流量的包大小分布
-        const distribution = [
-            {size: 100, weight: 0.3},
-            {size: 300, weight: 0.4},
-            {size: 600, weight: 0.2},
-            {size: 900, weight: 0.1}
-        ];
-
-        let size = min;
-        const random = Math.random();
-        let accumWeight = 0;
-
-        for (const {size: s, weight} of distribution) {
-            accumWeight += weight;
-            if (random <= accumWeight) {
-                size = s;
-                break;
-            }
-        }
-
-        return Math.min(Math.max(size, min), max);
-    }
-
-    // 优化延迟控制
-    async dynamicDelay() {
-        const baseDelay = 0.5;  // 减少基础延迟
-        const jitter = Math.random();  // 减少抖动范围
-        await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
-    }
-
-    // 优化填充大小
-    addRandomPadding(chunk) {
-        const paddingSize = Math.floor(Math.random() * 16); // 减少填充大小以提高性能
-        const paddedData = new Uint8Array(chunk.length + paddingSize);
-        paddedData.set(chunk);
-        crypto.getRandomValues(paddedData.subarray(chunk.length));
-        return paddedData;
-    }
-
-    // 动态调整数据包大小和发送间隔
-    async sendData(socket, data, streamId) {
-        const stream = this.streams.get(streamId);
-        if (!stream) return;
-
-        try {
-            const chunks = this.dynamicSplit(data);
-            
-            for (const chunk of chunks) {
-                const paddedChunk = this.addRandomPadding(chunk);
-                await this.dynamicDelay();
-                
-                try {
-                    await socket.write(paddedChunk);
-                } catch (error) {
-                    if (error.message.includes('closed')) {
-                        throw error; // 连接关闭时直接抛出
-                    }
-                    console.warn('Chunk send error:', error);
-                    continue; // 其他错误继续发送
-                }
-            }
-        } catch (error) {
-            console.error('Stream send error:', error);
-            this.streams.delete(streamId); // 清理失败的流
-            throw error;
-        }
-    }
 }
