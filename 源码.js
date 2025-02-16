@@ -70,6 +70,20 @@ const utils = {
 		}
 	},
 
+	// WebSocket相关
+	ws: {
+		safeClose(socket) {
+			try {
+				if (socket.readyState === WS_READY_STATE_OPEN || 
+					socket.readyState === WS_READY_STATE_CLOSING) {
+					socket.close();
+				}
+			} catch (error) {
+				console.error('safeCloseWebSocket error', error);
+			}
+		}
+	},
+
 	// 错误处理
 	error: {
 		handle(err, type = 'general') {
@@ -112,7 +126,7 @@ class WebSocketManager {
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
-			safeCloseWebSocket(this.webSocket); 
+			utils.ws.safeClose(this.webSocket);
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
@@ -143,7 +157,7 @@ class WebSocketManager {
 		if (this.readableStreamCancel) return;
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		safeCloseWebSocket(this.webSocket); 
+		utils.ws.safeClose(this.webSocket);
 	}
 }
 
@@ -810,7 +824,7 @@ function unsafeStringify(arr, offset = 0) {
 
 function stringify(arr, offset = 0) {
     const uuid = unsafeStringify(arr, offset);
-    if (!utils.isValidUUID(uuid)) {
+    if (!isValidUUID(uuid)) {
         throw new TypeError(`Invalid UUID: ${uuid}`);
     }
     return uuid;
@@ -1077,7 +1091,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
 	const Config = 配置信息(userID, hostName);
-	const proxyConfig = Config[0];
+	const v2ray = Config[0];
 	const clash = Config[1];
 	let proxyhost = "";
 	if (hostName.includes(".workers.dev")) {
@@ -1219,10 +1233,10 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			${订阅器}<br>
 			---------------------------------------------------------------<br>
 			################################################################<br>
-			proxyConfig<br>
+			v2ray<br>
 			---------------------------------------------------------------<br>
-			<a href="javascript:void(0)" onclick="copyToClipboard('${proxyConfig}','qrcode_proxyConfig')" style="color:blue;text-decoration:underline;cursor:pointer;">${proxyConfig}</a><br>
-			<div id="qrcode_proxyConfig" style="margin: 10px 10px 10px 10px;"></div>
+			<a href="javascript:void(0)" onclick="copyToClipboard('${v2ray}','qrcode_v2ray')" style="color:blue;text-decoration:underline;cursor:pointer;">${v2ray}</a><br>
+			<div id="qrcode_v2ray" style="margin: 10px 10px 10px 10px;"></div>
 			---------------------------------------------------------------<br>
 			################################################################<br>
 			clash-meta<br>
