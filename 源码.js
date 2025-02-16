@@ -1486,10 +1486,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	addresses = addresses.concat(newAddressesapi);
 	addresses = addresses.concat(newAddressescsv);
 	let notlsresponseBody;
-	
-	// 在函数开始处定义协议类型
-	const 协议类型 = atob(啥啥啥_写的这是啥啊);
-
 	if (noTLS == 'true') {
 		addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
 		addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
@@ -1541,8 +1537,8 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 最终路径 = path;
 			let 节点备注 = '';
             const 协议类型 = atob(啥啥啥_写的这是啥啊);
-			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}&udp=true&security=none&tfo=true&keepAlive=true&congestion_control=bbr&udp_relay=true&#${encodeURIComponent(addressid + 节点备注)}`;
 
+			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?security=tls&sni=${伪装域名}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
 
@@ -1606,8 +1602,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 		}
         
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
-		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?encryption=none&security=tls&sni=${伪装域名}&fp=randomized&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}&alpn=h3&udp=true&allowInsecure=false&tfo=true&keepAlive=true&congestion_control=bbr&udp_relay=true&#${encodeURIComponent(addressid + 节点备注)}`;
-
+		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?security=tls&sni=${伪装域名}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
 	}).join('\n');
