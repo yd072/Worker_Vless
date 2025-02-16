@@ -557,13 +557,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         
         // 使用Promise.race设置2秒超时
         const tcpSocket = await Promise.race([
-            connect({
-                hostname: dnsServer,
-                port: dnsPort
-            }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('DNS连接超时')), 2000)
-            )
+            connect({ hostname: dnsServer, port: dnsPort }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
         ]);
 
         log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
