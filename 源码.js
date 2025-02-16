@@ -1052,7 +1052,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
 	const Config = 配置信息(userID, hostName);
-	const proxyConfig = Config[0];
+	const v2ray = Config[0];
 	const clash = Config[1];
 	let proxyhost = "";
 	if (hostName.includes(".workers.dev")) {
@@ -1192,10 +1192,10 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			${订阅器}<br>
 			---------------------------------------------------------------<br>
 			################################################################<br>
-			proxyConfig<br>
+			v2ray<br>
 			---------------------------------------------------------------<br>
-			<a href="javascript:void(0)" onclick="copyToClipboard('${proxyConfig}','qrcode_proxyConfig')" style="color:blue;text-decoration:underline;cursor:pointer;">${proxyConfig}</a><br>
-			<div id="qrcode_proxyConfig" style="margin: 10px 10px 10px 10px;"></div>
+			<a href="javascript:void(0)" onclick="copyToClipboard('${v2ray}','qrcode_v2ray')" style="color:blue;text-decoration:underline;cursor:pointer;">${v2ray}</a><br>
+			<div id="qrcode_v2ray" style="margin: 10px 10px 10px 10px;"></div>
 			---------------------------------------------------------------<br>
 			################################################################<br>
 			clash-meta<br>
@@ -1497,19 +1497,9 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 伪装域名 = host;
 			let 最终路径 = path;
 			let 节点备注 = '';
+			const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-				`${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
-				`type=ws&` +
-				`host=${伪装域名}&` +
-				`path=${encodeURIComponent(最终路径)}&` +
-				`udp=true&` +  // 保留UDP支持
-				`security=none&` + 
-				`tfo=true&` + 
-				`keepAlive=true&` + // 保持连接
-				`congestion_control=bbr&` + // BBR拥塞控制
-				`udp_relay=true&` + // UDP转发
-				`#${encodeURIComponent(addressid + 节点备注)}`;
+			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==') + 伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
 
@@ -1571,6 +1561,8 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
 			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
 		}
+		
+		const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
 		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
 			`${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
