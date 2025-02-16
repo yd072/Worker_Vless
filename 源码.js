@@ -1574,11 +1574,9 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 
 		let 伪装域名 = host;
 		let alpn = ['h3'];
-		let udp = true;
 		let tfo = true;
 		let keepAlive = true;
 		let congestion_control = bbr;
-		let udp_relay = true;
 		let 最终路径 = path;
 		let 节点备注 = '';
 		const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
@@ -1591,7 +1589,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 		}
 		
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
-		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&alpn=${encodeURIComponent(alpn.join(','))}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}&udp=true&tfo=true&keepAlive=true&congestion_control=bbr&udp_relay=true&#${encodeURIComponent(addressid + 节点备注)}`;
+		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&alpn=${encodeURIComponent(alpn.join(','))}&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}&tfo=true&keepAlive=true&congestion_control=bbr&#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
 	}).join('\n');
