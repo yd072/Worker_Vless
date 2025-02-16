@@ -1530,6 +1530,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 				`type=ws&` +
 				`host=${伪装域名}&` +
 				`path=${encodeURIComponent(最终路径)}&` +
+				`udp=true&` +  // 保留UDP支持
 				`security=none&` + 
 				`tfo=true&` + 
 				`keepAlive=true&` + // 保持连接
