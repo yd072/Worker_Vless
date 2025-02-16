@@ -798,6 +798,25 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     }
 }
 
+function base64ToArrayBuffer(base64Str) {
+    if (!base64Str) {
+        return { earlyData: undefined, error: null };
+    }
+    try {
+        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = atob(base64Str);
+        const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
+        return { earlyData: arrayBuffer.buffer, error: null };
+    } catch (error) {
+        return { earlyData: undefined, error };
+    }
+}
+
+function isValidUUID(uuid) {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidPattern.test(uuid);
+}
+
 const WS_READY_STATE_OPEN = 1;
 const WS_READY_STATE_CLOSING = 2;
 
