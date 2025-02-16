@@ -1598,7 +1598,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
 			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
 		}
-
+                const 协议类型 = atob(啥啥啥_写的这是啥啊);
 		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
 			`${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
 			`${atob('c2VjdXJpdHk9dGxz')}&` + 
