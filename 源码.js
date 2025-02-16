@@ -1573,7 +1573,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 		if (port == "-1") port = "443";
 
 		let 伪装域名 = host;
-		let alpn = ['h3,h2,http/1.1'];
+		let alpn = ['h3'];
 		let udp = true;
 		let tfo = true;
 		let keepAlive = true;
