@@ -3,8 +3,8 @@ import { connect } from 'cloudflare:sockets';
 let userID = '';
 let proxyIP = '';
 //let sub = '';
-let subConverter = 'SUBAPI.fxxk.dedyn.io';
-let subConfig = "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_MultiMode.ini";
+let subConverter = atob('U1VCQVBJLkNNTGl1c3Nzcy5uZXQ=');
+let subConfig = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvY29uZmlnL0FDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ==');
 let subProtocol = 'https';
 let subEmoji = 'true';
 let socks5Address = '';
@@ -70,24 +70,10 @@ const utils = {
 		}
 	},
 
-	// WebSocket相关
-	ws: {
-		safeClose(socket) {
-			try {
-				if (socket.readyState === WS_READY_STATE_OPEN || 
-					socket.readyState === WS_READY_STATE_CLOSING) {
-					socket.close();
-				}
-			} catch (error) {
-				console.error('safeCloseWebSocket error', error);
-			}
-		}
-	},
-
 	// 错误处理
 	error: {
 		handle(err, type = 'general') {
-	console.error(`[${type}] Error:`, err);
+			console.error(`[${type}] Error:`, err);
 			return new Response(err.toString(), {
 				status: type === 'auth' ? 401 : 500,
 				headers: { "Content-Type": "text/plain;charset=utf-8" }
@@ -126,7 +112,7 @@ class WebSocketManager {
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
-			utils.ws.safeClose(this.webSocket);
+			safeCloseWebSocket(this.webSocket); 
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
@@ -157,7 +143,7 @@ class WebSocketManager {
 		if (this.readableStreamCancel) return;
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		utils.ws.safeClose(this.webSocket);
+		safeCloseWebSocket(this.webSocket); 
 	}
 }
 
@@ -406,9 +392,9 @@ async function 维列斯OverWSHandler(request) {
 
     let address = '';
     let portWithRandomLog = '';
-    const log = (info, event = '') => { 
+    const log = (info, event = '') => {
         const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);	
+        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
@@ -496,22 +482,72 @@ function mergeData(header, chunk) {
     return merged;
 }
 
-// 优化 fetch 请求，添加超时处理
+// 优化 fetchWithTimeout 函数，添加默认超时和错误处理
 async function fetchWithTimeout(resource, options = {}) {
     const { timeout = 3000 } = options;
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(resource, {
-        ...options,
-        signal: controller.signal  
-    });
-    clearTimeout(id);
-    return response;
+    try {
+        const response = await fetch(resource, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                ...options.headers,
+                'Upgrade-Insecure-Requests': '1',
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
+            }
+        });
+        clearTimeout(id);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error(`Fetch error: ${error.message}`);
+        throw error;
+    }
 }
 
+// 并行处理多个异步请求
+async function fetchMultipleData(urls) {
+    try {
+        const promises = urls.map(url => fetchWithTimeout(url, {
+            headers: {
+                'Upgrade-Insecure-Requests': '1',
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
+            }
+        }));
+        const results = await Promise.all(promises);
+        return results;
+    } catch (error) {
+        console.error('Error fetching multiple data:', error);
+    }
+}
+
+// 使用流处理大数据
+function processLargeDataStream(dataStream) {
+    const reader = dataStream.getReader();
+    const decoder = new TextDecoder();
+    let result = '';
+
+    return reader.read().then(function processText({ done, value }) {
+        if (done) {
+            console.log('Stream complete');
+            return result;
+        }
+        result += decoder.decode(value, { stream: true });
+        return reader.read().then(processText);
+    });
+}
+
+// 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    const WS_READY_STATE_OPEN = 1;
-    
     try {
         // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
@@ -540,7 +576,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         if (维列斯Header) 维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
-                        safeCloseWebSocket(webSocket);
+                        safeCloseWebSocket(webSocket); 
                     }
                 }
             },
@@ -553,7 +589,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         }));
     } catch (error) {
         console.error(`DNS查询异常: ${error.message}`, error.stack);
-        safeCloseWebSocket(webSocket);
+        safeCloseWebSocket(webSocket); 
     }
 }
 
@@ -620,7 +656,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             tcpSocket.closed.catch(error => {
                 console.log('Retry tcpSocket closed error', error);
             }).finally(() => {
-                safeCloseWebSocket(webSocket);
+                safeCloseWebSocket(webSocket); 
             });
             remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
         } catch (error) {
@@ -739,7 +775,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         )
         .catch((error) => {
             console.error(`remoteSocketToWS exception`);
-            safeCloseWebSocket(webSocket);
+            safeCloseWebSocket(webSocket); 
         });
 
     if (!hasIncomingData && retry) {
@@ -971,32 +1007,32 @@ async function 代理URL(代理网址, 目标网址) {
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
-	const 协议类型 = atob(啥啥啥_写的这是啥啊);
-
-	const 别名 = FileName;
-	let 地址 = 域名地址;
-	let 端口 = 443;
-
-	const 用户ID = UUID;
-	const 加密方式 = 'none';
-
-	const 传输层协议 = 'ws';
-	const 伪装域名 = 域名地址;
-	const 路径 = path;
-
-	let 传输层安全 = ['tls', true];
-	const SNI = 域名地址;
-	const 指纹 = 'randomized';
-
-	if (域名地址.includes('.workers.dev')) {
-		地址 = atob('dmlzYS5jbg==');
-		端口 = 80;
-		传输层安全 = ['', false];
-	}
-
+    const 协议类型 = atob(啥啥啥_写的这是啥啊);
+  
+    const 别名 = FileName;
+    let 地址 = 域名地址;
+    let 端口 = 443;
+  
+    const 用户ID = UUID;
+    const 加密方式 = 'none';
+  
+    const 传输层协议 = 'ws';
+    const 伪装域名 = 域名地址;
+    const 路径 = path;
+  
+    let 传输层安全 = ['tls', true];
+    const SNI = 域名地址;
+    const 指纹 = 'randomized';
+  
+    if (域名地址.includes('.workers.dev')) {
+        地址 = atob('dmlzYS5jbg==');
+        端口 = 80;
+        传输层安全 = ['', false];
+    }
+  
 	const 威图瑞 = `${协议类型}://${用户ID}@${地址}:${端口}\u003f\u0065\u006e\u0063\u0072\u0079` + 'p' + `${atob('dGlvbj0=') + 加密方式}\u0026\u0073\u0065\u0063\u0075\u0072\u0069\u0074\u0079\u003d${传输层安全[0]}&sni=${SNI}&fp=${指纹}&type=${传输层协议}&host=${伪装域名}&path=${encodeURIComponent(路径)}#${encodeURIComponent(别名)}`;
 	const 猫猫猫 = `- {name: ${FileName}, server: ${地址}, port: ${端口}, type: ${协议类型}, uuid: ${用户ID}, tls: ${传输层安全[1]}, alpn: [h3], udp: false, sni: ${SNI}, tfo: false, skip-cert-verify: true, servername: ${伪装域名}, client-fingerprint: ${指纹}, network: ${传输层协议}, ws-opts: {path: "${路径}", headers: {${伪装域名}}}}`;
-	return [威图瑞, 猫猫猫];
+    return [威图瑞, 猫猫猫];
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
@@ -1060,7 +1096,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
 	const Config = 配置信息(userID, hostName);
-	const v2ray = Config[0];
+	const proxyConfig = Config[0];
 	const clash = Config[1];
 	let proxyhost = "";
 	if (hostName.includes(".workers.dev")) {
@@ -1142,18 +1178,20 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			<div id="qrcode_3" style="margin: 10px 10px 10px 10px;"></div>
 			<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">实用订阅技巧∨</a></strong><br>
 				<div id="noticeContent" class="notice-content" style="display: none;">
-					<strong>1.</strong> 如您使用的是 PassWall、SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
+                    <strong>1.</strong> 如您使用的是 PassWall、PassWall2 路由插件，订阅编辑的 <strong>用户代理(User-Agent)</strong> 设置为 <strong>PassWall</strong> 即可；<br>
 					<br>
-					<strong>2.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
+					<strong>2.</strong> 如您使用的是 SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
+					<br>
+					<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
 					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?sub=sub.google.com</strong><br>
 					<br>
-					<strong>3.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
+					<strong>4.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
 					&nbsp;&nbsp; https://${proxyhost}${hostName}/${uuid}<strong>?proxyip=proxyip.fxxk.dedyn.io:443</strong><br>
 					<br>
-					<strong>4.</strong> 快速更换 SOCKS5 至：user:password@127.0.0.1:1080，您可将"?socks5=user:password@127.0.0.1:1080"参数添加到链接末尾，例如：<br>
+					<strong>5.</strong> 快速更换 SOCKS5 至：user:password@127.0.0.1:1080，您可将"?socks5=user:password@127.0.0.1:1080"参数添加到链接末尾，例如：<br>
 					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?socks5=user:password@127.0.0.1:1080</strong><br>
 					<br>
-					<strong>5.</strong> 如需指定多个参数则需要使用'&'做间隔，例如：<br>
+					<strong>6.</strong> 如需指定多个参数则需要使用'&'做间隔，例如：<br>
 					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}?sub=sub.google.com<strong>&</strong>proxyip=proxyip.fxxk.dedyn.io<br>
 				</div>
 			<script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
@@ -1200,10 +1238,10 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			${订阅器}<br>
 			---------------------------------------------------------------<br>
 			################################################################<br>
-			v2ray<br>
+			proxyConfig<br>
 			---------------------------------------------------------------<br>
-			<a href="javascript:void(0)" onclick="copyToClipboard('${v2ray}','qrcode_v2ray')" style="color:blue;text-decoration:underline;cursor:pointer;">${v2ray}</a><br>
-			<div id="qrcode_v2ray" style="margin: 10px 10px 10px 10px;"></div>
+			<a href="javascript:void(0)" onclick="copyToClipboard('${proxyConfig}','qrcode_proxyConfig')" style="color:blue;text-decoration:underline;cursor:pointer;">${proxyConfig}</a><br>
+			<div id="qrcode_proxyConfig" style="margin: 10px 10px 10px 10px;"></div>
 			---------------------------------------------------------------<br>
 			################################################################<br>
 			clash-meta<br>
@@ -1276,7 +1314,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			console.log(`虚假订阅: ${url}`);
 		}
 
-		if (!userAgent.includes(('CF-Workers-SUB').toLowerCase())) {
+		if (!userAgent.includes(('CF-Workers-SUB').toLowerCase()) && !_url.searchParams.has('b64')  && !_url.searchParams.has('base64')) {
 			if ((userAgent.includes('clash') && !userAgent.includes('nekobox')) || (_url.searchParams.has('clash') && !userAgent.includes('subconverter'))) {
 				url = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 				isBase64 = false;
@@ -1451,6 +1489,10 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	addresses = addresses.concat(newAddressesapi);
 	addresses = addresses.concat(newAddressescsv);
 	let notlsresponseBody;
+	
+	// 在函数开始处定义协议类型
+	const 协议类型 = atob(啥啥啥_写的这是啥啊);
+
 	if (noTLS == 'true') {
 		addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
 		addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
@@ -1503,7 +1545,18 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 节点备注 = '';
 			const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT0mdHlwZT13cyZob3N0PQ==') + 伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+			const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+				`${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
+				`type=ws&` +
+				`host=${伪装域名}&` +
+				`path=${encodeURIComponent(最终路径)}&` +
+				`udp=true&` +  // 保留UDP支持
+				`security=none&` + 
+				`tfo=true&` + 
+				`keepAlive=true&` + // 保持连接
+				`congestion_control=bbr&` + // BBR拥塞控制
+				`udp_relay=true&` + // UDP转发
+				`#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
 
@@ -1566,8 +1619,22 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
 		}
 
-		const 协议类型 = atob(啥啥啥_写的这是啥啊);
-		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port + atob('P2VuY3J5cHRpb249bm9uZSZzZWN1cml0eT10bHMmc25pPQ==') + 伪装域名}&fp=random&type=ws&host=${伪装域名}&path=${encodeURIComponent(最终路径)}#${encodeURIComponent(addressid + 节点备注)}`;
+		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+			`${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
+			`${atob('c2VjdXJpdHk9dGxz')}&` + 
+			`${atob('c25pPQ==')}${伪装域名}&` + 
+			`fp=randomized&` + 
+			`type=ws&` +
+			`host=${伪装域名}&` +
+			`path=${encodeURIComponent(最终路径)}&` +
+			`alpn=h3&` +
+			`udp=true&` +  // 保留UDP支持
+			`allowInsecure=false&` +
+			`tfo=true&` + 
+			`keepAlive=true&` + // 保持连接
+			`congestion_control=bbr&` + // BBR拥塞控制
+			`udp_relay=true&` + // UDP转发
+			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
 	}).join('\n');
