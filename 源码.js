@@ -613,10 +613,18 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 connect({ 
                     hostname: address, 
                     port: port,
-                    // 添加 TCP 连接优化选项
+                    // TCP 优化选项
                     allowHalfOpen: false,
                     keepAlive: true,
-                    keepAliveInitialDelay: 60000
+                    keepAliveInitialDelay: 60000,
+                    // TCP Fast Open 相关优化
+                    tcpFastOpen: true,           // 启用 TCP Fast Open
+                    tcpFastOpenQueueLength: 256, // TFO 队列长度
+                    noDelay: true,               // 禁用 Nagle 算法
+                    reusePort: true,             // 启用端口重用
+                    // TCP 缓冲区优化
+                    receiveBufferSize: 4194304,  // 接收缓冲区 4MB
+                    sendBufferSize: 4194304      // 发送缓冲区 4MB
                 }),
             new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('连接超时')), 3000)
