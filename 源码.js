@@ -482,72 +482,9 @@ function mergeData(header, chunk) {
     return merged;
 }
 
-// 优化 fetchWithTimeout 函数，添加默认超时和错误处理
-async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 3000 } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-        const response = await fetch(resource, {
-            ...options,
-            signal: controller.signal,
-            headers: {
-                ...options.headers,
-                'Upgrade-Insecure-Requests': '1',
-                'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
-            }
-        });
-        clearTimeout(id);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return await response.json();
-    } catch (error) {
-        console.error(`Fetch error: ${error.message}`);
-        throw error;
-    }
-}
-
-// 并行处理多个异步请求
-async function fetchMultipleData(urls) {
-    try {
-        const promises = urls.map(url => fetchWithTimeout(url, {
-            headers: {
-                'Upgrade-Insecure-Requests': '1',
-                'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
-            }
-        }));
-        const results = await Promise.all(promises);
-        return results;
-    } catch (error) {
-        console.error('Error fetching multiple data:', error);
-    }
-}
-
-// 使用流处理大数据
-function processLargeDataStream(dataStream) {
-    const reader = dataStream.getReader();
-    const decoder = new TextDecoder();
-    let result = '';
-
-    return reader.read().then(function processText({ done, value }) {
-        if (done) {
-            console.log('Stream complete');
-            return result;
-        }
-        result += decoder.decode(value, { stream: true });
-        return reader.read().then(processText);
-    });
-}
-
-// 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+    const WS_READY_STATE_OPEN = 1;
+    
     try {
         // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
@@ -557,8 +494,13 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         
         // 使用Promise.race设置2秒超时
         const tcpSocket = await Promise.race([
-            connect({ hostname: dnsServer, port: dnsPort }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
+            connect({
+                hostname: dnsServer,
+                port: dnsPort
+            }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('DNS连接超时')), 2000)
+            )
         ]);
 
         log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
@@ -619,7 +561,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                     keepAliveInitialDelay: 60000
                 }),
             new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('连接超时')), 3000)
+                setTimeout(() => reject(new Error('连接超时')), 5000)
             )
         ]);
 
