@@ -1527,7 +1527,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	        `keepAlive=true&` + 
 		`congestion_control=bbr&` +
 		`udp=true&` +
-		`udp_relay=true&` +// 启用UDP转发
                 `host=${伪装域名}&` + 
                 `path=${encodeURIComponent(最终路径)}` + 
                 `#${encodeURIComponent(addressid + 节点备注)}`;
@@ -1606,7 +1605,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`keepAlive=true&` + 
 			`congestion_control=bbr&` +
 			`udp=true&` +
-			`udp_relay=true&` +// 启用UDP转发
 			`host=${伪装域名}&` +
                         `path=${encodeURIComponent(最终路径)}` + 
 			`#${encodeURIComponent(addressid + 节点备注)}`;
