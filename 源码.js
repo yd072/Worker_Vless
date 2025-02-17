@@ -1462,51 +1462,11 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
-function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, userAgent) {
+function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
 	const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
 	addresses = addresses.concat(newAddressesapi);
 	addresses = addresses.concat(newAddressescsv);
 	let notlsresponseBody;
-
-    function 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent) {
-        // 使用不敏感的标识检查客户端类型
-        const isSimpleClient = userAgent && (
-            userAgent.toLowerCase().includes('ng') || 
-            userAgent.toLowerCase().includes('2ray') ||
-            userAgent.toLowerCase().includes('mobile')
-        );
-        
-        // 简化格式用于特定客户端
-        if (isSimpleClient) {
-            return `${协议类型}://${UUID}@${address}:${port}?` + 
-                `encryption=none&` + 
-                `security=${noTLS == 'true' ? 'none' : 'tls'}&` + 
-                (noTLS != 'true' ? `sni=${伪装域名}&` : '') +
-                `type=ws&` + 
-                `fp=randomized&` +
-                `alpn=h3&` + 
-                `host=${伪装域名}&` + 
-                `path=${encodeURIComponent(最终路径)}` + 
-                `#${encodeURIComponent(addressid + 节点备注)}`;
-        }
-        
-        // 其他客户端使用完整格式
-        return `${协议类型}://${UUID}@${address}:${port}?` + 
-            `encryption=none&` + 
-            `security=${noTLS == 'true' ? 'none' : 'tls'}&` + 
-            (noTLS != 'true' ? `sni=${伪装域名}&` : '') +
-            `fp=randomized&` +
-            `alpn=h3&` +
-            `type=ws&` + 
-            `host=${伪装域名}&` + 
-            `path=${encodeURIComponent(最终路径)}&` + 
-            `tfo=true&` +
-            `keepAlive=true&` +
-            `congestion_control=bbr&` +
-            `udp=true` +
-            `#${encodeURIComponent(addressid + 节点备注)}`;
-    }
-
 	if (noTLS == 'true') {
 		addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
 		addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
@@ -1559,8 +1519,18 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 节点备注 = '';
 			const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-            return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent);
+            const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+                `encryption=none&` + 
+                `security=none&` + 
+                `type=ws&` + 
+                `host=${伪装域名}&` + 
+                `path=${encodeURIComponent(最终路径)}` + 
+                `#${encodeURIComponent(addressid + 节点备注)}`;
+
+			return 维列斯Link;
+
 		}).join('\n');
+
 	}
 
 	const uniqueAddresses = [...new Set(addresses)];
@@ -1620,7 +1590,24 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 
 		const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-        return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent);
+		const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+			`encryption=none&` +
+			`security=tls&` +
+			`sni=${伪装域名}&` +
+			`fp=randomized&` +
+			`alpn=h3&` + 
+			`type=ws&` +
+			`tfo=true&` + // 启用 TCP Fast Open
+			`keepAlive=true&` + 
+			`congestion_control=bbr&` +
+			`udp=true&` +
+			`mux=true` + // 启用多路复用
+			`udp_relay=true` +// 启用UDP转发
+			`host=${伪装域名}&` +
+            `path=${encodeURIComponent(最终路径)}` + 
+			`#${encodeURIComponent(addressid + 节点备注)}`;
+
+		return 维列斯Link;
 	}).join('\n');
 
 	let base64Response = responseBody; 
