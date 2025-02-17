@@ -1307,7 +1307,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		try {
 			let content;
 			if ((!sub || sub == "") && isBase64 == true) {
-				content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv);
+				content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, request);
 			} else {
 				const response = await fetch(url, {
 					headers: {
@@ -1464,11 +1464,47 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
-function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
+function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, request) {
     const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
     addresses = addresses.concat(newAddressesapi);
     addresses = addresses.concat(newAddressescsv);
     let notlsresponseBody;
+
+    function 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent) {
+        // 检查是否为 v2rayng 客户端
+        const isV2rayng = userAgent && userAgent.toLowerCase().includes('v2rayng');
+        
+        // v2rayng 使用简化格式
+        if (isV2rayng) {
+            return `${协议类型}://${UUID}@${address}:${port}?` + 
+                `encryption=none&` + 
+                `security=${noTLS == 'true' ? 'none' : 'tls'}&` + 
+                (noTLS != 'true' ? `sni=${伪装域名}&` : '') +
+                `fp=randomized&` +
+                `alpn=h3&` +
+                `type=ws&` + 
+                `host=${伪装域名}&` + 
+                `path=${encodeURIComponent(最终路径)}` + 
+                `#${encodeURIComponent(addressid + 节点备注)}`;
+        }
+        
+        // 其他客户端使用完整格式
+        return `${协议类型}://${UUID}@${address}:${port}?` + 
+            `encryption=none&` + 
+            `security=${noTLS == 'true' ? 'none' : 'tls'}&` + 
+            (noTLS != 'true' ? `sni=${伪装域名}&` : '') +
+            `fp=randomized&` +
+            `alpn=h3&` +
+            `type=ws&` + 
+            `host=${伪装域名}&` + 
+            `path=${encodeURIComponent(最终路径)}&` + 
+            `tfo=true&` +
+            `keepAlive=true&` +
+            `congestion_control=bbr&` +
+            `udp=true` +
+            `#${encodeURIComponent(addressid + 节点备注)}`;
+    }
+
     if (noTLS == 'true') {
         addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
         addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
@@ -1521,16 +1557,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
             let 节点备注 = '';
             const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-            // 修改 v2ray 链接格式以兼容 v2rayng
-            const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-                `encryption=none&` + 
-                `security=none&` + 
-                `type=ws&` + 
-                `host=${伪装域名}&` + 
-                `path=${encodeURIComponent(最终路径)}` + 
-                `#${encodeURIComponent(addressid + 节点备注)}`;
-
-            return 维列斯Link;
+            return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, request.headers.get('User-Agent'));
         }).join('\n');
     }
 
@@ -1590,19 +1617,8 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
         }
         
         const 协议类型 = atob(啥啥啥_写的这是啥啊);
-        // 修改 v2ray 链接格式以兼容 v2rayng
-        const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-            `encryption=none&` + 
-            `security=tls&` + 
-            `sni=${伪装域名}&` + 
-			`fp=randomized&` +
-			`alpn=h3&` + 
-            `type=ws&` + 
-            `host=${伪装域名}&` + 
-            `path=${encodeURIComponent(最终路径)}` + 
-            `#${encodeURIComponent(addressid + 节点备注)}`;
 
-        return 维列斯Link;
+        return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, request.headers.get('User-Agent'));
     }).join('\n');
 
     let base64Response = responseBody; 
