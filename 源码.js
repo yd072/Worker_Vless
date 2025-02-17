@@ -70,10 +70,24 @@ const utils = {
 		}
 	},
 
+	// WebSocket相关
+	ws: {
+		safeClose(socket) {
+			try {
+				if (socket.readyState === WS_READY_STATE_OPEN || 
+					socket.readyState === WS_READY_STATE_CLOSING) {
+					socket.close();
+				}
+			} catch (error) {
+				console.error('safeCloseWebSocket error', error);
+			}
+		}
+	},
+
 	// 错误处理
 	error: {
 		handle(err, type = 'general') {
-			console.error(`[${type}] Error:`, err);
+	console.error(`[${type}] Error:`, err);
 			return new Response(err.toString(), {
 				status: type === 'auth' ? 401 : 500,
 				headers: { "Content-Type": "text/plain;charset=utf-8" }
@@ -112,7 +126,7 @@ class WebSocketManager {
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
-			safeCloseWebSocket(this.webSocket); 
+			utils.ws.safeClose(this.webSocket);
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
@@ -143,7 +157,7 @@ class WebSocketManager {
 		if (this.readableStreamCancel) return;
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		safeCloseWebSocket(this.webSocket); 
+		utils.ws.safeClose(this.webSocket);
 	}
 }
 
@@ -501,12 +515,23 @@ async function fetchWithTimeout(resource, options = {}) {
             }
         });
         clearTimeout(id);
+        return response;
+    } catch (error) {
+        console.error(`Fetch error: ${error.message}`);
+        throw error;
+    }
+}
+
+// 使用 async/await 处理异步操作
+async function fetchData(url) {
+    try {
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         return await response.json();
     } catch (error) {
-        console.error(`Fetch error: ${error.message}`);
+        console.error('Fetch error:', error);
         throw error;
     }
 }
@@ -514,15 +539,7 @@ async function fetchWithTimeout(resource, options = {}) {
 // 并行处理多个异步请求
 async function fetchMultipleData(urls) {
     try {
-        const promises = urls.map(url => fetchWithTimeout(url, {
-            headers: {
-                'Upgrade-Insecure-Requests': '1',
-                'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
-            }
-        }));
+        const promises = urls.map(url => fetchData(url));
         const results = await Promise.all(promises);
         return results;
     } catch (error) {
@@ -548,6 +565,8 @@ function processLargeDataStream(dataStream) {
 
 // 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+    const WS_READY_STATE_OPEN = 1;
+    
     try {
         // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
@@ -576,7 +595,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         if (维列斯Header) 维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
-                        safeCloseWebSocket(webSocket); 
+                        safeCloseWebSocket(webSocket);
                     }
                 }
             },
@@ -589,7 +608,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         }));
     } catch (error) {
         console.error(`DNS查询异常: ${error.message}`, error.stack);
-        safeCloseWebSocket(webSocket); 
+        safeCloseWebSocket(webSocket);
     }
 }
 
@@ -656,7 +675,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             tcpSocket.closed.catch(error => {
                 console.log('Retry tcpSocket closed error', error);
             }).finally(() => {
-                safeCloseWebSocket(webSocket); 
+                safeCloseWebSocket(webSocket);
             });
             remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
         } catch (error) {
@@ -775,13 +794,32 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         )
         .catch((error) => {
             console.error(`remoteSocketToWS exception`);
-            safeCloseWebSocket(webSocket); 
+            safeCloseWebSocket(webSocket);
         });
 
     if (!hasIncomingData && retry) {
         log(`Retrying connection`);
         retry();
     }
+}
+
+function base64ToArrayBuffer(base64Str) {
+    if (!base64Str) {
+        return { earlyData: undefined, error: null };
+    }
+    try {
+        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = atob(base64Str);
+        const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
+        return { earlyData: arrayBuffer.buffer, error: null };
+    } catch (error) {
+        return { earlyData: undefined, error };
+    }
+}
+
+function isValidUUID(uuid) {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidPattern.test(uuid);
 }
 
 const WS_READY_STATE_OPEN = 1;
@@ -810,7 +848,7 @@ function unsafeStringify(arr, offset = 0) {
 
 function stringify(arr, offset = 0) {
     const uuid = unsafeStringify(arr, offset);
-    if (!utils.isValidUUID(uuid)) {
+    if (!isValidUUID(uuid)) {
         throw new TypeError(`Invalid UUID: ${uuid}`);
     }
     return uuid;
@@ -1158,22 +1196,23 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			<a href="javascript:void(0)" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?sb','qrcode_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${proxyhost}${hostName}/${uuid}?sb</a><br>
 			<div id="qrcode_3" style="margin: 10px 10px 10px 10px;"></div>
 			<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">实用订阅技巧∨</a></strong><br>
-			<div id="noticeContent" class="notice-content" style="display: none;">
-				<strong>1.</strong> 如您使用的是 PassWall、PassWall2 路由插件，订阅编辑的 <strong>用户代理(User-Agent)</strong> 设置为 <strong>PassWall</strong> 即可；<br>
-				<strong>2.</strong> 如您使用的是 SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
-				<br>
-				<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
-				&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?sub=sub.google.com</strong><br>
-				<br>
-				<strong>4.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
-				&nbsp;&nbsp; https://${proxyhost}${hostName}/${uuid}<strong>?proxyip=proxyip.fxxk.dedyn.io:443</strong><br>
-				<br>
-				<strong>5.</strong> 快速更换 SOCKS5 至：user:password@127.0.0.1:1080，您可将"?socks5=user:password@127.0.0.1:1080"参数添加到链接末尾，例如：<br>
-				&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?socks5=user:password@127.0.0.1:1080</strong><br>
-				<br>
-				<strong>6.</strong> 如需指定多个参数则需要使用'&'做间隔，例如：<br>
-				&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}?sub=sub.google.com<strong>&</strong>proxyip=proxyip.fxxk.dedyn.io<br>
-			</div>
+				<div id="noticeContent" class="notice-content" style="display: none;">
+                    <strong>1.</strong> 如您使用的是 PassWall、PassWall2 路由插件，订阅编辑的 <strong>用户代理(User-Agent)</strong> 设置为 <strong>PassWall</strong> 即可；<br>
+					<br>
+					<strong>2.</strong> 如您使用的是 SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
+					<br>
+					<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
+					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?sub=sub.google.com</strong><br>
+					<br>
+					<strong>4.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
+					&nbsp;&nbsp; https://${proxyhost}${hostName}/${uuid}<strong>?proxyip=proxyip.fxxk.dedyn.io:443</strong><br>
+					<br>
+					<strong>5.</strong> 快速更换 SOCKS5 至：user:password@127.0.0.1:1080，您可将"?socks5=user:password@127.0.0.1:1080"参数添加到链接末尾，例如：<br>
+					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?socks5=user:password@127.0.0.1:1080</strong><br>
+					<br>
+					<strong>6.</strong> 如需指定多个参数则需要使用'&'做间隔，例如：<br>
+					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}?sub=sub.google.com<strong>&</strong>proxyip=proxyip.fxxk.dedyn.io<br>
+				</div>
 			<script src="https://cdn.jsdelivr.net/npm/@keeex/qrcodejs-kx@1.0.2/qrcode.min.js"></script>
 			<script>
 			function copyToClipboard(text, qrcode) {
@@ -1465,10 +1504,10 @@ async function 整理测速结果(tls) {
 }
 
 function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, userAgent) {
-    const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
-    addresses = addresses.concat(newAddressesapi);
-    addresses = addresses.concat(newAddressescsv);
-    let notlsresponseBody;
+	const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
+	addresses = addresses.concat(newAddressesapi);
+	addresses = addresses.concat(newAddressescsv);
+	let notlsresponseBody;
 
     function 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent) {
         // 使用不敏感的标识检查客户端类型
@@ -1509,126 +1548,126 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
             `#${encodeURIComponent(addressid + 节点备注)}`;
     }
 
-    if (noTLS == 'true') {
-        addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
-        addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
-        const uniqueAddressesnotls = [...new Set(addressesnotls)];
+	if (noTLS == 'true') {
+		addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
+		addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
+		const uniqueAddressesnotls = [...new Set(addressesnotls)];
 
-        notlsresponseBody = uniqueAddressesnotls.map(address => {
-            let port = "-1";
-            let addressid = address;
+		notlsresponseBody = uniqueAddressesnotls.map(address => {
+			let port = "-1";
+			let addressid = address;
 
-            const match = addressid.match(regex);
-            if (!match) {
-                if (address.includes(':') && address.includes('#')) {
-                    const parts = address.split(':');
-                    address = parts[0];
-                    const subParts = parts[1].split('#');
-                    port = subParts[0];
-                    addressid = subParts[1];
-                } else if (address.includes(':')) {
-                    const parts = address.split(':');
-                    address = parts[0];
-                    port = parts[1];
-                } else if (address.includes('#')) {
-                    const parts = address.split('#');
-                    address = parts[0];
-                    addressid = parts[1];
-                }
+			const match = addressid.match(regex);
+			if (!match) {
+				if (address.includes(':') && address.includes('#')) {
+					const parts = address.split(':');
+					address = parts[0];
+					const subParts = parts[1].split('#');
+					port = subParts[0];
+					addressid = subParts[1];
+				} else if (address.includes(':')) {
+					const parts = address.split(':');
+					address = parts[0];
+					port = parts[1];
+				} else if (address.includes('#')) {
+					const parts = address.split('#');
+					address = parts[0];
+					addressid = parts[1];
+				}
 
-                if (addressid.includes(':')) {
-                    addressid = addressid.split(':')[0];
-                }
-            } else {
-                address = match[1];
-                port = match[2] || port;
-                addressid = match[3] || address;
-            }
+				if (addressid.includes(':')) {
+					addressid = addressid.split(':')[0];
+				}
+			} else {
+				address = match[1];
+				port = match[2] || port;
+				addressid = match[3] || address;
+			}
 
-            const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
-            if (!isValidIPv4(address) && port == "-1") {
-                for (let httpPort of httpPorts) {
-                    if (address.includes(httpPort)) {
-                        port = httpPort;
-                        break;
-                    }
-                }
-            }
-            if (port == "-1") port = "80";
+			const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
+			if (!isValidIPv4(address) && port == "-1") {
+				for (let httpPort of httpPorts) {
+					if (address.includes(httpPort)) {
+						port = httpPort;
+						break;
+					}
+				}
+			}
+			if (port == "-1") port = "80";
 
-            let 伪装域名 = host;
-            let 最终路径 = path;
-            let 节点备注 = '';
-            const 协议类型 = atob(啥啥啥_写的这是啥啊);
+			let 伪装域名 = host;
+			let 最终路径 = path;
+			let 节点备注 = '';
+			const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
             return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent);
-        }).join('\n');
-    }
+		}).join('\n');
+	}
 
-    const uniqueAddresses = [...new Set(addresses)];
+	const uniqueAddresses = [...new Set(addresses)];
 
-    const responseBody = uniqueAddresses.map(address => {
-        let port = "-1";
-        let addressid = address;
+	const responseBody = uniqueAddresses.map(address => {
+		let port = "-1";
+		let addressid = address;
 
-        const match = addressid.match(regex);
-        if (!match) {
-            if (address.includes(':') && address.includes('#')) {
-                const parts = address.split(':');
-                address = parts[0];
-                const subParts = parts[1].split('#');
-                port = subParts[0];
-                addressid = subParts[1];
-            } else if (address.includes(':')) {
-                const parts = address.split(':');
-                address = parts[0];
-                port = parts[1];
-            } else if (address.includes('#')) {
-                const parts = address.split('#');
-                address = parts[0];
-                addressid = parts[1];
-            }
+		const match = addressid.match(regex);
+		if (!match) {
+			if (address.includes(':') && address.includes('#')) {
+				const parts = address.split(':');
+				address = parts[0];
+				const subParts = parts[1].split('#');
+				port = subParts[0];
+				addressid = subParts[1];
+			} else if (address.includes(':')) {
+				const parts = address.split(':');
+				address = parts[0];
+				port = parts[1];
+			} else if (address.includes('#')) {
+				const parts = address.split('#');
+				address = parts[0];
+				addressid = parts[1];
+			}
 
-            if (addressid.includes(':')) {
-                addressid = addressid.split(':')[0];
-            }
-        } else {
-            address = match[1];
-            port = match[2] || port;
-            addressid = match[3] || address;
-        }
+			if (addressid.includes(':')) {
+				addressid = addressid.split(':')[0];
+			}
+		} else {
+			address = match[1];
+			port = match[2] || port;
+			addressid = match[3] || address;
+		}
 
-        if (!isValidIPv4(address) && port == "-1") {
-            for (let httpsPort of httpsPorts) {
-                if (address.includes(httpsPort)) {
-                    port = httpsPort;
-                    break;
-                }
-            }
-        }
-        if (port == "-1") port = "443";
+		if (!isValidIPv4(address) && port == "-1") {
+			for (let httpsPort of httpsPorts) {
+				if (address.includes(httpsPort)) {
+					port = httpsPort;
+					break;
+				}
+			}
+		}
+		if (port == "-1") port = "443";
 
-        let 伪装域名 = host;
-        let 最终路径 = path;
-        let 节点备注 = '';
-        const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
-        if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
+		let 伪装域名 = host;
+		let 最终路径 = path;
+		let 节点备注 = '';
+		const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
+		if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
 
-        if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
-            最终路径 = `/${伪装域名}${最终路径}`;
-            伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
-            节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
-        }
-        
-        const 协议类型 = atob(啥啥啥_写的这是啥啊);
+		if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
+			最终路径 = `/${伪装域名}${最终路径}`;
+			伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
+			节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
+		}
+
+		const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
         return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent);
-    }).join('\n');
+	}).join('\n');
 
-    let base64Response = responseBody; 
-    if (noTLS == 'true') base64Response += `\n${notlsresponseBody}`;
-    if (link.length > 0) base64Response += '\n' + link.join('\n');
-    return btoa(base64Response);
+	let base64Response = responseBody; 
+	if (noTLS == 'true') base64Response += `\n${notlsresponseBody}`;
+	if (link.length > 0) base64Response += '\n' + link.join('\n');
+	return btoa(base64Response);
 }
 
 // 优化 整理 函数
@@ -1842,7 +1881,7 @@ async function handleGetRequest(env, txt) {
 			---------------------------------------------------------------<br>
 			&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
 			<div id="noticeContent" class="notice-content">
-				${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQVjYlM0NiciUzRSUzQ2JyJTNFCglMDQlMDQlMDQlMDQlMDQlM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5OCVBRiVFNiU5OCVBRiVFNCVCQiVBMyVFNCVCRCU5Q0lQJUVGJUJDJThDJUU1JThGJUFGJUU0JUJEJTlDJUU0JUI4JUJBUFJPWFlJUCVFNyU5QSU4NCVFOCVBRiU5RCVFRiVCQyU4QyVFNSU4RiVBRiVFNSVCMCU4NiUyMiUzRnByb3h5aXAlM0R0cnVlJTIyJUU1JThGJTgyJUU2JTk1JUIwJUU2JUI3JUJCJUU1JThBJUEwJUU1JTg4JUIwJUU5JTkzJUJFJUU2JThFJUE1JUU2JTlDJUFCJUU1JUIwJUJFJUVGJUJDJThDJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzRnByb3h5aXAlM0R0cnVlJTNDYnIlM0UlM0NiciUzRQoKJTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMy4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOTglQUYlMjAlM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JTI3JTNFQ2xvdWRmbGFyZVNwZWVkVGVzdCUzQyUyRmElM0UlMjAlRTclOUElODQlMjBjc3YlMjAlRTclQkIlOTMlRTYlOUUlOUMlRTYlOTYlODclRTQlQkIlQjclRTMlODAlODIlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMjAlMjBodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
+				${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUIzJUU2JThDJUE1JUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUEwJUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwMTI3LjAuMC4xJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQJTNDYnIlM0UKJTIwJTIwJUU1JTkwJThEJUU1JUIxJTk1JTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OSVFNSVBRiU5RiVFNSU5MCU4RCUzQ2JyJTNFCiUyMCUyMCU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQVjYlM0NiciUzRSUzQ2JyJTNFCgolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5OCVBRiVFNiU5OCVBRiVFNCVCQiVBMyVFNCVCRCU5Q0lQJUVGJUJDJThDJUU1JThGJUFGJUU0JUJEJTlDJUU0JUI4JUJBUFJPWFlJUCVFNyU5QSU4NCVFOCVBRiU5RCVFRiVCQyU4QyVFNSU4RiVBRiVFNSVCMCU4NiUyMiUzRnByb3h5aXAlM0R0cnVlJTIyJUU1JThGJTgyJUU2JTk1JUIwJUU2JUI3JUJCJUU1JThBJUEwJUU1JTg4JUIwJUU5JTkzJUJFJUU2JThFJUE1JUU2JTlDJUFCJUU1JUIwJUJFJUVGJUJDJThDJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzRnByb3h5aXAlM0R0cnVlJTNDYnIlM0UlM0NiciUzRQoKJTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMy4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOTglQUYlMjAlM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRnJhdyUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}
 			</div>
 			<div class="editor-container">
 				${hasKV ? `
