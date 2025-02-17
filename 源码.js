@@ -1307,7 +1307,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		try {
 			let content;
 			if ((!sub || sub == "") && isBase64 == true) {
-				content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, request);
+				content = await 生成本地订阅(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, UA);
 			} else {
 				const response = await fetch(url, {
 					headers: {
@@ -1464,7 +1464,7 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
-function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, request) {
+function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv, userAgent) {
     const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
     addresses = addresses.concat(newAddressesapi);
     addresses = addresses.concat(newAddressescsv);
@@ -1480,9 +1480,9 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
                 `encryption=none&` + 
                 `security=${noTLS == 'true' ? 'none' : 'tls'}&` + 
                 (noTLS != 'true' ? `sni=${伪装域名}&` : '') +
-                `fp=randomized&` +
-                `alpn=h3&` +
                 `type=ws&` + 
+				`fp=randomized&` +
+                `alpn=h3&` + 
                 `host=${伪装域名}&` + 
                 `path=${encodeURIComponent(最终路径)}` + 
                 `#${encodeURIComponent(addressid + 节点备注)}`;
@@ -1557,7 +1557,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
             let 节点备注 = '';
             const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-            return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, request.headers.get('User-Agent'));
+            return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent);
         }).join('\n');
     }
 
@@ -1618,7 +1618,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
         
         const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-        return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, request.headers.get('User-Agent'));
+        return 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent);
     }).join('\n');
 
     let base64Response = responseBody; 
