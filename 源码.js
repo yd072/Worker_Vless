@@ -1573,8 +1573,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 		if (port == "-1") port = "443";
 
 		let 伪装域名 = host;
-		let alpn = ['h3'];
-		let 最终路径 = path;
+		let 最终路径 = "/ws";
 		let 节点备注 = '';
 		const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
 		if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
