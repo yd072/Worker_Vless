@@ -1464,177 +1464,151 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
-async function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
-    // 添加错误处理和日志记录
-    try {
-        const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
-        addresses = addresses.concat(newAddressesapi);
-        addresses = addresses.concat(newAddressescsv);
-        let notlsresponseBody = '';
-        
-        // 在函数开始处定义协议类型
-        const 协议类型 = atob(啥啥啥_写的这是啥啊);
+function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
+    const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
+    addresses = addresses.concat(newAddressesapi);
+    addresses = addresses.concat(newAddressescsv);
+    let notlsresponseBody;
+    if (noTLS == 'true') {
+        addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
+        addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
+        const uniqueAddressesnotls = [...new Set(addressesnotls)];
 
-        // 添加响应头检查
-        const headers = {
-            'content-type': 'text/plain;charset=utf-8',
-            'access-control-allow-origin': '*',
-            'cache-control': 'no-cache',
-            'subscription-userinfo': 'upload=0;download=0;total=0;expire=0'
-        };
+        notlsresponseBody = uniqueAddressesnotls.map(address => {
+            let port = "-1";
+            let addressid = address;
 
-        if (noTLS == 'true') {
-            addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
-            addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
-            const uniqueAddressesnotls = [...new Set(addressesnotls)];
-
-            notlsresponseBody = uniqueAddressesnotls.map(address => {
-                let port = "-1";
-                let addressid = address;
-
-                const match = addressid.match(regex);
-                if (!match) {
-                    if (address.includes(':') && address.includes('#')) {
-                        const parts = address.split(':');
-                        address = parts[0];
-                        const subParts = parts[1].split('#');
-                        port = subParts[0];
-                        addressid = subParts[1];
-                    } else if (address.includes(':')) {
-                        const parts = address.split(':');
-                        address = parts[0];
-                        port = parts[1];
-                    } else if (address.includes('#')) {
-                        const parts = address.split('#');
-                        address = parts[0];
-                        addressid = parts[1];
-                    }
-
-                    if (addressid.includes(':')) {
-                        addressid = addressid.split(':')[0];
-                    }
-                } else {
-                    address = match[1];
-                    port = match[2] || port;
-                    addressid = match[3] || address;
+            const match = addressid.match(regex);
+            if (!match) {
+                if (address.includes(':') && address.includes('#')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    const subParts = parts[1].split('#');
+                    port = subParts[0];
+                    addressid = subParts[1];
+                } else if (address.includes(':')) {
+                    const parts = address.split(':');
+                    address = parts[0];
+                    port = parts[1];
+                } else if (address.includes('#')) {
+                    const parts = address.split('#');
+                    address = parts[0];
+                    addressid = parts[1];
                 }
 
-                // 确保端口和地址都有有效值
-                if (port === "-1") port = "80"; // 默认端口
-                let 伪装域名 = host;
-                let 最终路径 = path;
-                let 节点备注 = '';
-                
-                const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-                    `${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
-                    `type=ws&` +
-                    `host=${伪装域名}&` +
-                    `path=${encodeURIComponent(最终路径)}&` +
-                    `udp=true&` +  // 保留UDP支持
-                    `security=none&` + 
-                    `tfo=true&` + 
-                    `keepAlive=true&` + // 保持连接
-                    `congestion_control=bbr&` + // BBR拥塞控制
-                    `udp_relay=true&` + // UDP转发
-                    `#${encodeURIComponent(addressid + 节点备注)}`;
-
-                return 维列斯Link;
-            }).join('\n');
-        }
-
-        const uniqueAddresses = [...new Set(addresses)].filter(Boolean); // 过滤掉无效地址
-
-        const responseBody = uniqueAddresses.map(address => {
-            try {
-                let port = "-1";
-                let addressid = address;
-
-                const match = addressid.match(regex);
-                if (!match) {
-                    if (address.includes(':') && address.includes('#')) {
-                        const parts = address.split(':');
-                        address = parts[0];
-                        const subParts = parts[1].split('#');
-                        port = subParts[0];
-                        addressid = subParts[1];
-                    } else if (address.includes(':')) {
-                        const parts = address.split(':');
-                        address = parts[0];
-                        port = parts[1];
-                    } else if (address.includes('#')) {
-                        const parts = address.split('#');
-                        address = parts[0];
-                        addressid = parts[1];
-                    }
-
-                    if (addressid.includes(':')) {
-                        addressid = addressid.split(':')[0];
-                    }
-                } else {
-                    address = match[1];
-                    port = match[2] || port;
-                    addressid = match[3] || address;
+                if (addressid.includes(':')) {
+                    addressid = addressid.split(':')[0];
                 }
-
-                // 确保端口和地址都有有效值
-                if (port === "-1") port = "443"; // 默认端口
-                let 伪装域名 = host;
-                let 最终路径 = path;
-                let 节点备注 = '';
-                
-                const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
-                if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
-
-                if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
-                    最终路径 = `/${伪装域名}${最终路径}`;
-                    伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
-                    节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
-                }
-
-                const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
-                    `${atob('ZW5jcnlwdGlvbj1ub25l')}&` + 
-                    `${atob('c2VjdXJpdHk9dGxz')}&` + 
-                    `${atob('c25pPQ==')}${伪装域名}&` + 
-                    `fp=randomized&` + 
-                    `type=ws&` +
-                    `host=${伪装域名}&` +
-                    `path=${encodeURIComponent(最终路径)}&` +
-                    `alpn=h3&` +
-                    `udp=true&` +  // 保留UDP支持
-                    `allowInsecure=false&` +
-                    `tfo=true&` + 
-                    `keepAlive=true&` + // 保持连接
-                    `congestion_control=bbr&` + // BBR拥塞控制
-                    `udp_relay=true&` + // UDP转发
-                    `#${encodeURIComponent(addressid + 节点备注)}`;
-
-                return 维列斯Link;
-            } catch (error) {
-                console.error('处理地址时出错:', error, address);
-                return null;
+            } else {
+                address = match[1];
+                port = match[2] || port;
+                addressid = match[3] || address;
             }
-        }).filter(Boolean).join('\n');
 
-        let base64Response = responseBody;
-        if (noTLS == 'true' && notlsresponseBody) {
-            base64Response += `\n${notlsresponseBody}`;
-        }
-        if (link && link.length > 0) {
-            base64Response += '\n' + link.filter(Boolean).join('\n');
-        }
+            const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
+            if (!isValidIPv4(address) && port == "-1") {
+                for (let httpPort of httpPorts) {
+                    if (address.includes(httpPort)) {
+                        port = httpPort;
+                        break;
+                    }
+                }
+            }
+            if (port == "-1") port = "80";
 
-        // 确保返回有效的 base64 编码
-        try {
-            return btoa(base64Response || '');
-        } catch (error) {
-            console.error('Base64编码失败:', error);
-            return btoa(''); // 返回空字符串的base64编码作为后备
-        }
+            let 伪装域名 = host;
+            let 最终路径 = path;
+            let 节点备注 = '';
+            const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
-    } catch (error) {
-        console.error('生成订阅时出错:', error);
-        return btoa(''); // 出错时返回空订阅
+            // 修改 v2ray 链接格式以兼容 v2rayng
+            const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+                `encryption=none&` + 
+                `security=none&` + 
+                `type=ws&` + 
+                `host=${伪装域名}&` + 
+                `path=${encodeURIComponent(最终路径)}` + 
+                `#${encodeURIComponent(addressid + 节点备注)}`;
+
+            return 维列斯Link;
+        }).join('\n');
     }
+
+    const uniqueAddresses = [...new Set(addresses)];
+
+    const responseBody = uniqueAddresses.map(address => {
+        let port = "-1";
+        let addressid = address;
+
+        const match = addressid.match(regex);
+        if (!match) {
+            if (address.includes(':') && address.includes('#')) {
+                const parts = address.split(':');
+                address = parts[0];
+                const subParts = parts[1].split('#');
+                port = subParts[0];
+                addressid = subParts[1];
+            } else if (address.includes(':')) {
+                const parts = address.split(':');
+                address = parts[0];
+                port = parts[1];
+            } else if (address.includes('#')) {
+                const parts = address.split('#');
+                address = parts[0];
+                addressid = parts[1];
+            }
+
+            if (addressid.includes(':')) {
+                addressid = addressid.split(':')[0];
+            }
+        } else {
+            address = match[1];
+            port = match[2] || port;
+            addressid = match[3] || address;
+        }
+
+        if (!isValidIPv4(address) && port == "-1") {
+            for (let httpsPort of httpsPorts) {
+                if (address.includes(httpsPort)) {
+                    port = httpsPort;
+                    break;
+                }
+            }
+        }
+        if (port == "-1") port = "443";
+
+        let 伪装域名 = host;
+        let 最终路径 = path;
+        let 节点备注 = '';
+        const matchingProxyIP = proxyIPPool.find(proxyIP => proxyIP.includes(address));
+        if (matchingProxyIP) 最终路径 += `&proxyip=${matchingProxyIP}`;
+
+        if (proxyhosts.length > 0 && (伪装域名.includes('.workers.dev'))) {
+            最终路径 = `/${伪装域名}${最终路径}`;
+            伪装域名 = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
+            节点备注 = ` 已启用临时域名中转服务，请尽快绑定自定义域！`;
+        }
+        
+        const 协议类型 = atob(啥啥啥_写的这是啥啊);
+        // 修改 v2ray 链接格式以兼容 v2rayng
+        const 维列斯Link = `${协议类型}://${UUID}@${address}:${port}?` + 
+            `encryption=none&` + 
+            `security=tls&` + 
+            `sni=${伪装域名}&` + 
+			`fp=randomized&` +
+			`alpn=h3&` + 
+            `type=ws&` + 
+            `host=${伪装域名}&` + 
+            `path=${encodeURIComponent(最终路径)}` + 
+            `#${encodeURIComponent(addressid + 节点备注)}`;
+
+        return 维列斯Link;
+    }).join('\n');
+
+    let base64Response = responseBody; 
+    if (noTLS == 'true') base64Response += `\n${notlsresponseBody}`;
+    if (link.length > 0) base64Response += '\n' + link.join('\n');
+    return btoa(base64Response);
 }
 
 // 优化 整理 函数
