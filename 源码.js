@@ -70,20 +70,6 @@ const utils = {
 		}
 	},
 
-	// WebSocket相关
-	ws: {
-		safeClose(socket) {
-			try {
-				if (socket.readyState === WS_READY_STATE_OPEN || 
-					socket.readyState === WS_READY_STATE_CLOSING) {
-					socket.close();
-				}
-			} catch (error) {
-				console.error('safeCloseWebSocket error', error);
-			}
-		}
-	},
-
 	// 错误处理
 	error: {
 		handle(err, type = 'general') {
@@ -126,7 +112,7 @@ class WebSocketManager {
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
-			utils.ws.safeClose(this.webSocket);
+			safeCloseWebSocket(this.webSocket); 
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
@@ -157,7 +143,7 @@ class WebSocketManager {
 		if (this.readableStreamCancel) return;
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		utils.ws.safeClose(this.webSocket);
+		safeCloseWebSocket(this.webSocket); 
 	}
 }
 
@@ -496,9 +482,72 @@ function mergeData(header, chunk) {
     return merged;
 }
 
+// 优化 fetchWithTimeout 函数，添加默认超时和错误处理
+async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 3000 } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(resource, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                ...options.headers,
+                'Upgrade-Insecure-Requests': '1',
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
+            }
+        });
+        clearTimeout(id);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error(`Fetch error: ${error.message}`);
+        throw error;
+    }
+}
+
+// 并行处理多个异步请求
+async function fetchMultipleData(urls) {
+    try {
+        const promises = urls.map(url => fetchWithTimeout(url, {
+            headers: {
+                'Upgrade-Insecure-Requests': '1',
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
+            }
+        }));
+        const results = await Promise.all(promises);
+        return results;
+    } catch (error) {
+        console.error('Error fetching multiple data:', error);
+    }
+}
+
+// 使用流处理大数据
+function processLargeDataStream(dataStream) {
+    const reader = dataStream.getReader();
+    const decoder = new TextDecoder();
+    let result = '';
+
+    return reader.read().then(function processText({ done, value }) {
+        if (done) {
+            console.log('Stream complete');
+            return result;
+        }
+        result += decoder.decode(value, { stream: true });
+        return reader.read().then(processText);
+    });
+}
+
+// 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    const WS_READY_STATE_OPEN = 1;
-    
     try {
         // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
@@ -735,25 +784,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     }
 }
 
-function base64ToArrayBuffer(base64Str) {
-    if (!base64Str) {
-        return { earlyData: undefined, error: null };
-    }
-    try {
-        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
-        const decoded = atob(base64Str);
-        const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
-        return { earlyData: arrayBuffer.buffer, error: null };
-    } catch (error) {
-        return { earlyData: undefined, error };
-    }
-}
-
-function isValidUUID(uuid) {
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return uuidPattern.test(uuid);
-}
-
 const WS_READY_STATE_OPEN = 1;
 const WS_READY_STATE_CLOSING = 2;
 
@@ -780,7 +810,7 @@ function unsafeStringify(arr, offset = 0) {
 
 function stringify(arr, offset = 0) {
     const uuid = unsafeStringify(arr, offset);
-    if (!isValidUUID(uuid)) {
+    if (!utils.isValidUUID(uuid)) {
         throw new TypeError(`Invalid UUID: ${uuid}`);
     }
     return uuid;
