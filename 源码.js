@@ -520,10 +520,10 @@ function log(message, data = '') {
     console.log(`[${timestamp}] ${message}`, data);
 }
 
-// 单个异步请求处理函数
-async function fetchData(url) {
+// 通用的请求处理函数
+async function fetchWithHandling(url, options = {}) {
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, options);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -534,13 +534,16 @@ async function fetchData(url) {
     }
 }
 
-// 并行处理多个异步请求
+// 使用通用函数处理单个请求
+async function fetchData(url) {
+    return fetchWithHandling(url);
+}
+
+// 使用通用函数并行处理多个请求
 async function fetchMultipleData(urls) {
     try {
-        // 使用 Promise.all 并行处理多个请求
-        const promises = urls.map(url => fetchData(url));
-        const results = await Promise.all(promises);
-        return results;
+        const promises = urls.map(url => fetchWithHandling(url));
+        return await Promise.all(promises);
     } catch (error) {
         console.error('Error fetching multiple data:', error);
     }
