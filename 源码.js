@@ -500,6 +500,68 @@ async function fetchWithTimeout(resource, options = {}) {
     }
 }
 
+// 处理请求并包含错误处理
+async function handleRequest(request) {
+    try {
+        const response = await fetchWithTimeout(request.url);
+        return new Response(response.body, {
+            status: response.status,
+            headers: response.headers
+        });
+    } catch (error) {
+        console.error('Request handling error:', error);
+        return new Response('Internal Server Error', { status: 500 });
+    }
+}
+
+// 日志记录函数
+function log(message, data = '') {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${message}`, data);
+}
+
+// 单个异步请求处理函数
+async function fetchData(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+    }
+}
+
+// 并行处理多个异步请求
+async function fetchMultipleData(urls) {
+    try {
+        // 使用 Promise.all 并行处理多个请求
+        const promises = urls.map(url => fetchData(url));
+        const results = await Promise.all(promises);
+        return results;
+    } catch (error) {
+        console.error('Error fetching multiple data:', error);
+    }
+}
+
+// 使用流处理大数据
+function processLargeDataStream(dataStream) {
+    const reader = dataStream.getReader();
+    const decoder = new TextDecoder();
+    let result = '';
+    return reader.read().then(function processText({ done, value }) {
+        if (done) {
+            console.log('Stream complete');
+            return result;
+        }
+        
+        result += decoder.decode(value, { stream: true });
+        return reader.read().then(processText);
+    });
+}
+
 // 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     try {
