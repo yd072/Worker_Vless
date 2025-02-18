@@ -501,49 +501,11 @@ async function fetchWithTimeout(resource, options = {}) {
             }
         });
         clearTimeout(id);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return await response.json();
+        return response;
     } catch (error) {
         console.error(`Fetch error: ${error.message}`);
         throw error;
     }
-}
-
-// 并行处理多个异步请求
-async function fetchMultipleData(urls) {
-    try {
-        const promises = urls.map(url => fetchWithTimeout(url, {
-            headers: {
-                'Upgrade-Insecure-Requests': '1',
-                'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
-            }
-        }));
-        const results = await Promise.all(promises);
-        return results;
-    } catch (error) {
-        console.error('Error fetching multiple data:', error);
-    }
-}
-
-// 使用流处理大数据
-function processLargeDataStream(dataStream) {
-    const reader = dataStream.getReader();
-    const decoder = new TextDecoder();
-    let result = '';
-
-    return reader.read().then(function processText({ done, value }) {
-        if (done) {
-            console.log('Stream complete');
-            return result;
-        }
-        result += decoder.decode(value, { stream: true });
-        return reader.read().then(processText);
-    });
 }
 
 // 优化 handleDNSQuery 函数，添加错误处理和日志
