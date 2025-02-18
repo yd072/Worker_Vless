@@ -490,15 +490,7 @@ async function fetchWithTimeout(resource, options = {}) {
     try {
         const response = await fetch(resource, {
             ...options,
-            signal: controller.signal,
-            headers: {
-                ...options.headers,
-                'Upgrade-Insecure-Requests': '1',
-                'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
-            }
+            signal: controller.signal  
         });
         clearTimeout(id);
         return response;
