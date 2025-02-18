@@ -496,33 +496,6 @@ function mergeData(header, chunk) {
     return merged;
 }
 
-// 优化 fetchWithTimeout 函数，添加默认超时和错误处理
-async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 3000 } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-        const response = await fetch(resource, {
-            ...options,
-            signal: controller.signal,
-            headers: {
-                ...options.headers,
-                'Upgrade-Insecure-Requests': '1',
-                'Accept': 'application/json',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'ALPN': 'h2,h3', // 添加 ALPN 参数以支持 HTTP/2 和 HTTP/3
-            }
-        });
-        clearTimeout(id);
-        return response;
-    } catch (error) {
-        console.error(`Fetch error: ${error.message}`);
-        throw error;
-    }
-}
-
-// 优化 handleDNSQuery 函数，添加错误处理和日志
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     const WS_READY_STATE_OPEN = 1;
     
