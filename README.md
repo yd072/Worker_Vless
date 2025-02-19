@@ -14,5 +14,38 @@
 | SUBAPI | 自定义 |
 | ····· | ····· |
 
+Original file line numberDiff line numberDiff line change
+
+@@ -14,5 +14,21 @@
+
+1414
+
+| SUBAPI | 自定义 |
+
+1515
+
+| ····· | ····· |
+
+## 适配客户端
+
+### Windows
+
+- [v2rayN](https://github.com/2dust/v2rayN)
+- clash.meta（[FlClash](https://github.com/chen08209/FlClash)，[mihomo-party](https://github.com/mihomo-party-org/mihomo-party)，[clash-verge-rev](https://github.com/clash-verge-rev/clash-verge-rev)，[Clash Nyanpasu](https://github.com/keiko233/clash-nyanpasu)）
+
+### IOS
+- Surge，小火箭
+- sing-box（[SFI](https://sing-box.sagernet.org/zh/clients/apple/)）
+
+### 安卓
+
+- [v2rayNG](https://github.com/2dust/v2rayNG)
+- clash.meta（[ClashMetaForAndroid](https://github.com/MetaCubeX/ClashMetaForAndroid)，[FlClash](https://github.com/chen08209/FlClash)）
+- sing-box（[SFA](https://github.com/SagerNet/sing-box)）
+
+### MacOS
+
+- clash.meta（[FlClash](https://github.com/chen08209/FlClash)，[mihomo-party](https://github.com/mihomo-party-org/mihomo-party)）
+
 # 感谢
 [cmliu](https://github.com/cmliu/edgetunnel)
