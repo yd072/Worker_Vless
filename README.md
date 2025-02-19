@@ -10,21 +10,6 @@
 | ADDAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
 | ADDNOTLS | icook.tw:8443#优选域名/1.1.1.1:8443#优选IP |
 | ADDNOTLSAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
-| SUB | 自定义 |
-| SUBAPI | 自定义 |
-| ····· | ····· |
-
-Original file line numberDiff line numberDiff line change
-
-@@ -14,5 +14,21 @@
-
-1414
-
-| SUBAPI | 自定义 |
-
-1515
-
-| ····· | ····· |
 
 ## 适配客户端
 
