@@ -70,20 +70,6 @@ const utils = {
 		}
 	},
 
-	// WebSocket相关
-	ws: {
-		safeClose(socket) {
-			try {
-				if (socket.readyState === WS_READY_STATE_OPEN || 
-					socket.readyState === WS_READY_STATE_CLOSING) {
-					socket.close();
-				}
-			} catch (error) {
-				console.error('safeCloseWebSocket error', error);
-			}
-		}
-	},
-
 	// 错误处理
 	error: {
 		handle(err, type = 'general') {
@@ -126,7 +112,7 @@ class WebSocketManager {
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
-			utils.ws.safeClose(this.webSocket);
+			safeCloseWebSocket(this.webSocket); 
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
@@ -158,6 +144,15 @@ class WebSocketManager {
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
 		utils.ws.safeClose(this.webSocket);
+	}
+
+	// 添加清理方法
+	cleanup() {
+		if (this.webSocket.readyState !== WS_READY_STATE_CLOSED) {
+			utils.ws.safeClose(this.webSocket);
+		}
+		this.readableStreamCancel = true;
+		this.log('WebSocket resources cleaned up');
 	}
 }
 
@@ -497,8 +492,6 @@ function mergeData(header, chunk) {
 }
 
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    const WS_READY_STATE_OPEN = 1;
-    
     try {
         // 只使用Google的备用DNS服务器,更快更稳定
         const dnsServer = '8.8.4.4';
@@ -508,13 +501,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         
         // 使用Promise.race设置2秒超时
         const tcpSocket = await Promise.race([
-            connect({
-                hostname: dnsServer,
-                port: dnsPort
-            }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('DNS连接超时')), 2000)
-            )
+            connect({ hostname: dnsServer, port: dnsPort }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
         ]);
 
         log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
@@ -740,25 +728,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     }
 }
 
-function base64ToArrayBuffer(base64Str) {
-    if (!base64Str) {
-        return { earlyData: undefined, error: null };
-    }
-    try {
-        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
-        const decoded = atob(base64Str);
-        const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
-        return { earlyData: arrayBuffer.buffer, error: null };
-    } catch (error) {
-        return { earlyData: undefined, error };
-    }
-}
-
-function isValidUUID(uuid) {
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return uuidPattern.test(uuid);
-}
-
 const WS_READY_STATE_OPEN = 1;
 const WS_READY_STATE_CLOSING = 2;
 
@@ -785,7 +754,7 @@ function unsafeStringify(arr, offset = 0) {
 
 function stringify(arr, offset = 0) {
     const uuid = unsafeStringify(arr, offset);
-    if (!isValidUUID(uuid)) {
+    if (!utils.isValidUUID(uuid)) {
         throw new TypeError(`Invalid UUID: ${uuid}`);
     }
     return uuid;
@@ -1445,6 +1414,26 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	addresses = addresses.concat(newAddressesapi);
 	addresses = addresses.concat(newAddressescsv);
 	let notlsresponseBody;
+	
+	function 生成随机噪声(){ 
+		const 噪声列表 = [
+			// 常见参数
+			`t=${Date.now()}`,
+			`neko=${Math.random().toString(36).substring(7)}`,
+			`timestamp=${Math.floor(Math.random() * 1000000)}`,
+			`auth=${btoa(Math.random().toString()).substring(10, 15)}`,
+			`mux=${Math.random() > 0.5 ? 'true' : 'false'}`,
+			`level=${Math.floor(Math.random() * 10)}`,
+			// 模拟真实参数
+			`pbk=${btoa(Math.random().toString()).substring(5, 15)}`,
+			`sid=${Math.random().toString(36).substring(5)}`,
+			`spx=${Math.random() > 0.5 ? 'true' : 'false'}`,
+			// 自定义参数
+			`client=${['chrome','firefox','safari','edge'][Math.floor(Math.random() * 4)]}`,
+			`zone=${['cn','hk','sg','us'][Math.floor(Math.random() * 4)]}`,
+			`ver=${Math.floor(Math.random() * 5) + 1}.${Math.floor(Math.random() * 10)}`
+		];
+	}
 	if (noTLS == 'true') {
 		addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
 		addressesnotls = addressesnotls.concat(newAddressesnotlscsv);
@@ -1503,6 +1492,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
                 `type=ws&` + 
                 `host=${伪装域名}&` + 
                 `path=${encodeURIComponent(最终路径)}` + 
+				生成随机噪声() +
                 `#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
@@ -1576,7 +1566,8 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`alpn=h3&` + 
 			`type=ws&` +
 			`host=${伪装域名}&` +
-                        `path=${encodeURIComponent(最终路径)}` + 
+			`path=${encodeURIComponent(最终路径)}` +
+			生成随机噪声() +
 			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
