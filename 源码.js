@@ -89,6 +89,17 @@ class WebSocketManager {
 		this.log = log;
 		this.readableStreamCancel = false;
 		this.backpressure = false;
+
+		// 添加对 WebSocket 关闭和错误事件的处理
+		this.webSocket.addEventListener('close', () => {
+			this.log('WebSocket closed');
+			this.cleanup();
+		});
+
+		this.webSocket.addEventListener('error', (error) => {
+			this.log('WebSocket error', error);
+			this.cleanup();
+		});
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -143,16 +154,7 @@ class WebSocketManager {
 		if (this.readableStreamCancel) return;
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		utils.ws.safeClose(this.webSocket);
-	}
-
-	// 添加清理方法
-	cleanup() {
-		if (this.webSocket.readyState !== WS_READY_STATE_CLOSED) {
-			utils.ws.safeClose(this.webSocket);
-		}
-		this.readableStreamCancel = true;
-		this.log('WebSocket resources cleaned up');
+		safeCloseWebSocket(this.webSocket); 
 	}
 }
 
@@ -1414,44 +1416,33 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	addresses = addresses.concat(newAddressesapi);
 	addresses = addresses.concat(newAddressescsv);
 	let notlsresponseBody;
+
+	function 生成随机噪声(UA = '') {
+		// 生成随机噪声参数
+		const 噪声列表 = [
+			`t=${Date.now()}`,
+			`neko=${Math.random().toString(36).substring(7)}`,
+			`timestamp=${Math.floor(Math.random() * 1000000)}`,
+			`auth=${btoa(Math.random().toString()).substring(10, 15)}`,
+			`mux=${Math.random() > 0.5 ? 'true' : 'false'}`,
+			`level=${Math.floor(Math.random() * 10)}`,
+			`pbk=${btoa(Math.random().toString()).substring(5, 15)}`,
+			`sid=${Math.random().toString(36).substring(5)}`,
+			`spx=${Math.random() > 0.5 ? 'true' : 'false'}`,
+			`client=${['chrome','firefox','safari','edge'][Math.floor(Math.random() * 4)]}`,
+			`zone=${['cn','hk','sg','us'][Math.floor(Math.random() * 4)]}`,
+			`ver=${Math.floor(Math.random() * 5) + 1}.${Math.floor(Math.random() * 10)}`
+		];
 	
-    function 生成链接(协议类型, UUID, address, port, 伪装域名, 最终路径, addressid, 节点备注, userAgent) {
-        // 生成随机噪声参数
-        function 生成随机噪声() {
-            const 噪声列表 = [
-                // 常见参数
-                `t=${Date.now()}`,
-                `neko=${Math.random().toString(36).substring(7)}`,
-                `timestamp=${Math.floor(Math.random() * 1000000)}`,
-                `auth=${btoa(Math.random().toString()).substring(10, 15)}`,
-                `mux=${Math.random() > 0.5 ? 'true' : 'false'}`,
-                `level=${Math.floor(Math.random() * 10)}`,
-                // 模拟真实参数
-                `pbk=${btoa(Math.random().toString()).substring(5, 15)}`,
-                `sid=${Math.random().toString(36).substring(5)}`,
-                `spx=${Math.random() > 0.5 ? 'true' : 'false'}`,
-                // 自定义参数
-                `client=${['chrome','firefox','safari','edge'][Math.floor(Math.random() * 4)]}`,
-                `zone=${['cn','hk','sg','us'][Math.floor(Math.random() * 4)]}`,
-                `ver=${Math.floor(Math.random() * 5) + 1}.${Math.floor(Math.random() * 10)}`
-            ];
-
-            // 根据不同条件生成不同数量的噪声
-            let 数量;
-            if (isSimpleClient) {
-                // 移动客户端使用较少噪声 (3-5个)
-                数量 = Math.floor(Math.random() * 3) + 3;
-            } else {
-                // 桌面客户端使用更多噪声 (4-7个)
-                数量 = Math.floor(Math.random() * 4) + 4;
-            }
-
-            // 随机打乱并选择参数
-            return 噪声列表
-                .sort(() => Math.random() - 0.5)
-                .slice(0, 数量)
-                .join('&');
-        }
+		// 统一生成3-5个随机参数
+		const 数量 = Math.floor(Math.random() * 3) + 3;
+	
+		// 随机打乱并选择参数
+		return 噪声列表
+			.sort(() => Math.random() - 0.5)
+			.slice(0, 数量)
+			.join('&');
+	}
 	
 	if (noTLS == 'true') {
 		addressesnotls = addressesnotls.concat(newAddressesnotlsapi);
@@ -1510,8 +1501,8 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
                 `security=none&` + 
                 `type=ws&` + 
                 `host=${伪装域名}&` + 
-                `path=${encodeURIComponent(最终路径)}` + 
-				生成随机噪声() +
+                `path=${encodeURIComponent(最终路径)}&` + // 添加 & 符号
+                `${生成随机噪声()}` +  // 调用生成随机噪声并添加到链接中
                 `#${encodeURIComponent(addressid + 节点备注)}`;
 
 			return 维列斯Link;
@@ -1585,8 +1576,8 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`alpn=h3&` + 
 			`type=ws&` +
 			`host=${伪装域名}&` +
-			`path=${encodeURIComponent(最终路径)}` +
-			生成随机噪声() +
+			`path=${encodeURIComponent(最终路径)}&` + // 添加 & 符号
+			`${生成随机噪声()}` +  // 调用生成随机噪声并添加到链接中
 			`#${encodeURIComponent(addressid + 节点备注)}`;
 
 		return 维列斯Link;
@@ -1596,7 +1587,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	if (noTLS == 'true') base64Response += `\n${notlsresponseBody}`;
 	if (link.length > 0) base64Response += '\n' + link.join('\n');
 	return btoa(base64Response);
-   }
 }
 
 // 优化 整理 函数
