@@ -1501,10 +1501,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
                 `encryption=none&` + 
                 `security=none&` + 
                 `type=ws&` + 
-                `tfo=true&` + // 启用 TCP Fast Open
-                `keepAlive=true&` + 
-                `congestion_control=bbr&` +
-                `udp=true&` +
                 `host=${伪装域名}&` + 
                 `path=${encodeURIComponent(最终路径)}` + 
                 `#${encodeURIComponent(addressid + 节点备注)}`;
@@ -1579,10 +1575,6 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			`fp=randomized&` +
 			`alpn=h3&` + 
 			`type=ws&` +
-			`tfo=true&` + // 启用 TCP Fast Open
-			`keepAlive=true&` + 
-			`congestion_control=bbr&` +
-			`udp=true&` +
 			`host=${伪装域名}&` +
                         `path=${encodeURIComponent(最终路径)}` + 
 			`#${encodeURIComponent(addressid + 节点备注)}`;
