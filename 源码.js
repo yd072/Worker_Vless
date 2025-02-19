@@ -84,67 +84,116 @@ const utils = {
 
 // WebSocket连接管理类
 class WebSocketManager {
-	constructor(webSocket, log) {
-		this.webSocket = webSocket;
-		this.log = log;
-		this.readableStreamCancel = false;
-		this.backpressure = false;
-	}
+    constructor(webSocket, log) {
+        this.webSocket = webSocket;
+        this.log = log;
+        this.readableStreamCancel = false;
+        this.backpressure = false;
+        this.messageQueue = []; // 添加消息队列
+        this.processingMessage = false; // 消息处理状态标志
+        
+        // 设置二进制数据类型,提高传输效率
+        this.webSocket.binaryType = 'arraybuffer';
+    }
 
-	makeReadableStream(earlyDataHeader) {
-		return new ReadableStream({
-			start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
-			pull: (controller) => this.handleStreamPull(controller),
-			cancel: (reason) => this.handleStreamCancel(reason)
-		});
-	}
+    makeReadableStream(earlyDataHeader) {
+        return new ReadableStream({
+            start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
+            pull: (controller) => this.handleStreamPull(controller),
+            cancel: (reason) => this.handleStreamCancel(reason)
+        });
+    }
 
-	handleStreamStart(controller, earlyDataHeader) {
-		// 处理消息事件
-		this.webSocket.addEventListener('message', (event) => {
-			if (this.readableStreamCancel) return;
-			if (!this.backpressure) {
-				controller.enqueue(event.data);
-			} else {
-				this.log('Backpressure, message discarded');
-			}
-		});
+    async handleStreamStart(controller, earlyDataHeader) {
+        // 优化消息处理
+        this.webSocket.addEventListener('message', async (event) => {
+            if (this.readableStreamCancel) return;
+            
+            try {
+                // 使用消息队列管理数据
+                this.messageQueue.push(event.data);
+                
+                // 如果没有正在处理的消息,开始处理队列
+                if (!this.processingMessage) {
+                    await this.processMessageQueue(controller);
+                }
+            } catch (error) {
+                this.log('消息处理错误:', error);
+                controller.error(error);
+            }
+        });
 
-		// 处理关闭事件
-		this.webSocket.addEventListener('close', () => {
-			safeCloseWebSocket(this.webSocket); 
-			if (!this.readableStreamCancel) {
-				controller.close();
-			}
-		});
+        // 处理错误事件
+        this.webSocket.addEventListener('error', (err) => {
+            this.log('WebSocket错误:', err);
+            controller.error(err);
+        });
 
-		// 处理错误事件
-		this.webSocket.addEventListener('error', (err) => {
-			this.log('WebSocket server error');
-			controller.error(err);
-		});
+        // 处理关闭事件
+        this.webSocket.addEventListener('close', () => {
+            if (!this.readableStreamCancel) {
+                controller.close();
+            }
+        });
 
-		// 处理早期数据
-		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
-		if (error) {
-			controller.error(error);
-		} else if (earlyData) {
-			controller.enqueue(earlyData);
-		}
-	}
+        // 处理早期数据
+        if (earlyDataHeader) {
+            const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
+            if (error) {
+                controller.error(error);
+            } else if (earlyData) {
+                controller.enqueue(earlyData);
+            }
+        }
+    }
 
-	handleStreamPull(controller) {
-		if (controller.desiredSize > 0) {
-			this.backpressure = false;
-		}
-	}
+    async processMessageQueue(controller) {
+        this.processingMessage = true;
+        
+        while (this.messageQueue.length > 0 && !this.backpressure) {
+            try {
+                const data = this.messageQueue.shift();
+                controller.enqueue(data);
+                
+                // 检查流控制
+                if (controller.desiredSize <= 0) {
+                    this.backpressure = true;
+                    break;
+                }
+                
+                // 让出执行权，避免阻塞
+                await new Promise(resolve => setTimeout(resolve, 0));
+            } catch (error) {
+                this.log('处理消息队列错误:', error);
+                break;
+            }
+        }
+        
+        this.processingMessage = false;
+    }
 
-	handleStreamCancel(reason) {
-		if (this.readableStreamCancel) return;
-		this.log(`Readable stream canceled, reason: ${reason}`);
-		this.readableStreamCancel = true;
-		safeCloseWebSocket(this.webSocket); 
-	}
+    handleStreamPull(controller) {
+        if (controller.desiredSize > 0) {
+            this.backpressure = false;
+            // 如果队列中还有消息,继续处理
+            if (this.messageQueue.length > 0 && !this.processingMessage) {
+                this.processMessageQueue(controller);
+            }
+        }
+    }
+
+    handleStreamCancel(reason) {
+        if (this.readableStreamCancel) return;
+        
+        this.log(`Readable stream canceled, reason: ${reason}`);
+        this.readableStreamCancel = true;
+        
+        // 清理资源
+        this.messageQueue = [];
+        this.processingMessage = false;
+        
+        safeCloseWebSocket(this.webSocket);
+    }
 }
 
 // 配置管理类
@@ -1115,7 +1164,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 					<br>
 					<strong>2.</strong> 如您使用的是 SSR+ 等路由插件，推荐使用 <strong>Base64订阅地址</strong> 进行订阅；<br>
 					<br>
-					<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZXNzMnN1Yg==')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
+					<strong>3.</strong> 快速切换 <a href='${atob('aHR0cHM6Ly9naXRodWIuY29tL2NtbGl1L1dvcmtlclZsZWdyYW0lMjBzZXJ2ZXI=')}'>优选订阅生成器</a> 至：sub.google.com，您可将"?sub=sub.google.com"参数添加到链接末尾，例如：<br>
 					&nbsp;&nbsp;https://${proxyhost}${hostName}/${uuid}<strong>?sub=sub.google.com</strong><br>
 					<br>
 					<strong>4.</strong> 快速更换 PROXYIP 至：proxyip.fxxk.dedyn.io:443，您可将"?proxyip=proxyip.fxxk.dedyn.io:443"参数添加到链接末尾，例如：<br>
