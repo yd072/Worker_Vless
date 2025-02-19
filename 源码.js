@@ -89,8 +89,6 @@ class WebSocketManager {
 		this.log = log;
 		this.readableStreamCancel = false;
 		this.backpressure = false;
-		this.messageQueue = []; // 添加消息队列
-		this.processingMessage = false; // 消息处理状态标志
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -101,95 +99,51 @@ class WebSocketManager {
 		});
 	}
 
-	async handleStreamStart(controller, earlyDataHeader) {
-		// 优化消息处理
-		this.webSocket.addEventListener('message', async (event) => {
+	handleStreamStart(controller, earlyDataHeader) {
+		// 处理消息事件
+		this.webSocket.addEventListener('message', (event) => {
 			if (this.readableStreamCancel) return;
-			
-			try {
-				// 将消息添加到队列
-				this.messageQueue.push(event.data);
-				
-				// 如果没有正在处理的消息，开始处理
-				if (!this.processingMessage) {
-					await this.processMessageQueue(controller);
-				}
-			} catch (error) {
-				this.log('消息处理错误:', error);
-				controller.error(error);
+			if (!this.backpressure) {
+				controller.enqueue(event.data);
+			} else {
+				this.log('Backpressure, message discarded');
 			}
-		});
-
-		// 处理错误事件
-		this.webSocket.addEventListener('error', (err) => {
-			this.log('WebSocket错误:', err);
-			controller.error(err);
 		});
 
 		// 处理关闭事件
 		this.webSocket.addEventListener('close', () => {
+			safeCloseWebSocket(this.webSocket); 
 			if (!this.readableStreamCancel) {
 				controller.close();
 			}
 		});
 
-		// 处理早期数据
-		if (earlyDataHeader) {
-			const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
-			if (error) {
-				controller.error(error);
-			} else if (earlyData) {
-				controller.enqueue(earlyData);
-			}
-		}
-	}
+		// 处理错误事件
+		this.webSocket.addEventListener('error', (err) => {
+			this.log('WebSocket server error');
+			controller.error(err);
+		});
 
-	async processMessageQueue(controller) {
-		this.processingMessage = true;
-		
-		while (this.messageQueue.length > 0 && !this.backpressure) {
-			try {
-				const data = this.messageQueue.shift();
-				controller.enqueue(data);
-				
-				// 检查流控制
-				if (controller.desiredSize <= 0) {
-					this.backpressure = true;
-					break;
-				}
-				
-				// 让出执行权，避免阻塞
-				await new Promise(resolve => setTimeout(resolve, 0));
-			} catch (error) {
-				this.log('处理消息队列错误:', error);
-				break;
-			}
+		// 处理早期数据
+		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
+		if (error) {
+			controller.error(error);
+		} else if (earlyData) {
+			controller.enqueue(earlyData);
 		}
-		
-		this.processingMessage = false;
 	}
 
 	handleStreamPull(controller) {
 		if (controller.desiredSize > 0) {
 			this.backpressure = false;
-			// 如果队列中还有消息，继续处理
-			if (this.messageQueue.length > 0 && !this.processingMessage) {
-				this.processMessageQueue(controller);
-			}
 		}
 	}
 
 	handleStreamCancel(reason) {
 		if (this.readableStreamCancel) return;
-		
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
-		
-		// 清理资源
-		this.messageQueue = [];
-		this.processingMessage = false;
-		
-		safeCloseWebSocket(this.webSocket);
+		safeCloseWebSocket(this.webSocket); 
 	}
 }
 
