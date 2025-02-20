@@ -59,19 +59,11 @@ const utils = {
 		decode: (str) => atob(str),
 		toArrayBuffer(base64Str) {
 			if (!base64Str) return { earlyData: undefined, error: null };
-			
 			try {
-				// 优化 base64 解码
-				const cleanBase64 = base64Str.replace(/-/g, '+').replace(/_/g, '/');
-				const binaryStr = atob(cleanBase64);
-				const bytes = new Uint8Array(binaryStr.length);
-				
-				// 直接写入 Uint8Array
-				for (let i = 0; i < binaryStr.length; i++) {
-					bytes[i] = binaryStr.charCodeAt(i);
-				}
-				
-				return { earlyData: bytes.buffer, error: null };
+				base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+				const decoded = atob(base64Str);
+				const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
+				return { earlyData: arrayBuffer.buffer, error: null };
 			} catch (error) {
 				return { earlyData: undefined, error };
 			}
@@ -115,55 +107,57 @@ class WebSocketManager {
 
 	makeReadableStream(earlyDataHeader) {
 		return new ReadableStream({
-			start: (controller) => {
-				// 直接处理二进制数据,避免转换
-				this.webSocket.binaryType = 'arraybuffer';
-				
-				this.webSocket.addEventListener('message', (event) => {
-					if (this.readableStreamCancel) return;
-					
-					// 直接使用二进制数据
-					const data = event.data instanceof ArrayBuffer ? 
-						event.data : 
-						new TextEncoder().encode(event.data).buffer;
-						
-					if (!this.backpressure) {
-						controller.enqueue(data);
-					}
-				});
+			start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
+			pull: (controller) => this.handleStreamPull(controller),
+			cancel: (reason) => this.handleStreamCancel(reason)
+		});
+	}
 
-				// 优化错误处理
-				this.webSocket.addEventListener('error', (err) => {
-					this.log('WebSocket error:', err);
-					controller.error(err);
-				});
-
-				// 处理早期数据
-				if (earlyDataHeader) {
-					try {
-						const { earlyData } = utils.base64.toArrayBuffer(earlyDataHeader);
-						if (earlyData) {
-							controller.enqueue(earlyData);
-						}
-					} catch (error) {
-						controller.error(error);
-					}
-				}
-			},
-			
-			pull: (controller) => {
-				if (controller.desiredSize > 0) {
-					this.backpressure = false;
-				}
-			},
-
-			cancel: (reason) => {
-				if (this.readableStreamCancel) return;
-				this.log(`Stream cancelled: ${reason}`);
-				this.readableStreamCancel = true;
-				utils.ws.safeClose(this.webSocket);
+	handleStreamStart(controller, earlyDataHeader) {
+		// 处理消息事件
+		this.webSocket.addEventListener('message', (event) => {
+			if (this.readableStreamCancel) return;
+			if (!this.backpressure) {
+				controller.enqueue(event.data);
+			} else {
+				this.log('Backpressure, message discarded');
 			}
 		});
+
+		// 处理关闭事件
+		this.webSocket.addEventListener('close', () => {
+			utils.ws.safeClose(this.webSocket);
+			if (!this.readableStreamCancel) {
+				controller.close();
+			}
+		});
+
+		// 处理错误事件
+		this.webSocket.addEventListener('error', (err) => {
+			this.log('WebSocket server error');
+			controller.error(err);
+		});
+
+		// 处理早期数据
+		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
+		if (error) {
+			controller.error(error);
+		} else if (earlyData) {
+			controller.enqueue(earlyData);
+		}
+	}
+
+	handleStreamPull(controller) {
+		if (controller.desiredSize > 0) {
+			this.backpressure = false;
+		}
+	}
+
+	handleStreamCancel(reason) {
+		if (this.readableStreamCancel) return;
+		this.log(`Readable stream canceled, reason: ${reason}`);
+		this.readableStreamCancel = true;
+		utils.ws.safeClose(this.webSocket);
 	}
 }
 
@@ -704,49 +698,42 @@ function process维列斯Header(维列斯Buffer, userID) {
     };
 }
 
-// 优化 remoteSocketToWS 函数
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
     let header = responseHeader;
 
-    try {
-        await remoteSocket.readable
-            .pipeTo(
-                new WritableStream({
-                    async write(chunk) {
-                        if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                            throw new Error('WebSocket not open');
-                        }
+    await remoteSocket.readable
+        .pipeTo(
+            new WritableStream({
+                async write(chunk, controller) {
+                    hasIncomingData = true;
 
-                        hasIncomingData = true;
-
-                        // 优化数据发送
-                        if (header) {
-                            // 使用 Uint8Array 合并数据
-                            const combinedData = new Uint8Array(header.length + chunk.byteLength);
-                            combinedData.set(new Uint8Array(header), 0);
-                            combinedData.set(new Uint8Array(chunk), header.length);
-                            webSocket.send(combinedData.buffer);
-                            header = null;
-                        } else {
-                            webSocket.send(chunk);
-                        }
-                    },
-                    close() {
-                        log(`Remote connection closed, data received: ${hasIncomingData}`);
-                    },
-                    abort(reason) {
-                        log(`Remote connection aborted: ${reason}`);
+                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                        controller.error('WebSocket not open');
                     }
-                })
-            );
-    } catch (error) {
-        log(`remoteSocketToWS error: ${error.message}`);
-        utils.ws.safeClose(webSocket);
-    }
+
+                    if (header) {
+                        webSocket.send(await new Blob([header, chunk]).arrayBuffer());
+                        header = null;
+                    } else {
+                        webSocket.send(chunk);
+                    }
+                },
+                close() {
+                    log(`Remote connection closed, data received: ${hasIncomingData}`);
+                },
+                abort(reason) {
+                    console.error(`Remote connection aborted`);
+                },
+            })
+        )
+        .catch((error) => {
+            console.error(`remoteSocketToWS exception`);
+            utils.ws.safeClose(webSocket);
+        });
 
     if (!hasIncomingData && retry) {
-        log('No data received, retrying connection');
+        log(`Retrying connection`);
         retry();
     }
 }
