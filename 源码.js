@@ -59,13 +59,35 @@ const utils = {
 		decode: (str) => atob(str),
 		toArrayBuffer(base64Str) {
 			if (!base64Str) return { earlyData: undefined, error: null };
+			
 			try {
-				base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
-				const decoded = atob(base64Str);
-				const arrayBuffer = Uint8Array.from(decoded, c => c.charCodeAt(0));
-				return { earlyData: arrayBuffer.buffer, error: null };
+				// 优化 base64 解码
+				const cleanBase64 = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+				const binaryStr = atob(cleanBase64);
+				const bytes = new Uint8Array(binaryStr.length);
+				
+				// 直接写入 Uint8Array
+				for (let i = 0; i < binaryStr.length; i++) {
+					bytes[i] = binaryStr.charCodeAt(i);
+				}
+				
+				return { earlyData: bytes.buffer, error: null };
 			} catch (error) {
 				return { earlyData: undefined, error };
+			}
+		}
+	},
+
+	// WebSocket相关
+	ws: {
+		safeClose(socket) {
+			try {
+				if (socket.readyState === WS_READY_STATE_OPEN || 
+					socket.readyState === WS_READY_STATE_CLOSING) {
+					socket.close();
+				}
+			} catch (error) {
+				console.error('safeCloseWebSocket error', error);
 			}
 		}
 	},
@@ -93,57 +115,55 @@ class WebSocketManager {
 
 	makeReadableStream(earlyDataHeader) {
 		return new ReadableStream({
-			start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
-			pull: (controller) => this.handleStreamPull(controller),
-			cancel: (reason) => this.handleStreamCancel(reason)
-		});
-	}
+			start: (controller) => {
+				// 直接处理二进制数据,避免转换
+				this.webSocket.binaryType = 'arraybuffer';
+				
+				this.webSocket.addEventListener('message', (event) => {
+					if (this.readableStreamCancel) return;
+					
+					// 直接使用二进制数据
+					const data = event.data instanceof ArrayBuffer ? 
+						event.data : 
+						new TextEncoder().encode(event.data).buffer;
+						
+					if (!this.backpressure) {
+						controller.enqueue(data);
+					}
+				});
 
-	handleStreamStart(controller, earlyDataHeader) {
-		// 处理消息事件
-		this.webSocket.addEventListener('message', (event) => {
-			if (this.readableStreamCancel) return;
-			if (!this.backpressure) {
-				controller.enqueue(event.data);
-			} else {
-				this.log('Backpressure, message discarded');
+				// 优化错误处理
+				this.webSocket.addEventListener('error', (err) => {
+					this.log('WebSocket error:', err);
+					controller.error(err);
+				});
+
+				// 处理早期数据
+				if (earlyDataHeader) {
+					try {
+						const { earlyData } = utils.base64.toArrayBuffer(earlyDataHeader);
+						if (earlyData) {
+							controller.enqueue(earlyData);
+						}
+					} catch (error) {
+						controller.error(error);
+					}
+				}
+			},
+			
+			pull: (controller) => {
+				if (controller.desiredSize > 0) {
+					this.backpressure = false;
+				}
+			},
+
+			cancel: (reason) => {
+				if (this.readableStreamCancel) return;
+				this.log(`Stream cancelled: ${reason}`);
+				this.readableStreamCancel = true;
+				utils.ws.safeClose(this.webSocket);
 			}
 		});
-
-		// 处理关闭事件
-		this.webSocket.addEventListener('close', () => {
-			safeCloseWebSocket(this.webSocket); 
-			if (!this.readableStreamCancel) {
-				controller.close();
-			}
-		});
-
-		// 处理错误事件
-		this.webSocket.addEventListener('error', (err) => {
-			this.log('WebSocket server error');
-			controller.error(err);
-		});
-
-		// 处理早期数据
-		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
-		if (error) {
-			controller.error(error);
-		} else if (earlyData) {
-			controller.enqueue(earlyData);
-		}
-	}
-
-	handleStreamPull(controller) {
-		if (controller.desiredSize > 0) {
-			this.backpressure = false;
-		}
-	}
-
-	handleStreamCancel(reason) {
-		if (this.readableStreamCancel) return;
-		this.log(`Readable stream canceled, reason: ${reason}`);
-		this.readableStreamCancel = true;
-		safeCloseWebSocket(this.webSocket); 
 	}
 }
 
@@ -516,7 +536,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         if (维列斯Header) 维列斯Header = null;
                     } catch (error) {
                         console.error(`发送数据时发生错误: ${error.message}`);
-                        safeCloseWebSocket(webSocket);
+                        utils.ws.safeClose(webSocket);
                     }
                 }
             },
@@ -529,7 +549,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         }));
     } catch (error) {
         console.error(`DNS查询异常: ${error.message}`, error.stack);
-        safeCloseWebSocket(webSocket);
+        utils.ws.safeClose(webSocket);
     }
 }
 
@@ -596,7 +616,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             tcpSocket.closed.catch(error => {
                 console.log('Retry tcpSocket closed error', error);
             }).finally(() => {
-                safeCloseWebSocket(webSocket);
+                utils.ws.safeClose(webSocket);
             });
             remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
         } catch (error) {
@@ -684,58 +704,55 @@ function process维列斯Header(维列斯Buffer, userID) {
     };
 }
 
+// 优化 remoteSocketToWS 函数
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
     let header = responseHeader;
 
-    await remoteSocket.readable
-        .pipeTo(
-            new WritableStream({
-                async write(chunk, controller) {
-                    hasIncomingData = true;
+    try {
+        await remoteSocket.readable
+            .pipeTo(
+                new WritableStream({
+                    async write(chunk) {
+                        if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                            throw new Error('WebSocket not open');
+                        }
 
-                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                        controller.error('WebSocket not open');
-                    }
+                        hasIncomingData = true;
 
-                    if (header) {
-                        webSocket.send(await new Blob([header, chunk]).arrayBuffer());
-                        header = null;
-                    } else {
-                        webSocket.send(chunk);
+                        // 优化数据发送
+                        if (header) {
+                            // 使用 Uint8Array 合并数据
+                            const combinedData = new Uint8Array(header.length + chunk.byteLength);
+                            combinedData.set(new Uint8Array(header), 0);
+                            combinedData.set(new Uint8Array(chunk), header.length);
+                            webSocket.send(combinedData.buffer);
+                            header = null;
+                        } else {
+                            webSocket.send(chunk);
+                        }
+                    },
+                    close() {
+                        log(`Remote connection closed, data received: ${hasIncomingData}`);
+                    },
+                    abort(reason) {
+                        log(`Remote connection aborted: ${reason}`);
                     }
-                },
-                close() {
-                    log(`Remote connection closed, data received: ${hasIncomingData}`);
-                },
-                abort(reason) {
-                    console.error(`Remote connection aborted`);
-                },
-            })
-        )
-        .catch((error) => {
-            console.error(`remoteSocketToWS exception`);
-            safeCloseWebSocket(webSocket);
-        });
+                })
+            );
+    } catch (error) {
+        log(`remoteSocketToWS error: ${error.message}`);
+        utils.ws.safeClose(webSocket);
+    }
 
     if (!hasIncomingData && retry) {
-        log(`Retrying connection`);
+        log('No data received, retrying connection');
         retry();
     }
 }
 
 const WS_READY_STATE_OPEN = 1;
 const WS_READY_STATE_CLOSING = 2;
-
-function safeCloseWebSocket(socket) {
-    try {
-        if (socket.readyState === WS_READY_STATE_OPEN || socket.readyState === WS_READY_STATE_CLOSING) {
-            socket.close();
-        }
-    } catch (error) {
-        console.error('safeCloseWebSocket error', error);
-    }
-}
 
 const byteToHexArray = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 
@@ -957,7 +974,7 @@ function 配置信息(UUID, 域名地址) {
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
-const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
+const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 	const uniqueAddresses = new Set();
