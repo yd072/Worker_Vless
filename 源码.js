@@ -503,7 +503,11 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         const dnsPort = 53;
         
         let 维列斯Header = 维列斯ResponseHeader;
-        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
+        
+        const tcpSocket = await connect({
+            hostname: dnsServer,
+            port: dnsPort
+        });
 
         log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
 
@@ -522,8 +526,6 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         console.error(`发送数据时发生错误: ${error.message}`);
                         utils.ws.safeClose(webSocket);
                     }
-                } else {
-                    console.warn('WebSocket 连接已关闭，无法发送数据');
                 }
             },
             close() {
@@ -550,27 +552,25 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
 
     async function connectAndWrite(address, port, socks = false) {
-        try {
-            log(`Connecting to ${address}:${port}`);
-            const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
-                : connect({
-                    hostname: address,
-                    port: port,
-                    allowHalfOpen: false,
-                    keepAlive: true
-                });
-            remoteSocket.value = tcpSocket;
-            
-            // 使用更大的写入缓冲区
-            const writer = tcpSocket.writable.getWriter();
-            await writer.write(rawClientData);
-            writer.releaseLock();
-            
-            return tcpSocket;
-        } catch (error) {
-            console.error(`连接到 ${address}:${port} 失败:`, error);
-            throw error;
-        }
+        log(`正在连接 ${address}:${port}`);
+        
+        const tcpSocket = await (socks ? 
+            await socks5Connect(addressType, address, port, log) :
+            connect({ 
+                hostname: address,
+                port: port,
+                allowHalfOpen: false,
+                keepAlive: true
+            })
+        );
+
+        remoteSocket.value = tcpSocket;
+        
+        const writer = tcpSocket.writable.getWriter();
+        await writer.write(rawClientData);
+        writer.releaseLock();
+        
+        return tcpSocket;
     }
 
     async function retry() {
@@ -947,7 +947,7 @@ function 配置信息(UUID, 域名地址) {
 }
 
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
-const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
+const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 	if (sub) {
