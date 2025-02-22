@@ -96,7 +96,6 @@ class WebSocketManager {
 	makeReadableStream(earlyDataHeader) {
 		return new ReadableStream({
 			start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
-			pull: (controller) => this.handleStreamPull(controller),
 			cancel: (reason) => this.handleStreamCancel(reason)
 		});
 	}
@@ -128,12 +127,6 @@ class WebSocketManager {
 			controller.error(error);
 		} else if (earlyData) {
 			controller.enqueue(earlyData);
-		}
-	}
-
-	handleStreamPull(controller) {
-		if (controller.desiredSize > 0) {
-			this.backpressure = false;
 		}
 	}
 
