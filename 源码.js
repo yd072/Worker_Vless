@@ -503,17 +503,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         const dnsPort = 53;
         
         let 维列斯Header = 维列斯ResponseHeader;
-        
-        // 使用Promise.race设置2秒超时
-        const tcpSocket = await Promise.race([
-            connect({
-                hostname: dnsServer,
-                port: dnsPort
-            }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('DNS连接超时')), 2000)
-            )
-        ]);
+        const tcpSocket = await getOrCreateConnection(dnsServer, dnsPort);
 
         log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
 
@@ -532,6 +522,8 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         console.error(`发送数据时发生错误: ${error.message}`);
                         utils.ws.safeClose(webSocket);
                     }
+                } else {
+                    console.warn('WebSocket 连接已关闭，无法发送数据');
                 }
             },
             close() {
@@ -558,25 +550,9 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
 
     async function connectAndWrite(address, port, socks = false) {
-        log(`正在连接 ${address}:${port}`);
-        
-        // 添加连接超时处理
-        const tcpSocket = await Promise.race([
-            socks ? 
-                await socks5Connect(addressType, address, port, log) :
-                connect({ 
-                    hostname: address, 
-                    port: port,
-                    // 添加 TCP 连接优化选项
-                    allowHalfOpen: false,
-                    keepAlive: true,
-                    keepAliveInitialDelay: 60000
-                }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('连接超时')), 3000)
-            )
-        ]);
-
+        log(`Connecting to ${address}:${port}`);
+        const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
+            : connect({ hostname: address, port: port,allowHalfOpen: false,keepAlive: true });
         remoteSocket.value = tcpSocket;
         
         // 使用更大的写入缓冲区
@@ -964,8 +940,6 @@ let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
-	const uniqueAddresses = new Set();
-
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
 		sub = match ? match[1] : sub;
@@ -975,7 +949,23 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		await 迁移地址列表(env);
 		const 优选地址列表 = await env.KV.get('ADD.txt');
 		if (优选地址列表) {
-			const 分类地址 = await 处理地址列表(优选地址列表);
+				const 优选地址数组 = await 整理(优选地址列表);
+				const 分类地址 = {
+					接口地址: new Set(),
+					链接地址: new Set(),
+					优选地址: new Set()
+				};
+
+				for (const 元素 of 优选地址数组) {
+					if (元素.startsWith('https://')) {
+						分类地址.接口地址.add(元素);
+					} else if (元素.includes('://')) {
+						分类地址.链接地址.add(元素);
+					} else {
+						分类地址.优选地址.add(元素);
+					}
+				}
+
 			addressesapi = [...分类地址.接口地址];
 			link = [...分类地址.链接地址];
 			addresses = [...分类地址.优选地址];
@@ -1921,25 +1911,4 @@ async function handleGetRequest(env, txt) {
 	return new Response(html, {
 		headers: { "Content-Type": "text/html;charset=utf-8" }
 	});
-}
-
-async function 处理地址列表(地址列表) {
-	const 分类地址 = {
-		接口地址: new Set(),
-		链接地址: new Set(),
-		优选地址: new Set()
-	};
-	
-	const 地址数组 = await 整理(地址列表);
-	for (const 地址 of 地址数组) {
-		if (地址.startsWith('https://')) {
-			分类地址.接口地址.add(地址);
-		} else if (地址.includes('://')) {
-			分类地址.链接地址.add(地址);
-		} else {
-			分类地址.优选地址.add(地址);
-		}
-	}
-	
-	return 分类地址;
 }
