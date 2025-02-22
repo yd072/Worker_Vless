@@ -83,17 +83,6 @@ const utils = {
 			}
 		}
 	},
-
-	// 错误处理
-	error: {
-		handle(err, type = 'general') {
-	console.error(`[${type}] Error:`, err);
-			return new Response(err.toString(), {
-				status: type === 'auth' ? 401 : 500,
-				headers: { "Content-Type": "text/plain;charset=utf-8" }
-			});
-		}
-	}
 };
 
 // WebSocket连接管理类
@@ -102,7 +91,6 @@ class WebSocketManager {
 		this.webSocket = webSocket;
 		this.log = log;
 		this.readableStreamCancel = false;
-		this.backpressure = false;
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -117,11 +105,7 @@ class WebSocketManager {
 		// 处理消息事件
 		this.webSocket.addEventListener('message', (event) => {
 			if (this.readableStreamCancel) return;
-			if (!this.backpressure) {
-				controller.enqueue(event.data);
-			} else {
-				this.log('Backpressure, message discarded');
-			}
+			controller.enqueue(event.data);
 		});
 
 		// 处理关闭事件
@@ -158,38 +142,6 @@ class WebSocketManager {
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
 		utils.ws.safeClose(this.webSocket);
-	}
-}
-
-// 配置管理类
-class ConfigManager {
-	constructor(env) {
-		this.env = env;
-		this.config = this.initConfig();
-	}
-
-	initConfig() {
-		return {
-			uuid: this.env.UUID || this.env.uuid || this.env.PASSWORD || this.env.pswd || '',
-			proxyIP: this.env.PROXYIP || this.env.proxyip || '',
-			socks5: this.env.SOCKS5 || '',
-			httpsPorts: this.parseArray(this.env.CFPORTS) || ["2053", "2083", "2087", "2096", "8443"],
-			banHosts: this.parseArray(this.env.BAN) || [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')],
-			// ... 其他配置项
-		};
-	}
-
-	parseArray(str) {
-		if (!str) return null;
-		return str.split(',').map(item => item.trim());
-	}
-
-	get(key) {
-		return this.config[key];
-	}
-
-	set(key, value) {
-		this.config[key] = value;
 	}
 }
 
@@ -1558,21 +1510,11 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 }
 
 // 优化 整理 函数
-async function 整理(内容, cacheKey = null) {
-    if (cacheKey && globalCache.has(cacheKey)) {
-        return globalCache.get(cacheKey);
-    }
-    
+async function 整理(内容) {
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
     
-    const 地址数组 = 替换后的内容.split(',');
-    
-    if (cacheKey) {
-        globalCache.set(cacheKey, 地址数组);
-    }
-    
-    return 地址数组;
+    return 替换后的内容.split(',');
 }
 
 async function sendMessage(type, ip, add_data = "") {
