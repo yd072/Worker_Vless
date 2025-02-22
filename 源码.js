@@ -550,17 +550,27 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     }
 
     async function connectAndWrite(address, port, socks = false) {
-        log(`Connecting to ${address}:${port}`);
-        const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
-            : connect({ hostname: address, port: port,allowHalfOpen: false,keepAlive: true });
-        remoteSocket.value = tcpSocket;
-        
-        // 使用更大的写入缓冲区
-        const writer = tcpSocket.writable.getWriter();
-        await writer.write(rawClientData);
-        writer.releaseLock();
-        
-        return tcpSocket;
+        try {
+            log(`Connecting to ${address}:${port}`);
+            const tcpSocket = socks ? await socks5Connect(addressType, address, port, log)
+                : connect({
+                    hostname: address,
+                    port: port,
+                    allowHalfOpen: false,
+                    keepAlive: true
+                });
+            remoteSocket.value = tcpSocket;
+            
+            // 使用更大的写入缓冲区
+            const writer = tcpSocket.writable.getWriter();
+            await writer.write(rawClientData);
+            writer.releaseLock();
+            
+            return tcpSocket;
+        } catch (error) {
+            console.error(`连接到 ${address}:${port} 失败:`, error);
+            throw error;
+        }
     }
 
     async function retry() {
