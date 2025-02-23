@@ -89,6 +89,30 @@ class WebSocketManager {
 		this.webSocket = webSocket;
 		this.log = log;
 		this.readableStreamCancel = false;
+		this.initEventListeners();
+	}
+
+	initEventListeners() {
+		this.messageListener = (event) => {
+			if (this.readableStreamCancel) return;
+			this.controller.enqueue(event.data);
+		};
+
+		this.closeListener = () => {
+			utils.ws.safeClose(this.webSocket);
+			if (!this.readableStreamCancel) {
+				this.controller.close();
+			}
+		};
+
+		this.errorListener = (err) => {
+			this.log('WebSocket server error');
+			this.controller.error(err);
+		};
+
+		this.webSocket.addEventListener('message', this.messageListener);
+		this.webSocket.addEventListener('close', this.closeListener);
+		this.webSocket.addEventListener('error', this.errorListener);
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -99,32 +123,17 @@ class WebSocketManager {
 	}
 
 	handleStreamStart(controller, earlyDataHeader) {
-		// 处理消息事件
-		this.webSocket.addEventListener('message', (event) => {
-			if (this.readableStreamCancel) return;
-			controller.enqueue(event.data);
-		});
-
-		// 处理关闭事件
-		this.webSocket.addEventListener('close', () => {
-			utils.ws.safeClose(this.webSocket);
-			if (!this.readableStreamCancel) {
-				controller.close();
+		this.controller = controller;
+		try {
+			const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
+			if (error) {
+				controller.error(error);
+			} else if (earlyData) {
+				controller.enqueue(earlyData);
 			}
-		});
-
-		// 处理错误事件
-		this.webSocket.addEventListener('error', (err) => {
-			this.log('WebSocket server error');
+		} catch (err) {
+			this.log('Error processing early data', err);
 			controller.error(err);
-		});
-
-		// 处理早期数据
-		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
-		if (error) {
-			controller.error(error);
-		} else if (earlyData) {
-			controller.enqueue(earlyData);
 		}
 	}
 
@@ -133,6 +142,13 @@ class WebSocketManager {
 		this.log(`Readable stream canceled, reason: ${reason}`);
 		this.readableStreamCancel = true;
 		utils.ws.safeClose(this.webSocket);
+		this.cleanup();
+	}
+
+	cleanup() {
+		this.webSocket.removeEventListener('message', this.messageListener);
+		this.webSocket.removeEventListener('close', this.closeListener);
+		this.webSocket.removeEventListener('error', this.errorListener);
 	}
 }
 
