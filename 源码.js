@@ -630,88 +630,45 @@ function process维列斯Header(维列斯Buffer, userID) {
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
     let hasIncomingData = false;
     let header = responseHeader;
-    let sendQueue = [];
-    let sending = false;
-
-    function sendBufferedData() {
-        if (sending || webSocket.readyState !== WS_READY_STATE_OPEN) return;
-        sending = true;
-
-        while (sendQueue.length > 0) {
-            if (webSocket.bufferedAmount > 64 * 1024) {
-                // 如果 WebSocket 发送缓冲区过载，延迟处理
-                setTimeout(sendBufferedData, 10);
-                sending = false;
-                return;
-            }
-
-            const data = sendQueue.shift();
-            try {
-                webSocket.send(data);
-            } catch (error) {
-                console.error('WebSocket send failed:', error);
-                utils.ws.safeClose(webSocket);
-                return;
-            }
-        }
-
-        sending = false;
-    }
-
-    const transformStream = new TransformStream({
-        async transform(chunk, controller) {
-            hasIncomingData = true;
-
-            if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                console.warn('WebSocket not open, dropping data');
-                return;
-            }
-
-            try {
-                let dataToSend;
-                if (header) {
-                    dataToSend = new Uint8Array(header.byteLength + chunk.byteLength);
-                    dataToSend.set(new Uint8Array(header), 0);
-                    dataToSend.set(new Uint8Array(chunk), header.byteLength);
-                    header = null;
-                } else {
-                    dataToSend = chunk;
-                }
-
-                sendQueue.push(dataToSend);
-                sendBufferedData();
-            } catch (error) {
-                console.error('Transform failed:', error);
-            }
-        }
-    });
 
     try {
-        await remoteSocket.readable
-            .pipeThrough(transformStream)
-            .pipeTo(
-                new WritableStream({
-                    close() {
-                        log(`Remote connection closed, data received: ${hasIncomingData}`);
-                        sendBufferedData();
-                    },
-                    abort(reason) {
-                        console.error('Remote connection aborted:', reason);
-                    }
-                })
-            );
-    } catch (error) {
-        console.error('remoteSocketToWS exception:', error);
-        utils.ws.safeClose(webSocket);
+        await remoteSocket.readable.pipeTo(
+            new WritableStream({
+                async write(chunk, controller) {
+                    hasIncomingData = true;
 
+                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                        console.warn('WebSocket not open, dropping data');
+                        return;
+                    }
+
+                    try {
+                        const dataToSend = header ? await new Blob([header, chunk]).arrayBuffer() : chunk;
+                        webSocket.send(dataToSend);
+                        header = null;
+                    } catch (error) {
+                        console.error(`WebSocket send failed:`, error);
+                    }
+                },
+                close() {
+                    log(`Remote connection closed, data received: ${hasIncomingData}`);
+                },
+                abort(reason) {
+                    console.error(`Remote connection aborted:`, reason);
+                },
+            })
+        );
+    } catch (error) {
+        console.error(`remoteSocketToWS exception:`, error);
+        utils.ws.safeClose(webSocket);
         if (!hasIncomingData && retry) {
-            log('Retrying connection due to error');
+            log(`Retrying connection due to error`);
             retry();
         }
     }
 
     if (!hasIncomingData && retry) {
-        log('Retrying connection');
+        log(`Retrying connection`);
         retry();
     }
 }
