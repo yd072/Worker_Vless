@@ -593,39 +593,83 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 }
 
 function process维列斯Header(维列斯Buffer, userID) {
-    const HEADER_MIN_LENGTH = 24;
-    const VERSION_LENGTH = 1;
-    const USER_ID_LENGTH = 16;
-    const OPT_LENGTH_INDEX = 17;
-    
-    if (维列斯Buffer.byteLength < HEADER_MIN_LENGTH) {
-        return { hasError: true, message: 'Invalid data' };
-    }
+    const HEADER_STRUCTURE = {
+        MIN_LENGTH: 24,
+        VERSION_LENGTH: 1,
+        USER_ID_LENGTH: 16,
+        OPT_LENGTH_INDEX: 17
+    };
 
-    const dataView = new DataView(维列斯Buffer);
-    const bufferView = new Uint8Array(维列斯Buffer);
-    
-    const version = bufferView.slice(0, VERSION_LENGTH);
-    const userIDString = stringify(bufferView.slice(VERSION_LENGTH, VERSION_LENGTH + USER_ID_LENGTH));
-    
-    if (userIDString !== userID && userIDString !== userIDLow) {
-        return { hasError: true, message: 'Invalid user' };
-    }
+    try {
+        // 基础验证
+        if (!维列斯Buffer || !userID) {
+            return { hasError: true, message: '缺少必要参数' };
+        }
 
-    const optLength = bufferView[OPT_LENGTH_INDEX];
-    const commandIndex = 18 + optLength;
-    const command = bufferView[commandIndex];
-    const isUDP = command === 2;
-    
-    if (command !== 1 && command !== 2) {
-        return { hasError: true, message: 'Unsupported command' };
-    }
+        if (维列斯Buffer.byteLength < HEADER_STRUCTURE.MIN_LENGTH) {
+            return { hasError: true, message: '数据长度不足' };
+        }
 
-    const portIndex = commandIndex + 1;
-    const portRemote = dataView.getUint16(portIndex);
-    const addressType = bufferView[portIndex + 2];
-    let addressValueIndex = portIndex + 3;
-    
+        const dataView = new DataView(维列斯Buffer);
+        const bufferView = new Uint8Array(维列斯Buffer);
+        
+        // 提取和验证数据
+        const version = bufferView.slice(0, HEADER_STRUCTURE.VERSION_LENGTH);
+        const userIDString = stringify(bufferView.slice(
+            HEADER_STRUCTURE.VERSION_LENGTH, 
+            HEADER_STRUCTURE.VERSION_LENGTH + HEADER_STRUCTURE.USER_ID_LENGTH
+        ));
+        
+        // 用户ID验证
+        if (userIDString !== userID && userIDString !== userIDLow) {
+            return { hasError: true, message: '无效用户ID' };
+        }
+
+        const optLength = bufferView[HEADER_STRUCTURE.OPT_LENGTH_INDEX];
+        const commandIndex = HEADER_STRUCTURE.OPT_LENGTH_INDEX + 1;
+        const command = bufferView[commandIndex];
+
+        // 命令验证
+        if (command !== 1 && command !== 2) {
+            return { hasError: true, message: '不支持的命令类型' };
+        }
+
+        const portIndex = commandIndex + 1;
+        const portRemote = dataView.getUint16(portIndex);
+        const addressType = bufferView[portIndex + 2];
+        let addressValueIndex = portIndex + 3;
+        
+        const addressInfo = extractAddressInfo(
+            addressType, 
+            bufferView, 
+            addressValueIndex, 
+            dataView
+        );
+
+        if (addressInfo.hasError) {
+            return addressInfo;
+        }
+
+        return {
+            hasError: false,
+            addressRemote: addressInfo.addressValue,
+            addressType,
+            portRemote,
+            rawDataIndex: addressInfo.nextIndex,
+            维列斯Version: version,
+            isUDP: command === 2
+        };
+
+    } catch (error) {
+        return { 
+            hasError: true, 
+            message: `处理请求头时出错: ${error.message}` 
+        };
+    }
+}
+
+// 添加新的辅助函数
+function extractAddressInfo(addressType, bufferView, startIndex, dataView) {
     let addressValue = '';
     let addressLength = 0;
 
@@ -633,14 +677,16 @@ function process维列斯Header(维列斯Buffer, userID) {
         switch (addressType) {
             case 1: // IPv4
                 addressLength = 4;
-                addressValue = Array.from(bufferView.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
+                addressValue = Array.from(
+                    bufferView.slice(startIndex, startIndex + addressLength)
+                ).join('.');
                 break;
                 
             case 2: // Domain
-                addressLength = bufferView[addressValueIndex];
-                addressValueIndex++;
+                addressLength = bufferView[startIndex];
+                startIndex++;
                 addressValue = new TextDecoder().decode(
-                    维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
+                    bufferView.slice(startIndex, startIndex + addressLength)
                 );
                 break;
                 
@@ -649,32 +695,38 @@ function process维列斯Header(维列斯Buffer, userID) {
                 const ipv6Parts = [];
                 for (let i = 0; i < 8; i++) {
                     ipv6Parts.push(
-                        dataView.getUint16(addressValueIndex + i * 2).toString(16)
+                        dataView.getUint16(startIndex + i * 2).toString(16)
                     );
                 }
                 addressValue = ipv6Parts.join(':');
                 break;
                 
             default:
-                return { hasError: true, message: 'Invalid address type' };
+                return { 
+                    hasError: true, 
+                    message: '无效的地址类型' 
+                };
         }
+
+        if (!addressValue) {
+            return { 
+                hasError: true, 
+                message: '地址值为空' 
+            };
+        }
+
+        return {
+            hasError: false,
+            addressValue,
+            nextIndex: startIndex + addressLength
+        };
+
     } catch (error) {
-        return { hasError: true, message: `Address parsing error: ${error.message}` };
+        return { 
+            hasError: true, 
+            message: `解析地址时出错: ${error.message}` 
+        };
     }
-
-    if (!addressValue) {
-        return { hasError: true, message: 'Empty address value' };
-    }
-
-    return {
-        hasError: false,
-        addressRemote: addressValue,
-        addressType,
-        portRemote,
-        rawDataIndex: addressValueIndex + addressLength,
-        维列斯Version: version,
-        isUDP,
-    };
 }
 
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
@@ -1770,7 +1822,7 @@ async function handleGetRequest(env, txt) {
 			---------------------------------------------------------------<br>
 			&nbsp;&nbsp;<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">注意事项∨</a></strong><br>
 			<div id="noticeContent" class="notice-content">
-				${decodeURIComponent(atob('JTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUIzJUU2JThDJUE1JUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUEwJUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwMTI3LjAuMC4xJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQJTNDYnIlM0UKJTIwJTIwJUU1JTkwJThEJUU1JUIxJTk1JTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OSVFNSVBRiU5RiVFNSU5MCU4RCUzQ2JyJTNFCiUyMCUyMCU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQVjYlM0NiciUzRSUzQ2JyJTNFCgolMDklMDklMDklMDklMDklM0NzdHJvbmclM0UyLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5OCVBRiVFNiU5OCVBRiVFNCVCQiVBMyVFNCVCRCU5Q0lQJUVGJUJDJThDJUU1JThGJUFGJUU0JUJEJTlDJUU0JUI4JUJBUFJPWFlJUCVFNyU5QSU4NCVFOCVBRiU5RCVFRiVCQyU4QyVFNSU4RiVBRiVFNSVCMCU4NiUyMiUzRnByb3h5aXAlM0R0cnVlJTIyJUU1JThGJTgyJUU2JTk1JUIwJUU2JUI3JUJCJUU1JThBJUEwJUU1JTg4JUIwJUU5JTkzJUJFJUU2JThFJUE1JUU2JTlDJUFCJUU1JUIwJUJFJUVGJUJDJThDJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzRnByb3h5aXAlM0R0cnVlJTNDYnIlM0UlM0NiciUzRQoKJTA5JTA5JTA5JTA5JTA5JTNDc3Ryb25nJTNFMy4lM0MlMkZzdHJvbmclM0UlMjBBRERBUEklMjAlRTUlQTYlODIlRTYlOTglQUYlMjAlM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JTI3JTNFQ2xvdWRmbGFyZVNwZWVkVGVzdCUzQyUyRmElM0UlMjAlRTclOUElODQlMjBjc3YlMjAlRTclQkIlOTMlRTYlOUUlOUMlRTYlOTYlODclRTQlQkIlQjclRTMlODAlODIlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMjAlMjBodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
+			${decodeURIComponent(atob('MS5BREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUIzJUU2JThDJUE1JUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUEwJUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwMTI3LjAuMC4xJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQJTNDYnIlM0UKJTIwJTIwJUU1JTkwJThEJUU1JUIxJTk1JTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OSVFNSVBRiU5RiVFNSU5MCU4RCUzQ2JyJTNFCiUyMCUyMCU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyMyVFNCVCQyU5OCVFOSU4MCU4OUlQVjYlM0NiciUzRSUzQ2JyJTNFCgoyLkFEREFQSSUyMCVFNSVBNiU4MiVFNiU5OCVBRiVFNiU5OCVBRiVFNCVCQiVBMyVFNCVCRCU5Q0lQJUVGJUJDJThDJUU1JThGJUFGJUU0JUJEJTlDJUU0JUI4JUJBUFJPWFlJUCVFNyU5QSU4NCVFOCVBRiU5RCVFRiVCQyU4QyVFNSU4RiVBRiVFNSVCMCU4NiUyMiUzRnByb3h5aXAlM0R0cnVlJTIyJUU1JThGJTgyJUU2JTk1JUIwJUU2JUI3JUJCJUU1JThBJUEwJUU1JTg4JUIwJUU5JTkzJUJFJUU2JThFJUE1JUU2JTlDJUFCJUU1JUIwJUJFJUVGJUJDJThDJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UKJTIwJTIwaHR0cHMlM0ElMkYlMkZyYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tJTJGY21saXUlMkZXb3JrZXJWbGVzczJzdWIlMkZtYWluJTJGYWRkcmVzc2VzYXBpLnR4dCUzRnByb3h5aXAlM0R0cnVlJTNDYnIlM0UlM0NiciUzRQoKMy5BRERBUEklMjAlRTUlQTYlODIlRTYlOTglQUYlMjAlM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JTI3JTNFQ2xvdWRmbGFyZVNwZWVkVGVzdCUzQyUyRmElM0UlMjAlRTclOUElODQlMjBjc3YlMjAlRTclQkIlOTMlRTYlOUUlOUMlRTYlOTYlODclRTQlQkIlQjclRTMlODAlODIlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRQolMjAlMjBodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
 			</div>
 			<div class="editor-container">
 				${hasKV ? `
