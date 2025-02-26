@@ -2,7 +2,7 @@ import { connect } from 'cloudflare:sockets';
 
 let userID = '';
 let proxyIP = '';
-//let sub = '';
+//let sub = '';  
 let subConverter = atob('U1VCQVBJLkNNTGl1c3Nzcy5uZXQ=');
 let subConfig = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvY29uZmlnL0FDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ==');
 let subProtocol = 'https';
@@ -88,67 +88,64 @@ class WebSocketManager {
 	constructor(webSocket, log) {
 		this.webSocket = webSocket;
 		this.log = log;
-		this.readableStreamCancel = false;
+		this.controller = null;
 		this.initEventListeners();
 	}
 
 	initEventListeners() {
-		this.messageListener = (event) => {
-			if (this.readableStreamCancel) return;
-			this.controller.enqueue(event.data);
-		};
 
-		this.closeListener = () => {
-			utils.ws.safeClose(this.webSocket);
-			if (!this.readableStreamCancel) {
-				this.controller.close();
+		this.webSocket.addEventListener('message', e => {
+			if (this.controller) this.controller.enqueue(e.data);
+		});
+
+
+		this.webSocket.addEventListener('close', () => {
+			this.cleanup();
+		});
+
+		this.webSocket.addEventListener('error', err => {
+			if (this.controller) {
+				this.log('WebSocket error:', err);
+				this.controller.error(err);
 			}
-		};
-
-		this.errorListener = (err) => {
-			this.log('WebSocket server error');
-			this.controller.error(err);
-		};
-
-		this.webSocket.addEventListener('message', this.messageListener);
-		this.webSocket.addEventListener('close', this.closeListener);
-		this.webSocket.addEventListener('error', this.errorListener);
+		});
 	}
 
 	makeReadableStream(earlyDataHeader) {
 		return new ReadableStream({
-			start: (controller) => this.handleStreamStart(controller, earlyDataHeader),
-			cancel: (reason) => this.handleStreamCancel(reason)
+			start: (controller) => {
+				this.controller = controller;
+				
+				if (earlyDataHeader) {
+					try {
+						const decoded = atob(earlyDataHeader.replace(/-/g, '+').replace(/_/g, '/'));
+						const earlyData = Uint8Array.from(decoded, c => c.charCodeAt(0)).buffer;
+						controller.enqueue(earlyData);
+					} catch (err) {
+						this.log('Early data error:', err);
+						controller.error(err);
+					}
+				}
+			},
+			
+			cancel: () => {
+				this.cleanup();
+			}
 		});
 	}
 
-	handleStreamStart(controller, earlyDataHeader) {
-		this.controller = controller;
+	// 统一清理方法
+	cleanup() {
 		try {
-			const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
-			if (error) {
-				controller.error(error);
-			} else if (earlyData) {
-				controller.enqueue(earlyData);
+			if (this.webSocket.readyState === 1 || this.webSocket.readyState === 2) {
+				this.webSocket.close();
+			}
+			if (this.controller) {
+				this.controller.close();
 			}
 		} catch (err) {
-			this.log('Error processing early data', err);
-			controller.error(err);
+			this.log('Cleanup error:', err);
 		}
-	}
-
-	handleStreamCancel(reason) {
-		if (this.readableStreamCancel) return;
-		this.log(`Readable stream canceled, reason: ${reason}`);
-		this.readableStreamCancel = true;
-		utils.ws.safeClose(this.webSocket);
-		this.cleanup();
-	}
-
-	cleanup() {
-		this.webSocket.removeEventListener('message', this.messageListener);
-		this.webSocket.removeEventListener('close', this.closeListener);
-		this.webSocket.removeEventListener('error', this.errorListener);
 	}
 }
 
@@ -351,441 +348,282 @@ export default {
 				return await 维列斯OverWSHandler(request);
 			}
 		} catch (err) {
-			let e = err;
-			return new Response(e.toString());
+			return new Response(err.toString());
 		}
 	},
 };
 
 async function 维列斯OverWSHandler(request) {
-    const webSocketPair = new WebSocketPair();
-    const [client, webSocket] = Object.values(webSocketPair);
+	const webSocketPair = new WebSocketPair();
+	const [client, webSocket] = Object.values(webSocketPair);
+	webSocket.accept();
 
-    webSocket.accept();
+	const log = (info, event = '') => console.log(`[${new Date().toISOString()}] ${info}`, event);
+	const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+	const readableWebSocketStream = new WebSocketManager(webSocket, log).makeReadableStream(earlyDataHeader);
 
-    let address = '';
-    let portWithRandomLog = '';
-    const log = (info, event = '') => {
-        const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
-    };
+	let remoteSocketWrapper = { value: null };
+	let isDns = false;
+	const banHostsSet = new Set(banHosts);
 
-    const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
-    const readableWebSocketStream = new WebSocketManager(webSocket, log).makeReadableStream(earlyDataHeader);
+	readableWebSocketStream.pipeTo(new WritableStream({
+		async write(chunk) {
+			try {
+				if (isDns) return handleDNSQuery(chunk, webSocket, log);
+				
+				if (remoteSocketWrapper.value) {
+					const writer = remoteSocketWrapper.value.writable.getWriter();
+					await writer.write(chunk);
+					writer.releaseLock();
+					return;
+				}
 
-    let remoteSocketWrapper = { value: null };
-    let isDns = false;
-    const banHostsSet = new Set(banHosts);
+				const { hasError, message, addressType, portRemote = 443, addressRemote, rawDataIndex, 维列斯Version, isUDP } = process维列斯Header(chunk, userID);
+				if (hasError) throw new Error(message);
+				if (isUDP && portRemote !== 53) throw new Error('UDP 代理仅对 DNS（53 端口）启用');
 
-    readableWebSocketStream.pipeTo(new WritableStream({
-        async write(chunk, controller) {
-            try {
-                if (isDns) {
-                    return handleDNSQuery(chunk, webSocket, null, log);
-                }
-                if (remoteSocketWrapper.value) {
-                    const writer = remoteSocketWrapper.value.writable.getWriter();
-                    await writer.write(chunk);
-                    writer.releaseLock();
-                    return;
-                }
+				if (isUDP) isDns = true;
+				const responseHeader = new Uint8Array([维列斯Version[0], 0]);
+				const rawClientData = chunk.slice(rawDataIndex);
 
-                const {
-                    hasError,
-                    message,
-                    addressType,
-                    portRemote = 443,
-                    addressRemote = '',
-                    rawDataIndex,
-                    维列斯Version = new Uint8Array([0, 0]),
-                    isUDP,
-                } = process维列斯Header(chunk, userID);
+				if (isDns) return handleDNSQuery(rawClientData, webSocket, log, responseHeader);
+				if (banHostsSet.has(addressRemote)) throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
 
-                address = addressRemote;
-                portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
-                if (hasError) {
-                    throw new Error(message);
-                }
-                if (isUDP) {
-                    if (portRemote === 53) {
-                        isDns = true;
-                    } else {
-                        throw new Error('UDP 代理仅对 DNS（53 端口）启用');
-                    }
-                }
-                const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
-                const rawClientData = chunk.slice(rawDataIndex);
+				log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
+				handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, responseHeader, log);
+			} catch (error) {
+				log('处理数据时发生错误', error.message);
+				webSocket.close(1011, '内部错误');
+			}
+		},
+		close: () => log('readableWebSocketStream 已关闭'),
+		abort: (reason) => log('readableWebSocketStream 已中止', JSON.stringify(reason))
+	})).catch(err => {
+		log('readableWebSocketStream 管道错误', err);
+		webSocket.close(1011, '管道错误');
+	});
 
-                if (isDns) {
-                    return handleDNSQuery(rawClientData, webSocket, 维列斯ResponseHeader, log);
-                }
-                if (!banHostsSet.has(addressRemote)) {
-                    log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                    handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
-                } else {
-                    throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                }
-            } catch (error) {
-                log('处理数据时发生错误', error.message);
-                webSocket.close(1011, '内部错误');
-            }
-        },
-        close() {
-            log(`readableWebSocketStream 已关闭`);
-        },
-        abort(reason) {
-            log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
-        },
-    })).catch((err) => {
-        log('readableWebSocketStream 管道错误', err);
-        webSocket.close(1011, '管道错误');
-    });
-
-    return new Response(null, {
-        status: 101,
-        // @ts-ignore
-        webSocket: client,
-    });
+	return new Response(null, { status: 101, webSocket: client });
 }
 
-function mergeData(header, chunk) {
-    const merged = new Uint8Array(header.length + chunk.length);
-    merged.set(header);
-    merged.set(chunk, header.length);
-    return merged;
-}
+async function handleDNSQuery(udpChunk, webSocket, log, responseHeader = null) {
+	try {
+		const dnsServer = '8.8.4.4';
+		const tcpSocket = await connect({ hostname: dnsServer, port: 53 });
+		log(`成功连接到DNS服务器 ${dnsServer}:53`);
 
-async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
-    let isWebSocketClosed = false;
-    let 维列斯Header = 维列斯ResponseHeader;
+		const writer = tcpSocket.writable.getWriter();
+		await writer.write(udpChunk);
+		writer.releaseLock();
 
-    webSocket.addEventListener('close', () => {
-        isWebSocketClosed = true;
-    }, { once: true });
-
-    try {
-        const dnsServer = '8.8.4.4';
-        const dnsPort = 53;
-        
-        const tcpSocket = await connect({
-            hostname: dnsServer,
-            port: dnsPort
-        });
-
-        log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
-
-        const writer = tcpSocket.writable.getWriter();
-        await writer.write(udpChunk);
-        writer.releaseLock();
-
-        await tcpSocket.readable.pipeTo(new WritableStream({
-            async write(chunk) {
-                if (isWebSocketClosed) {
-                    throw new Error('WebSocket closed');
-                }
-
-                try {
-                    if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
-                        webSocket.send(combinedData);
-                        if (维列斯Header) 维列斯Header = null;
-                    } else {
-                        throw new Error('WebSocket not open');
-                    }
-                } catch (error) {
-                    log(`DNS数据发送错误: ${error.message}`);
-                    throw error; // 向上传播错误以触发 pipeTo 的 catch
-                }
-            },
-            close() {
-                log(`DNS连接已关闭`);
-            },
-            abort(reason) {
-                log(`DNS连接异常中断: ${reason}`);
-            }
-        }));
-    } catch (error) {
-        log(`DNS查询错误: ${error.message}`);
-        if (!isWebSocketClosed) {
-            utils.ws.safeClose(webSocket);
-        }
-    }
+		await tcpSocket.readable.pipeTo(new WritableStream({
+			async write(chunk) {
+				if (webSocket.readyState !== WS_READY_STATE_OPEN) throw new Error('WebSocket closed');
+				webSocket.send(responseHeader ? new Uint8Array([...responseHeader, ...chunk]) : chunk);
+				responseHeader = null;
+			},
+			close: () => log('DNS连接已关闭'),
+			abort: (reason) => log('DNS连接异常中断', reason)
+		}));
+	} catch (error) {
+		log(`DNS查询错误: ${error.message}`);
+		if (webSocket.readyState === WS_READY_STATE_OPEN) utils.ws.safeClose(webSocket);
+	}
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    async function useSocks5Pattern(address) {
-        if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) {
-            return true;
-        }
-        return go2Socks5s.some(pattern => {
-            const regexPattern = pattern.replace(/\*/g, '.*');
-            return new RegExp(`^${regexPattern}$`, 'i').test(address);
-        });
-    }
+	async function useSocks5Pattern(address) {
+		return go2Socks5s.some(pattern => {
+			const regexPattern = pattern.replace(/\*/g, '.*');
+			return new RegExp(`^${regexPattern}$`, 'i').test(address);
+		});
+	}
 
-    async function connectAndWrite(address, port, socks = false) {
-        log(`正在连接 ${address}:${port}`);
-        
-        try {
-            const tcpSocket = await (socks ? 
-                socks5Connect(addressType, address, port, log) :
-                connect({ 
-                    hostname: address,
-                    port: port,
-                    allowHalfOpen: false,
-                    keepAlive: true
-                })
-            );
+	async function connectAndWrite(address, port, useSocks = false) {
+		log(`正在连接 ${address}:${port}`);
 
-            remoteSocket.value = tcpSocket;
-            
-            const writer = tcpSocket.writable.getWriter();
-            await writer.write(rawClientData);
-            writer.releaseLock();
-            
-            return tcpSocket;
-        } catch (error) {
-            log(`连接失败: ${error.message}`);
-            throw error;
-        }
-    }
+		try {
+			const tcpSocket = useSocks ? 
+				await socks5Connect(addressType, address, port, log) : 
+				await connect({
+					hostname: address,
+					port: port,
+					allowHalfOpen: false
+				});
 
-    async function retry() {
-        try {
-            let tcpSocket;
-            if (enableSocks) {
-                tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
-            } else {
-                if (!proxyIP || proxyIP === '') {
-                    proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
-                } else {
-                    const [ip, port] = proxyIP.includes(']:') ? 
-                        proxyIP.split(']:') :
-                        proxyIP.split(':');
-                    
-                    proxyIP = ip;
-                    portRemote = port || portRemote;
+			remoteSocket.value = tcpSocket;
 
-                    if (proxyIP.includes('.tp')) {
-                        portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
-                    }
-                }
-                tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
-            }
+			const writer = tcpSocket.writable.getWriter();
+			await writer.write(rawClientData);
+			writer.releaseLock();
+			
+			return tcpSocket;
+		} catch (error) {
+			log(`连接失败: ${error.message}`);
+			throw error;
+		}
+	}
 
-            tcpSocket.closed
-                .catch(error => log('Retry tcpSocket closed error', error))
-                .finally(() => utils.ws.safeClose(webSocket));
+	async function retry() {
+		try {
+			let tcpSocket;
+			if (enableSocks) {
+				tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+			} else {
+				const [ip, port] = proxyIP.includes(']:') ? 
+					proxyIP.split(']:') :
+					proxyIP.split(':');
+				
+				tcpSocket = await connectAndWrite(ip || addressRemote, port || portRemote);
+			}
 
-            remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-        } catch (error) {
-            log('Retry error:', error);
-        }
-    }
+			tcpSocket.closed
+				.catch(error => log('Retry tcpSocket closed error', error))
+				.finally(() => utils.ws.safeClose(webSocket));
 
-    let shouldUseSocks = false;
-    if (go2Socks5s.length > 0 && enableSocks) {
-        shouldUseSocks = await useSocks5Pattern(addressRemote);
-    }
+			remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
+		} catch (error) {
+			log('Retry error:', error);
+		}
+	}
 
-    const tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
+	let shouldUseSocks = false;
+	if (go2Socks5s.length > 0 && enableSocks) {
+		shouldUseSocks = await useSocks5Pattern(addressRemote);
+	}
+
+	try {
+		const tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
+		remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
+	} catch (error) {
+		log('TCP Outbound 连接失败:', error.message);
+		webSocket.close(1011, 'TCP连接失败');
+	}
 }
 
 function process维列斯Header(维列斯Buffer, userID) {
-    const HEADER_STRUCTURE = {
-        MIN_LENGTH: 24,
-        VERSION_LENGTH: 1,
-        USER_ID_LENGTH: 16,
-        OPT_LENGTH_INDEX: 17
-    };
+	const HEADER_STRUCTURE = {
+		MIN_LENGTH: 24,
+		VERSION_LENGTH: 1,
+		USER_ID_LENGTH: 16,
+		OPT_LENGTH_INDEX: 17
+	};
 
-    try {
-        // 基础验证
-        if (!维列斯Buffer || !userID) {
-            return { hasError: true, message: '缺少必要参数' };
-        }
+	if (!维列斯Buffer || !userID) {
+		return { hasError: true, message: '缺少必要参数' };
+	}
 
-        if (维列斯Buffer.byteLength < HEADER_STRUCTURE.MIN_LENGTH) {
-            return { hasError: true, message: '数据长度不足' };
-        }
+	if (维列斯Buffer.byteLength < HEADER_STRUCTURE.MIN_LENGTH) {
+		return { hasError: true, message: '数据长度不足' };
+	}
 
-        const dataView = new DataView(维列斯Buffer);
-        const bufferView = new Uint8Array(维列斯Buffer);
-        
-        // 提取和验证数据
-        const version = bufferView.slice(0, HEADER_STRUCTURE.VERSION_LENGTH);
-        const userIDString = stringify(bufferView.slice(
-            HEADER_STRUCTURE.VERSION_LENGTH, 
-            HEADER_STRUCTURE.VERSION_LENGTH + HEADER_STRUCTURE.USER_ID_LENGTH
-        ));
-        
-        // 用户ID验证
-        if (userIDString !== userID && userIDString !== userIDLow) {
-            return { hasError: true, message: '无效用户ID' };
-        }
+	const bufferView = new Uint8Array(维列斯Buffer);
+	const dataView = new DataView(维列斯Buffer);
 
-        const optLength = bufferView[HEADER_STRUCTURE.OPT_LENGTH_INDEX];
-        const commandIndex = HEADER_STRUCTURE.OPT_LENGTH_INDEX + 1;
-        const command = bufferView[commandIndex];
+	// 提取版本号
+	const version = bufferView.slice(0, HEADER_STRUCTURE.VERSION_LENGTH);
 
-        // 命令验证
-        if (command !== 1 && command !== 2) {
-            return { hasError: true, message: '不支持的命令类型' };
-        }
+	// 验证用户ID
+	const userIDString = stringify(bufferView.slice(
+		HEADER_STRUCTURE.VERSION_LENGTH, 
+		HEADER_STRUCTURE.VERSION_LENGTH + HEADER_STRUCTURE.USER_ID_LENGTH
+	));
+	if (userIDString !== userID && userIDString !== userIDLow) {
+		return { hasError: true, message: '无效用户ID' };
+	}
 
-        const portIndex = commandIndex + 1;
-        const portRemote = dataView.getUint16(portIndex);
-        const addressType = bufferView[portIndex + 2];
-        let addressValueIndex = portIndex + 3;
-        
-        const addressInfo = extractAddressInfo(
-            addressType, 
-            bufferView, 
-            addressValueIndex, 
-            dataView
-        );
+	// 解析命令
+	const commandIndex = HEADER_STRUCTURE.OPT_LENGTH_INDEX + 1;
+	const command = bufferView[commandIndex];
+	if (![1, 2].includes(command)) {
+		return { hasError: true, message: '不支持的命令类型' };
+	}
 
-        if (addressInfo.hasError) {
-            return addressInfo;
-        }
+	// 解析端口和地址
+	const portIndex = commandIndex + 1;
+	const portRemote = dataView.getUint16(portIndex);
+	const addressType = bufferView[portIndex + 2];
+	const addressInfo = extractAddressInfo(addressType, bufferView, portIndex + 3, dataView);
 
-        return {
-            hasError: false,
-            addressRemote: addressInfo.addressValue,
-            addressType,
-            portRemote,
-            rawDataIndex: addressInfo.nextIndex,
-            维列斯Version: version,
-            isUDP: command === 2
-        };
+	if (addressInfo.hasError) return addressInfo;
 
-    } catch (error) {
-        return { 
-            hasError: true, 
-            message: `处理请求头时出错: ${error.message}` 
-        };
-    }
+	return {
+		hasError: false,
+		addressRemote: addressInfo.addressValue,
+		addressType,
+		portRemote,
+		rawDataIndex: addressInfo.nextIndex,
+		维列斯Version: version,
+		isUDP: command === 2
+	};
 }
 
-// 添加新的辅助函数
 function extractAddressInfo(addressType, bufferView, startIndex, dataView) {
-    let addressValue = '';
-    let addressLength = 0;
+	try {
+		if (addressType === 1) { // IPv4
+			return {
+				hasError: false,
+				addressValue: Array.from(bufferView.slice(startIndex, startIndex + 4)).join('.'),
+				nextIndex: startIndex + 4
+			};
+		}
 
-    try {
-        switch (addressType) {
-            case 1: // IPv4
-                addressLength = 4;
-                addressValue = Array.from(
-                    bufferView.slice(startIndex, startIndex + addressLength)
-                ).join('.');
-                break;
-                
-            case 2: // Domain
-                addressLength = bufferView[startIndex];
-                startIndex++;
-                addressValue = new TextDecoder().decode(
-                    bufferView.slice(startIndex, startIndex + addressLength)
-                );
-                break;
-                
-            case 3: // IPv6
-                addressLength = 16;
-                const ipv6Parts = [];
-                for (let i = 0; i < 8; i++) {
-                    ipv6Parts.push(
-                        dataView.getUint16(startIndex + i * 2).toString(16)
-                    );
-                }
-                addressValue = ipv6Parts.join(':');
-                break;
-                
-            default:
-                return { 
-                    hasError: true, 
-                    message: '无效的地址类型' 
-                };
-        }
+		if (addressType === 2) { // Domain
+			const domainLength = bufferView[startIndex];
+			return {
+				hasError: false,
+				addressValue: new TextDecoder().decode(bufferView.slice(startIndex + 1, startIndex + 1 + domainLength)),
+				nextIndex: startIndex + 1 + domainLength
+			};
+		}
 
-        if (!addressValue) {
-            return { 
-                hasError: true, 
-                message: '地址值为空' 
-            };
-        }
+		if (addressType === 3) { // IPv6
+			return {
+				hasError: false,
+				addressValue: Array.from({ length: 8 }, (_, i) => dataView.getUint16(startIndex + i * 2).toString(16)).join(':'),
+				nextIndex: startIndex + 16
+			};
+		}
 
-        return {
-            hasError: false,
-            addressValue,
-            nextIndex: startIndex + addressLength
-        };
-
-    } catch (error) {
-        return { 
-            hasError: true, 
-            message: `解析地址时出错: ${error.message}` 
-        };
-    }
+		return { hasError: true, message: '无效的地址类型' };
+	} catch (error) {
+		return { hasError: true, message: `解析地址时出错: ${error.message}` };
+	}
 }
 
 async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
-    let hasIncomingData = false;
-    let header = responseHeader;
-    let isWebSocketClosed = false;
+	let hasIncomingData = false;
+	let isWebSocketClosed = false;
 
-    webSocket.addEventListener('close', () => {
-        isWebSocketClosed = true;
-    }, { once: true });
+	webSocket.addEventListener('close', () => isWebSocketClosed = true, { once: true });
 
-    try {
-        await remoteSocket.readable.pipeTo(
-            new WritableStream({
-                async write(chunk) {
-                    if (isWebSocketClosed) {
-                        throw new Error('WebSocket closed');
-                    }
+	try {
+		await remoteSocket.readable.pipeTo(
+			new WritableStream({
+				async write(chunk) {
+					if (isWebSocketClosed) throw new Error('WebSocket closed');
+					hasIncomingData = true;
 
-                    hasIncomingData = true;
+					if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+						throw new Error('WebSocket not open');
+					}
 
-                    try {
-                        if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                            const dataToSend = header ? await new Blob([header, chunk]).arrayBuffer() : chunk;
-                            webSocket.send(dataToSend);
-                            if (header) header = null;
-                        } else {
-                            throw new Error('WebSocket not open');
-                        }
-                    } catch (error) {
-                        log(`WebSocket发送数据失败: ${error.message}`);
-                        throw error; 
-                    }
-                },
-                close() {
-                    log(`远程连接已关闭, 是否收到数据: ${hasIncomingData}`);
-                },
-                abort(reason) {
-                    log(`远程连接异常中断: ${reason}`);
-                }
-            })
-        );
-    } catch (error) {
-        log(`remoteSocketToWS 异常: ${error.message}`);
-        
-        if (!isWebSocketClosed) {
-            utils.ws.safeClose(webSocket);
-        }
+					webSocket.send(responseHeader ? await new Blob([responseHeader, chunk]).arrayBuffer() : chunk);
+					responseHeader = null; // 发送一次后清空
+				},
+				close: () => log(`远程连接关闭, 是否收到数据: ${hasIncomingData}`),
+				abort: (reason) => log(`远程连接中断: ${reason}`)
+			})
+		);
+	} catch (error) {
+		log(`remoteSocketToWS 异常: ${error.message}`);
+		if (!isWebSocketClosed) utils.ws.safeClose(webSocket);
+	}
 
-        if (!hasIncomingData && retry) {
-            log(`由于错误重试连接`);
-            retry();
-        }
-    }
-
-    if (!hasIncomingData && retry) {
-        log(`重试连接`);
-        retry();
-    }
+	if (!hasIncomingData && retry) {
+		log(`重试连接`);
+		retry();
+	}
 }
 
 const WS_READY_STATE_OPEN = 1;
@@ -794,190 +632,190 @@ const WS_READY_STATE_CLOSING = 2;
 const byteToHexArray = Array.from({ length: 256 }, (_, i) => (i + 256).toString(16).slice(1));
 
 function unsafeStringify(arr, offset = 0) {
-    return `${byteToHexArray[arr[offset + 0]]}${byteToHexArray[arr[offset + 1]]}${byteToHexArray[arr[offset + 2]]}${byteToHexArray[arr[offset + 3]]}-` +
-           `${byteToHexArray[arr[offset + 4]]}${byteToHexArray[arr[offset + 5]]}-` +
-           `${byteToHexArray[arr[offset + 6]]}${byteToHexArray[arr[offset + 7]]}-` +
-           `${byteToHexArray[arr[offset + 8]]}${byteToHexArray[arr[offset + 9]]}-` +
-           `${byteToHexArray[arr[offset + 10]]}${byteToHexArray[arr[offset + 11]]}${byteToHexArray[arr[offset + 12]]}` +
-           `${byteToHexArray[arr[offset + 13]]}${byteToHexArray[arr[offset + 14]]}${byteToHexArray[arr[offset + 15]]}`.toLowerCase();
+	return `${byteToHexArray[arr[offset + 0]]}${byteToHexArray[arr[offset + 1]]}${byteToHexArray[arr[offset + 2]]}${byteToHexArray[arr[offset + 3]]}-` +
+		   `${byteToHexArray[arr[offset + 4]]}${byteToHexArray[arr[offset + 5]]}-` +
+		   `${byteToHexArray[arr[offset + 6]]}${byteToHexArray[arr[offset + 7]]}-` +
+		   `${byteToHexArray[arr[offset + 8]]}${byteToHexArray[arr[offset + 9]]}-` +
+		   `${byteToHexArray[arr[offset + 10]]}${byteToHexArray[arr[offset + 11]]}${byteToHexArray[arr[offset + 12]]}` +
+		   `${byteToHexArray[arr[offset + 13]]}${byteToHexArray[arr[offset + 14]]}${byteToHexArray[arr[offset + 15]]}`.toLowerCase();
 }
 
 function stringify(arr, offset = 0) {
-    const uuid = unsafeStringify(arr, offset);
-    if (!utils.isValidUUID(uuid)) {
-        throw new TypeError(`Invalid UUID: ${uuid}`);
-    }
-    return uuid;
+	const uuid = unsafeStringify(arr, offset);
+	if (!utils.isValidUUID(uuid)) {
+		throw new TypeError(`Invalid UUID: ${uuid}`);
+	}
+	return uuid;
 }
 
 async function socks5Connect(addressType, addressRemote, portRemote, log) {
-    const { username, password, hostname, port } = parsedSocks5Address;
-    const socket = connect({ hostname, port });
+	const { username, password, hostname, port } = parsedSocks5Address;
+	const socket = connect({ hostname, port });
 
-    const socksGreeting = new Uint8Array([5, 2, 0, 2]);
-    const writer = socket.writable.getWriter();
-    await writer.write(socksGreeting);
-    log('SOCKS5 greeting sent');
+	const socksGreeting = new Uint8Array([5, 2, 0, 2]);
+	const writer = socket.writable.getWriter();
+	await writer.write(socksGreeting);
+	log('SOCKS5 greeting sent');
 
-    const reader = socket.readable.getReader();
-    const encoder = new TextEncoder();
-    let res = (await reader.read()).value;
+	const reader = socket.readable.getReader();
+	const encoder = new TextEncoder();
+	let res = (await reader.read()).value;
 
-    if (res[0] !== 0x05) {
-        log(`SOCKS5 version error: received ${res[0]}, expected 5`);
-        return;
-    }
-    if (res[1] === 0xff) {
-        log("No acceptable authentication methods");
-        return;
-    }
+	if (res[0] !== 0x05) {
+		log(`SOCKS5 version error: received ${res[0]}, expected 5`);
+		return;
+	}
+	if (res[1] === 0xff) {
+		log("No acceptable authentication methods");
+		return;
+	}
 
-    if (res[1] === 0x02) {
-        log("SOCKS5 requires authentication");
-        if (!username || !password) {
-            log("Username and password required");
-            return;
-        }
-        const authRequest = new Uint8Array([
-            1,
-            username.length,
-            ...encoder.encode(username),
-            password.length,
-            ...encoder.encode(password)
-        ]);
-        await writer.write(authRequest);
-        res = (await reader.read()).value;
-        if (res[0] !== 0x01 || res[1] !== 0x00) {
-            log("SOCKS5 authentication failed");
-            return;
-        }
-    }
+	if (res[1] === 0x02) {
+		log("SOCKS5 requires authentication");
+		if (!username || !password) {
+			log("Username and password required");
+			return;
+		}
+		const authRequest = new Uint8Array([
+			1,
+			username.length,
+			...encoder.encode(username),
+			password.length,
+			...encoder.encode(password)
+		]);
+		await writer.write(authRequest);
+		res = (await reader.read()).value;
+		if (res[0] !== 0x01 || res[1] !== 0x00) {
+			log("SOCKS5 authentication failed");
+			return;
+		}
+	}
 
-    let DSTADDR;
-    switch (addressType) {
-        case 1:
-            DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
-            break;
-        case 2:
-            DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
-            break;
-        case 3:
-            DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]);
-            break;
-        default:
-            log(`Invalid address type: ${addressType}`);
-            return;
-    }
-    const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
-    await writer.write(socksRequest);
-    log('SOCKS5 request sent');
+	let DSTADDR;
+	switch (addressType) {
+		case 1:
+			DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
+			break;
+		case 2:
+			DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
+			break;
+		case 3:
+			DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]);
+			break;
+		default:
+			log(`Invalid address type: ${addressType}`);
+			return;
+	}
+	const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
+	await writer.write(socksRequest);
+	log('SOCKS5 request sent');
 
-    res = (await reader.read()).value;
-    if (res[1] === 0x00) {
-        log("SOCKS5 connection established");
-    } else {
-        log("SOCKS5 connection failed");
-        return;
-    }
-    writer.releaseLock();
-    reader.releaseLock();
-    return socket;
+	res = (await reader.read()).value;
+	if (res[1] === 0x00) {
+		log("SOCKS5 connection established");
+	} else {
+		log("SOCKS5 connection failed");
+		return;
+	}
+	writer.releaseLock();
+	reader.releaseLock();
+	return socket;
 }
 
 function socks5AddressParser(address) {
-    let [latter, former] = address.split("@").reverse();
-    let username, password, hostname, port;
+	let [latter, former] = address.split("@").reverse();
+	let username, password, hostname, port;
 
-    if (former) {
-        const formers = former.split(":");
-        if (formers.length !== 2) {
-            throw new Error('Invalid SOCKS address format: "username:password" required');
-        }
-        [username, password] = formers;
-    }
+	if (former) {
+		const formers = former.split(":");
+		if (formers.length !== 2) {
+			throw new Error('Invalid SOCKS address format: "username:password" required');
+		}
+		[username, password] = formers;
+	}
 
-    const latters = latter.split(":");
-    port = Number(latters.pop());
-    if (isNaN(port)) {
-        throw new Error('Invalid SOCKS address format: port must be a number');
-    }
+	const latters = latter.split(":");
+	port = Number(latters.pop());
+	if (isNaN(port)) {
+		throw new Error('Invalid SOCKS address format: port must be a number');
+	}
 
-    hostname = latters.join(":");
+	hostname = latters.join(":");
 
-    const regex = /^\[.*\]$/;
-    if (hostname.includes(":") && !regex.test(hostname)) {
-        throw new Error('Invalid SOCKS address format: IPv6 must be in brackets');
-    }
+	const regex = /^\[.*\]$/;
+	if (hostname.includes(":") && !regex.test(hostname)) {
+		throw new Error('Invalid SOCKS address format: IPv6 must be in brackets');
+	}
 
-    return {
-        username,
-        password,
-        hostname,
-        port,
-    }
+	return {
+		username,
+		password,
+		hostname,
+		port,
+	}
 }
 
 function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
-    if (isBase64) {
-        content = atob(content);
-    }
+	if (isBase64) {
+		content = atob(content);
+	}
 
-    const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const fakeUserIDRegExp = new RegExp(escapeRegExp(fakeUserID), 'g');
-    const fakeHostNameRegExp = new RegExp(escapeRegExp(fakeHostName), 'g');
+	const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const fakeUserIDRegExp = new RegExp(escapeRegExp(fakeUserID), 'g');
+	const fakeHostNameRegExp = new RegExp(escapeRegExp(fakeHostName), 'g');
 
-    content = content.replace(fakeUserIDRegExp, userID)
-                     .replace(fakeHostNameRegExp, hostName);
+	content = content.replace(fakeUserIDRegExp, userID)
+					 .replace(fakeHostNameRegExp, hostName);
 
-    return isBase64 ? btoa(content) : content;
+	return isBase64 ? btoa(content) : content;
 }
 
 async function 双重哈希(文本) {
-    const 编码器 = new TextEncoder();
+	const 编码器 = new TextEncoder();
 
-    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-    const 第一次十六进制 = Array.from(new Uint8Array(第一次哈希))
-        .map(字节 => 字节.toString(16).padStart(2, '0'))
-        .join('');
+	const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
+	const 第一次十六进制 = Array.from(new Uint8Array(第一次哈希))
+		.map(字节 => 字节.toString(16).padStart(2, '0'))
+		.join('');
 
-    const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-    const 第二次十六进制 = Array.from(new Uint8Array(第二次哈希))
-        .map(字节 => 字节.toString(16).padStart(2, '0'))
-        .join('');
+	const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
+	const 第二次十六进制 = Array.from(new Uint8Array(第二次哈希))
+		.map(字节 => 字节.toString(16).padStart(2, '0'))
+		.join('');
 
-    return 第二次十六进制.toLowerCase();
+	return 第二次十六进制.toLowerCase();
 }
 
 async function 代理URL(代理网址, 目标网址) {
-    const 网址列表 = await 整理(代理网址);
-    const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+	const 网址列表 = await 整理(代理网址);
+	const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-    const 解析后的网址 = new URL(完整网址);
-    console.log(解析后的网址);
+	const 解析后的网址 = new URL(完整网址);
+	console.log(解析后的网址);
 
-    const 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-    const 主机名 = 解析后的网址.hostname;
-    let 路径名 = 解析后的网址.pathname;
-    const 查询参数 = 解析后的网址.search;
+	const 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
+	const 主机名 = 解析后的网址.hostname;
+	let 路径名 = 解析后的网址.pathname;
+	const 查询参数 = 解析后的网址.search;
 
-    if (路径名.endsWith('/')) {
-        路径名 = 路径名.slice(0, -1);
-    }
-    路径名 += 目标网址.pathname;
+	if (路径名.endsWith('/')) {
+		路径名 = 路径名.slice(0, -1);
+	}
+	路径名 += 目标网址.pathname;
 
-    const 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
+	const 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
 
-    const 响应 = await fetch(新网址);
+	const 响应 = await fetch(新网址);
 
-    const 新响应 = new Response(响应.body, {
-        status: 响应.status,
-        statusText: 响应.statusText,
-        headers: 响应.headers
-    });
+	const 新响应 = new Response(响应.body, {
+		status: 响应.status,
+		statusText: 响应.statusText,
+		headers: 响应.headers
+	});
 
-    新响应.headers.set('X-New-URL', 新网址);
+	新响应.headers.set('X-New-URL', 新网址);
 
-    return 新响应;
+	return 新响应;
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
