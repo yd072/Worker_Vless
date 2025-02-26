@@ -14,5 +14,4 @@
 | SUBAPI | 自定义 |
 | ····· | ····· |
 
-# 感谢
-[cmliu](https://github.com/cmliu/edgetunnel)
+
