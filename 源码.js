@@ -928,17 +928,26 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 
 	if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
 		let cfips = [
-			'103.21.244.0/23',
-			'104.16.0.0/13',
-			'104.24.0.0/14',
-			'172.64.0.0/14',
-			'103.21.244.0/23',
-			'104.16.0.0/14',
-			'104.24.0.0/15',
-			'141.101.64.0/19',
-			'172.64.0.0/14',
-			'188.114.96.0/21',
-			'190.93.240.0/21',
+			        '103.21.244.0/24',
+				'104.16.0.0/13',
+				'104.24.0.0/14',
+				'172.64.0.0/14',
+				'104.16.0.0/14',
+				'104.24.0.0/15',
+				'141.101.64.0/19',
+				'172.64.0.0/14',
+				'188.114.96.0/21',
+				'190.93.240.0/21',
+				'162.159.152.0/23',
+				'104.16.0.0/13',
+				'104.24.0.0/14',
+				'172.64.0.0/14',
+				'104.16.0.0/14',
+				'104.24.0.0/15',
+				'141.101.64.0/19',
+				'172.64.0.0/14',
+				'188.114.96.0/21',
+				'190.93.240.0/21',
 		];
 
 		function generateRandomIPFromCIDR(cidr) {
@@ -955,10 +964,25 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}).join('.');
 		}
 
+		let counter = 1; // 添加计数器
+		const randomPorts = httpsPorts.concat('443'); // 合并所有可用端口
+
 		if (hostName.includes(".workers.dev")) {
-			addressesnotls = addressesnotls.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+			addressesnotls = addressesnotls.concat(
+				cfips.map(cidr => {
+					const ip = generateRandomIPFromCIDR(cidr);
+					const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
+					return `${ip}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`;
+				})
+			);
 		} else {
-			addresses = addresses.concat(cfips.map(cidr => generateRandomIPFromCIDR(cidr) + '#CF随机节点'));
+			addresses = addresses.concat(
+				cfips.map(cidr => {
+					const ip = generateRandomIPFromCIDR(cidr);
+					const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
+					return `${ip}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`;
+				})
+			);
 		}
 	}
 
@@ -1045,6 +1069,9 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			singbox订阅地址:<br>
 			<a href="javascript:void(0)" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?sb','qrcode_3')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${proxyhost}${hostName}/${uuid}?sb</a><br>
 			<div id="qrcode_3" style="margin: 10px 10px 10px 10px;"></div>
+			Loon订阅地址:<br>
+			<a href="javascript:void(0)" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?loon','qrcode_4')" style="color:blue;text-decoration:underline;cursor:pointer;">https://${proxyhost}${hostName}/${uuid}?loon</a><br>
+			<div id="qrcode_4" style="margin: 10px 10px 10px 10px;"></div>
 			<strong><a href="javascript:void(0);" id="noticeToggle" onclick="toggleNotice()">实用订阅技巧∨</a></strong><br>
 				<div id="noticeContent" class="notice-content" style="display: none;">
                     <strong>1.</strong> 如您使用的是 PassWall、PassWall2 路由插件，订阅编辑的 <strong>用户代理(User-Agent)</strong> 设置为 <strong>PassWall</strong> 即可；<br>
@@ -1189,6 +1216,10 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				isBase64 = false;
 			} else if (userAgent.includes('sing-box') || userAgent.includes('singbox') || ((_url.searchParams.has('singbox') || _url.searchParams.has('sb')) && !userAgent.includes('subconverter'))) {
 				url = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				isBase64 = false;
+			} else if (userAgent.includes('loon') || (_url.searchParams.has('loon') && !userAgent.includes('subconverter'))) {
+				// 添加Loon支持
+				url = `${subProtocol}://${subConverter}/sub?target=loon&url=${encodeURIComponent(url)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=${subEmoji}&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 				isBase64 = false;
 			}
 		}
