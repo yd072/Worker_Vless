@@ -75,7 +75,6 @@ class WebSocketManager {
 		this.webSocket = webSocket;
 		this.log = log;
 		this.readableStreamCancel = false;
-		this.backpressure = false;
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -90,7 +89,6 @@ class WebSocketManager {
 		// 处理消息事件
 		this.webSocket.addEventListener('message', (event) => {
 			if (this.readableStreamCancel) return;
-			if (!this.backpressure) 
 			controller.enqueue(event.data);
 		});
 
@@ -118,9 +116,7 @@ class WebSocketManager {
 	}
 
 	handleStreamPull(controller) {
-		if (controller.desiredSize > 0) {
-			this.backpressure = false;
-		}
+
 	}
 
 	handleStreamCancel(reason) {
