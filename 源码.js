@@ -1450,7 +1450,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 					</div>
 
 					<div class="section">
-						<div class="section-title">📝 proxyConfig</div>
+						<div class="section-title">📝 配置信息</div>
 						<div class="config-info">
 							<button class="copy-button" onclick="copyToClipboard('${proxyConfig}','qrcode_proxyConfig')">复制配置</button>
 							<div>${proxyConfig}</div>
