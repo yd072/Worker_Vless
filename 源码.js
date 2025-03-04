@@ -808,17 +808,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     let header = responseHeader;
     let isSocketClosed = false;
 
-    // 监控连接状态
-    const heartbeat = setInterval(() => {
-        if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-            clearInterval(heartbeat);
-            if (!isSocketClosed) {
-                log('WebSocket连接已断开');
-                safeCloseWebSocket(webSocket);
-            }
-        }
-    }, 30000);
-
     try {
         await remoteSocket.readable
             .pipeTo(
@@ -830,11 +819,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                             if (webSocket.readyState !== WS_READY_STATE_OPEN) {
                                 controller.error('WebSocket未连接');
                                 return;
-                            }
-
-                            // 添加缓冲区检查,防止内存溢出
-                            while (webSocket.bufferedAmount > 512 * 1024) {
-                                await new Promise(resolve => setTimeout(resolve, 5));
                             }
 
                             // 优化数据传输
@@ -855,12 +839,10 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                     },
                     close() {
                         isSocketClosed = true;
-                        clearInterval(heartbeat);
                         log(`远程连接已关闭, 接收数据: ${hasIncomingData}`);
                     },
                     abort(reason) {
                         isSocketClosed = true;
-                        clearInterval(heartbeat);
                         log(`远程连接中断: ${reason}`);
                     }
                 })
@@ -879,7 +861,6 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         }
     } catch (error) {
         log(`连接处理异常: ${error.message}`);
-        clearInterval(heartbeat);
         if (!isSocketClosed) {
             safeCloseWebSocket(webSocket);
         }
