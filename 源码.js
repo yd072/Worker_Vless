@@ -2254,7 +2254,7 @@ async function handleGetRequest(env, txt) {
                     <div id="advanced-settings-content" class="advanced-settings-content">
                         <div>
                             <label for="proxyip"><strong>PROXYIP 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">每行一个代理IP，格式：IP:端口</p>
+                            <p style="margin: 5px 0; color: #666;">每行一个IP，格式：IP:端口</p>
                             <textarea 
                                 id="proxyip" 
                                 class="proxyip-editor" 
