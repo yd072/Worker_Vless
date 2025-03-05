@@ -76,6 +76,8 @@ class WebSocketManager {
 		this.log = log;
 		this.readableStreamCancel = false;
 		this.backpressure = false;
+		this.messageQueue = []; // 添加消息队列
+		this.processingMessage = false; // 添加消息处理状态标志
 	}
 
 	makeReadableStream(earlyDataHeader) {
@@ -84,34 +86,94 @@ class WebSocketManager {
 			pull: (controller) => this.handleStreamPull(controller),
 			cancel: (reason) => this.handleStreamCancel(reason)
 		});
+	}
+
+	async handleStreamStart(controller, earlyDataHeader) {
+		try {
+			// 优化消息处理
+			this.webSocket.addEventListener('message', async (event) => {
+				if (this.readableStreamCancel) return;
+				
+				if (!this.backpressure) {
+					await this.processMessage(event.data, controller);
+				} else {
+					// 当出现背压时,将消息加入队列
+					this.messageQueue.push(event.data);
+					this.log('Backpressure detected, message queued');
 				}
+			});
 
-	handleStreamStart(controller, earlyDataHeader) {
-		// 处理消息事件
-				this.webSocket.addEventListener('message', (event) => {
-					if (this.readableStreamCancel) return;
-			if (!this.backpressure) {
-					controller.enqueue(event.data);
-			} else {
-				this.log('Backpressure, message discarded');
+			// 优化关闭处理
+			this.webSocket.addEventListener('close', () => {
+				this.handleClose(controller);
+			});
+
+			// 优化错误处理
+			this.webSocket.addEventListener('error', (err) => {
+				this.handleError(err, controller);
+			});
+
+			// 处理早期数据
+			await this.handleEarlyData(earlyDataHeader, controller);
+		} catch (error) {
+			this.log(`Stream start error: ${error.message}`);
+			controller.error(error);
+		}
+	}
+
+	async processMessage(data, controller) {
+		if (this.processingMessage) return;
+		
+		try {
+			this.processingMessage = true;
+			controller.enqueue(data);
+			
+			// 处理队列中的消息
+			while (this.messageQueue.length > 0 && !this.backpressure) {
+				const queuedData = this.messageQueue.shift();
+				controller.enqueue(queuedData);
 			}
-				});
+		} catch (error) {
+			this.log(`Message processing error: ${error.message}`);
+		} finally {
+			this.processingMessage = false;
+		}
+	}
 
-				// 处理关闭事件
-				this.webSocket.addEventListener('close', () => {
-			safeCloseWebSocket(this.webSocket); 
-					if (!this.readableStreamCancel) {
-						controller.close();
-					}
-				});
+	handleStreamPull(controller) {
+		if (controller.desiredSize > 0) {
+			this.backpressure = false;
+			// 当背压解除时,尝试处理队列中的消息
+			if (this.messageQueue.length > 0) {
+				const data = this.messageQueue.shift();
+				this.processMessage(data, controller);
+			}
+		}
+	}
 
-				// 处理错误事件
-				this.webSocket.addEventListener('error', (err) => {
-					this.log('WebSocket server error');
-					controller.error(err);
-				});
+	handleStreamCancel(reason) {
+		if (this.readableStreamCancel) return;
+		
+		this.log(`Readable stream canceled, reason: ${reason}`);
+		this.readableStreamCancel = true;
+		this.cleanup();
+	}
 
-		// 处理早期数据
+	handleClose(controller) {
+		safeCloseWebSocket(this.webSocket);
+		if (!this.readableStreamCancel) {
+			controller.close();
+		}
+		this.cleanup();
+	}
+
+	handleError(err, controller) {
+		this.log('WebSocket server error');
+		controller.error(err);
+		this.cleanup();
+	}
+
+	async handleEarlyData(earlyDataHeader, controller) {
 		const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
 		if (error) {
 			controller.error(error);
@@ -120,19 +182,14 @@ class WebSocketManager {
 		}
 	}
 
-	handleStreamPull(controller) {
-		if (controller.desiredSize > 0) {
-			this.backpressure = false;
-		}
+	cleanup() {
+		// 清理资源
+		this.messageQueue = [];
+		this.processingMessage = false;
+		this.backpressure = false;
+		safeCloseWebSocket(this.webSocket);
 	}
-
-	handleStreamCancel(reason) {
-		if (this.readableStreamCancel) return;
-		this.log(`Readable stream canceled, reason: ${reason}`);
-				this.readableStreamCancel = true;
-				safeCloseWebSocket(this.webSocket); 
-			}
-		};
+}
 
 export default {
 	async fetch(request, env, ctx) {
@@ -600,135 +657,246 @@ async function 维列斯OverWSHandler(request) {
 }
 
 function mergeData(header, chunk) {
-    const merged = new Uint8Array(header.length + chunk.length);
-    merged.set(header);
-    merged.set(chunk, header.length);
-    return merged;
+    // 检查输入参数
+    if (!header || !chunk) {
+        throw new Error('Invalid input parameters');
+    }
+
+    // 预先计算总长度
+    const totalLength = header.length + chunk.length;
+    
+    // 优化: 如果数据太小,使用固定大小的共享缓冲区
+    if (totalLength < 1024) { // 1KB阈值
+        // 使用静态缓冲区,避免频繁创建小数组
+        if (!mergeData.smallBuffer || mergeData.smallBuffer.length < totalLength) {
+            mergeData.smallBuffer = new Uint8Array(Math.max(1024, totalLength));
+        }
+        const buffer = mergeData.smallBuffer;
+        buffer.set(header, 0);
+        buffer.set(chunk, header.length);
+        // 返回一个新的视图,只包含实际数据
+        return new Uint8Array(buffer.buffer, 0, totalLength);
+    }
+
+    // 大数据使用标准合并
+    try {
+        const merged = new Uint8Array(totalLength);
+        merged.set(header, 0);
+        merged.set(chunk, header.length);
+        return merged;
+    } catch (error) {
+        console.error('Data merge failed:', error);
+        throw new Error('Failed to merge data: ' + error.message);
+    }
 }
 
+// 初始化静态缓冲区
+mergeData.smallBuffer = new Uint8Array(1024);
+
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
+    // 使用Google DNS服务器
+    const DNS_SERVER = {
+        hostname: '8.8.4.4',
+        port: 53
+    };
+    
+    let tcpSocket;
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     try {
-        // 只使用Google的备用DNS服务器,更快更稳定
-        const dnsServer = '8.8.4.4';
-        const dnsPort = 53;
-        
-        let 维列斯Header = 维列斯ResponseHeader;
-        
-        // 使用Promise.race设置2秒超时
-        const tcpSocket = await Promise.race([
-            connect({ hostname: dnsServer, port: dnsPort }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('DNS连接超时')), 2000))
-        ]);
+        // 设置全局超时
+        const timeout = setTimeout(() => {
+            controller.abort('DNS query timeout');
+            if (tcpSocket) {
+                try {
+                    tcpSocket.close();
+                } catch (e) {
+                    log(`关闭TCP连接出错: ${e.message}`);
+                }
+            }
+        }, 3000);
 
-        log(`成功连接到DNS服务器 ${dnsServer}:${dnsPort}`);
+        try {
+            tcpSocket = await Promise.race([
+                connect({
+                    hostname: DNS_SERVER.hostname,
+                    port: DNS_SERVER.port,
+                    signal,
+                }),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('DNS连接超时')), 2000)
+                )
+            ]);
 
-        const writer = tcpSocket.writable.getWriter();
-        await writer.write(udpChunk);
-        writer.releaseLock();
+            log(`成功连接到DNS服务器 ${DNS_SERVER.hostname}:${DNS_SERVER.port}`);
+            
+            // 发送DNS查询
+            const writer = tcpSocket.writable.getWriter();
+            try {
+                await writer.write(udpChunk);
+            } finally {
+                writer.releaseLock();
+            }
 
-        await tcpSocket.readable.pipeTo(new WritableStream({
-            async write(chunk) {
-                if (webSocket.readyState === WS_READY_STATE_OPEN) {
+            // 简化的数据流处理
+            let 维列斯Header = 维列斯ResponseHeader;
+            const reader = tcpSocket.readable.getReader();
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        log('DNS数据流处理完成');
+                        break;
+                    }
+
+                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                        break;
+                    }
+
                     try {
-                        const combinedData = 维列斯Header ? mergeData(维列斯Header, chunk) : chunk;
-                        webSocket.send(combinedData);
-                        if (维列斯Header) 维列斯Header = null;
+                        // 处理数据包
+                        const data = 维列斯Header ? mergeData(维列斯Header, value) : value;
+                        webSocket.send(data);
+                        维列斯Header = null; // 清除header,只在第一个包使用
                     } catch (error) {
-                        console.error(`发送数据时发生错误: ${error.message}`);
-                        safeCloseWebSocket(webSocket);
+                        log(`数据处理错误: ${error.message}`);
+                        throw error;
                     }
                 }
-            },
-            close() {
-                log(`DNS连接已关闭`);
-            },
-            abort(reason) {
-                console.error(`DNS连接异常中断`, reason);
+            } catch (error) {
+                log(`数据读取错误: ${error.message}`);
+                throw error;
+            } finally {
+                reader.releaseLock();
             }
-        }));
+
+            clearTimeout(timeout);
+
+        } catch (error) {
+            log(`DNS查询失败: ${error.message}`);
+            throw error;
+        }
+
     } catch (error) {
-        console.error(`DNS查询异常: ${error.message}`, error.stack);
+        log(`DNS查询失败: ${error.message}`);
         safeCloseWebSocket(webSocket);
+    } finally {
+        clearTimeout(timeout);
+        if (tcpSocket) {
+            try {
+                tcpSocket.close();
+            } catch (e) {
+                log(`关闭TCP连接出错: ${e.message}`);
+            }
+        }
     }
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
-    async function useSocks5Pattern(address) {
-        if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) return true;
-        return go2Socks5s.some(pattern => {
-            let regexPattern = pattern.replace(/\*/g, '.*');
-            let regex = new RegExp(`^${regexPattern}$`, 'i');
-            return regex.test(address);
-        });
-    }
-
-    async function connectAndWrite(address, port, socks = false) {
-        log(`正在连接 ${address}:${port}`);
+    // 优化 SOCKS5 模式检查
+    const checkSocks5Mode = async (address) => {
+        const patterns = [atob('YWxsIGlu'), atob('Kg==')];
+        if (go2Socks5s.some(pattern => patterns.includes(pattern))) return true;
         
-        // 添加连接超时处理
-        const tcpSocket = await Promise.race([
-            socks ? 
-            await socks5Connect(addressType, address, port, log) :
-            connect({ 
-                hostname: address,
-                port: port,
-                    // 添加 TCP 连接优化选项
-                allowHalfOpen: false,
-                    keepAlive: true,
-                    keepAliveInitialDelay: 60000
-                }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('连接超时')), 3000)
-            )
-        ]);
+        const pattern = go2Socks5s.find(p => 
+            new RegExp('^' + p.replace(/\*/g, '.*') + '$', 'i').test(address)
+        );
+        return !!pattern;
+    };
 
-        remoteSocket.value = tcpSocket;
+    // 优化连接处理
+    const createConnection = async (address, port, socks = false) => {
+        log(`建立连接: ${address}:${port} ${socks ? '(SOCKS5)' : ''}`);
         
-       
-            const writer = tcpSocket.writable.getWriter();
-            await writer.write(rawClientData);
-            writer.releaseLock();
-        
-        return tcpSocket;
-    }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    async function retry() {
         try {
+            const tcpSocket = await Promise.race([
+                socks ? 
+                    socks5Connect(addressType, address, port, log) :
+                    connect({ 
+                        hostname: address,
+                        port: port,
+                        allowHalfOpen: false,
+                        keepAlive: true,
+                        keepAliveInitialDelay: 60000,
+                        signal: controller.signal
+                    })
+                ,
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('连接超时')), 3000)
+                )
+            ]);
+
+            clearTimeout(timeoutId);
+            remoteSocket.value = tcpSocket;
+
+            // 写入数据
+            const writer = tcpSocket.writable.getWriter();
+            try {
+                await writer.write(rawClientData);
+            } finally {
+                writer.releaseLock();
+            }
+
+            return tcpSocket;
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    };
+
+    // 优化重试逻辑
+    const retryConnection = async () => {
+        try {
+            let tcpSocket;
             if (enableSocks) {
-                tcpSocket = await connectAndWrite(addressRemote, portRemote, true);
+                tcpSocket = await createConnection(addressRemote, portRemote, true);
             } else {
+                // 处理 proxyIP
                 if (!proxyIP || proxyIP === '') {
-                    proxyIP = atob(`UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==`);
+                    proxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
                 } else {
-                    const proxyParts = proxyIP.split(':');
+                    let port = portRemote;
                     if (proxyIP.includes(']:')) {
-                        [proxyIP, portRemote] = proxyIP.split(']:');
-                    } else if (proxyParts.length === 2) {
-                        [proxyIP, portRemote] = proxyParts;
+                        [proxyIP, port] = proxyIP.split(']:');
+                    } else if (proxyIP.includes(':')) {
+                        [proxyIP, port] = proxyIP.split(':');
                     }
                     if (proxyIP.includes('.tp')) {
-                        portRemote = proxyIP.split('.tp')[1].split('.')[0] || portRemote;
+                        port = proxyIP.split('.tp')[1].split('.')[0] || port;
                     }
+                    portRemote = port;
                 }
-                tcpSocket = await connectAndWrite(proxyIP || addressRemote, portRemote);
+                tcpSocket = await createConnection(proxyIP || addressRemote, portRemote);
             }
-            tcpSocket.closed.catch(error => {
-                console.log('Retry tcpSocket closed error', error);
-            }).finally(() => {
-                safeCloseWebSocket(webSocket);
-            });
-            remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-        } catch (error) {
-            log('Retry error:', error);
-        }
-    }
 
-    let shouldUseSocks = false;
-    if (go2Socks5s.length > 0 && enableSocks) {
-        shouldUseSocks = await useSocks5Pattern(addressRemote);
+            // 监听连接关闭
+            tcpSocket.closed
+                .catch(error => log('重试连接关闭:', error))
+                .finally(() => safeCloseWebSocket(webSocket));
+
+            return remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
+        } catch (error) {
+            log('重试失败:', error);
+        }
+    };
+
+    try {
+        // 主连接逻辑
+        const shouldUseSocks = enableSocks && go2Socks5s.length > 0 ? 
+            await checkSocks5Mode(addressRemote) : false;
+
+        const tcpSocket = await createConnection(addressRemote, portRemote, shouldUseSocks);
+        return remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retryConnection, log);
+    } catch (error) {
+        log('主连接失败，尝试重试:', error);
+        return retryConnection();
     }
-    let tcpSocket = await connectAndWrite(addressRemote, portRemote, shouldUseSocks);
-    remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retry, log);
 }
 
 function process维列斯Header(维列斯Buffer, userID) {
@@ -807,31 +975,48 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     let hasIncomingData = false;
     let header = responseHeader;
     let isSocketClosed = false;
+    let retryAttempted = false;
+
+    // 创建一个 AbortController 用于控制数据流
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    // 设置全局超时
+    const timeout = setTimeout(() => {
+        if (!hasIncomingData) {
+            controller.abort('连接超时');
+        }
+    }, 5000);
 
     try {
+        // 优化的数据写入函数
+        const writeData = async (chunk) => {
+            if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                throw new Error('WebSocket未连接');
+            }
+
+            if (header) {
+                // 预先计算总长度
+                const totalLength = header.byteLength + chunk.byteLength;
+                // 使用预分配的 buffer
+                const combinedData = new Uint8Array(totalLength);
+                combinedData.set(new Uint8Array(header), 0);
+                combinedData.set(new Uint8Array(chunk), header.byteLength);
+                webSocket.send(combinedData);
+                header = null; // 清除header引用
+            } else {
+                webSocket.send(chunk);
+            }
+            
+            hasIncomingData = true;
+        };
+
         await remoteSocket.readable
             .pipeTo(
                 new WritableStream({
                     async write(chunk, controller) {
                         try {
-                            hasIncomingData = true;
-                            
-                            if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                                controller.error('WebSocket未连接');
-                                return;
-                            }
-
-                            // 优化数据传输
-                            if (header) {
-                                // 使用 Uint8Array 合并数据,提高效率
-                                const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
-                                combinedData.set(new Uint8Array(header), 0);
-                                combinedData.set(new Uint8Array(chunk), header.byteLength);
-                                webSocket.send(combinedData);
-                                header = null;
-                            } else {
-                                webSocket.send(chunk);
-                            }
+                            await writeData(chunk);
                         } catch (error) {
                             log(`数据写入错误: ${error.message}`);
                             controller.error(error);
@@ -839,32 +1024,61 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                     },
                     close() {
                         isSocketClosed = true;
+                        clearTimeout(timeout);
                         log(`远程连接已关闭, 接收数据: ${hasIncomingData}`);
+                        
+                        // 如果没有收到数据且未尝试重试,则进行重试
+                        if (!hasIncomingData && retry && !retryAttempted) {
+                            retryAttempted = true;
+                            log(`未收到数据,正在重试连接...`);
+                            retry();
+                        }
                     },
                     abort(reason) {
                         isSocketClosed = true;
+                        clearTimeout(timeout);
                         log(`远程连接中断: ${reason}`);
                     }
-                })
+                }),
+                {
+                    signal,
+                    preventCancel: false
+                }
             )
             .catch((error) => {
                 log(`数据传输异常: ${error.message}`);
                 if (!isSocketClosed) {
                     safeCloseWebSocket(webSocket);
                 }
+                
+                // 在连接失败且未收到数据时尝试重试
+                if (!hasIncomingData && retry && !retryAttempted) {
+                    retryAttempted = true;
+                    log(`连接失败,正在重试...`);
+                    retry();
+                }
             });
 
-        // 如果没有收到数据且提供了重试函数,则进行重试
-        if (!hasIncomingData && retry) {
-            log(`未收到数据,正在重试连接...`);
-            retry();
-        }
     } catch (error) {
+        clearTimeout(timeout);
         log(`连接处理异常: ${error.message}`);
         if (!isSocketClosed) {
             safeCloseWebSocket(webSocket);
         }
+        
+        // 在发生异常且未收到数据时尝试重试
+        if (!hasIncomingData && retry && !retryAttempted) {
+            retryAttempted = true;
+            log(`发生异常,正在重试...`);
+            retry();
+        }
+        
         throw error;
+    } finally {
+        clearTimeout(timeout);
+        if (signal.aborted) {
+            safeCloseWebSocket(webSocket);
+        }
     }
 }
 
