@@ -228,11 +228,11 @@ export default {
 
 			const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
 
-			proxyIP = env.PROXYIP || env.proxyip || proxyIP;
-			// 如果有KV存储,尝试读取自定义PROXYIP
+			// 修改PROXYIP初始化逻辑
 			if (env.KV) {
 				try {
 					const customProxyIP = await env.KV.get('PROXYIP.txt');
+					// 只有当KV中有非空值时才覆盖默认设置
 					if (customProxyIP && customProxyIP.trim()) {
 						proxyIP = customProxyIP;
 					}
@@ -240,13 +240,29 @@ export default {
 					console.error('读取自定义PROXYIP时发生错误:', error);
 				}
 			}
+			// 如果proxyIP为空，则使用环境变量或默认值
+			proxyIP = proxyIP || env.PROXYIP || env.proxyip || '';
 			proxyIPs = await 整理(proxyIP);
-			proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
+			proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
 
-			socks5Address = env.SOCKS5 || socks5Address;
+			// 修改SOCKS5地址初始化逻辑
+			if (env.KV) {
+				try {
+					const kvSocks5 = await env.KV.get('SOCKS5.txt');
+					// 只有当KV中有非空值时才覆盖默认设置
+					if (kvSocks5 && kvSocks5.trim()) {
+						socks5Address = kvSocks5.split('\n')[0].trim();
+					}
+				} catch (error) {
+					console.error('读取SOCKS5设置时发生错误:', error);
+				}
+			}
+			// 如果socks5Address为空，则使用环境变量或默认值
+			socks5Address = socks5Address || env.SOCKS5 || '';
 			socks5s = await 整理(socks5Address);
-			socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+			socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 			socks5Address = socks5Address.split('//')[1] || socks5Address;
+
 			if (env.GO2SOCKS5) go2Socks5s = await 整理(env.GO2SOCKS5);
 			if (env.CFPORTS) httpsPorts = await 整理(env.CFPORTS);
 			if (env.BAN) banHosts = await 整理(env.BAN);
@@ -2262,10 +2278,15 @@ async function handlePostRequest(request, env, txt) {
 		const type = url.searchParams.get('type');
 
 		// 根据类型保存到不同的KV
-		if (type === 'proxyip') {
-			await env.KV.put('PROXYIP.txt', content);
-		} else {
-			await env.KV.put(txt, content);
+		switch(type) {
+			case 'proxyip':
+				await env.KV.put('PROXYIP.txt', content);
+				break;
+			case 'socks5':
+				await env.KV.put('SOCKS5.txt', content);
+				break;
+			default:
+				await env.KV.put(txt, content);
 		}
 		
 		return new Response("保存成功");
@@ -2279,11 +2300,13 @@ async function handleGetRequest(env, txt) {
     let content = '';
     let hasKV = !!env.KV;
     let proxyIPContent = '';
+    let socks5Content = ''; // 添加SOCKS5内容变量
 
     if (hasKV) {
         try {
             content = await env.KV.get(txt) || '';
             proxyIPContent = await env.KV.get('PROXYIP.txt') || '';
+            socks5Content = await env.KV.get('SOCKS5.txt') || ''; // 获取SOCKS5设置
         } catch (error) {
             console.error('读取KV时发生错误:', error);
             content = '读取数据时发生错误: ' + error.message;
@@ -2476,14 +2499,15 @@ async function handleGetRequest(env, txt) {
             <div class="container">
                 <div class="title">📝 ${FileName} 优选订阅列表</div>
                 
-                <!-- 添加高级设置部分 -->
+                <!-- 修改高级设置部分 -->
                 <div class="advanced-settings">
                     <div class="advanced-settings-header" onclick="toggleAdvancedSettings()">
                         <h3 style="margin: 0;">⚙️ 高级设置</h3>
                         <span id="advanced-settings-toggle">∨</span>
                     </div>
                     <div id="advanced-settings-content" class="advanced-settings-content">
-                        <div>
+                        <!-- PROXYIP设置 -->
+                        <div style="margin-bottom: 20px;">
                             <label for="proxyip"><strong>PROXYIP 设置</strong></label>
                             <p style="margin: 5px 0; color: #666;">每行一个IP，格式：IP:端口</p>
                             <textarea 
@@ -2493,8 +2517,25 @@ async function handleGetRequest(env, txt) {
 1.2.3.4:443
 proxy.example.com:8443"
                             >${proxyIPContent}</textarea>
-                            <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveProxyIP()">保存PROXYIP设置</button>
-                            <span id="proxyip-save-status" class="save-status"></span>
+                        </div>
+
+                        <!-- SOCKS5设置 -->
+                        <div style="margin-bottom: 20px;">
+                            <label for="socks5"><strong>SOCKS5 设置</strong></label>
+                            <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                            <textarea 
+                                id="socks5" 
+                                class="proxyip-editor" 
+                                placeholder="例如:
+user:pass@127.0.0.1:1080
+127.0.0.1:1080"
+                            >${socks5Content}</textarea>
+                        </div>
+
+                        <!-- 统一的保存按钮 -->
+                        <div>
+                            <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+                            <span id="settings-save-status" class="save-status"></span>
                         </div>
                     </div>
                 </div>
@@ -2586,19 +2627,27 @@ proxy.example.com:8443"
                 }
             }
 
-            async function saveProxyIP() {
+            // 替换原有的保存函数，改为统一的保存设置函数
+            async function saveSettings() {
+                const saveStatus = document.getElementById('settings-save-status');
+                saveStatus.textContent = '保存中...';
+                
                 try {
-                    const content = document.getElementById('proxyip').value;
-                    const saveStatus = document.getElementById('proxyip-save-status');
-                    
-                    saveStatus.textContent = '保存中...';
-                    
-                    const response = await fetch(window.location.href + '?type=proxyip', {
+                    // 保存PROXYIP设置
+                    const proxyipContent = document.getElementById('proxyip').value;
+                    const proxyipResponse = await fetch(window.location.href + '?type=proxyip', {
                         method: 'POST',
-                        body: content
+                        body: proxyipContent
                     });
 
-                    if (response.ok) {
+                    // 保存SOCKS5设置
+                    const socks5Content = document.getElementById('socks5').value;
+                    const socks5Response = await fetch(window.location.href + '?type=socks5', {
+                        method: 'POST',
+                        body: socks5Content
+                    });
+
+                    if (proxyipResponse.ok && socks5Response.ok) {
                         saveStatus.textContent = '✅ 保存成功';
                         setTimeout(() => {
                             saveStatus.textContent = '';
@@ -2607,9 +2656,8 @@ proxy.example.com:8443"
                         throw new Error('保存失败');
                     }
                 } catch (error) {
-                    const saveStatus = document.getElementById('proxyip-save-status');
                     saveStatus.textContent = '❌ ' + error.message;
-                    console.error('保存PROXYIP时发生错误:', error);
+                    console.error('保存设置时发生错误:', error);
                 }
             }
             </script>
