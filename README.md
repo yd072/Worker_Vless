@@ -2,8 +2,9 @@
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，优化响应快稳定连接。
 
 ## 邦定KV
-KV变量名：KV，
-添加高级设置可在线设置PROXYIP
+KV变量名：KV
+
+添加高级设置可在线设置：PROXYIP/SOCKS5
 
 # 变量
 | 常用变量 | 示例 |
