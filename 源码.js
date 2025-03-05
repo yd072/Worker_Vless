@@ -808,53 +808,45 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     let header = responseHeader;
     let isSocketClosed = false;
 
-    // 使用 TransformStream 处理数据片段
-    const transformStream = new TransformStream({
-        transform(chunk, controller) {
-            try {
-                if (header) {
-                    // 合并 header 和第一个数据片段
-                    const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
-                    combinedData.set(new Uint8Array(header), 0);
-                    combinedData.set(new Uint8Array(chunk), header.byteLength);
-                    controller.enqueue(combinedData);
-                    header = null;
-                } else {
-                    controller.enqueue(chunk);
-                }
-            } catch (error) {
-                log(`数据转换错误: ${error.message}`);
-            }
-        }
-    });
-
     try {
         await remoteSocket.readable
-            .pipeThrough(transformStream) // 处理数据片段
-            .pipeTo(new WritableStream({
-                write(chunk) {
-                    try {
-                        hasIncomingData = true;
+            .pipeTo(
+                new WritableStream({
+                    async write(chunk, controller) {
+                        try {
+                            hasIncomingData = true;
+                            
+                            if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+                                controller.error('WebSocket未连接');
+                                return;
+                            }
 
-                        if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                            webSocket.send(chunk);
-                        } else {
-                            throw new Error('WebSocket未连接');
+                            // 优化数据传输
+                            if (header) {
+                                // 使用 Uint8Array 合并数据,提高效率
+                                const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
+                                combinedData.set(new Uint8Array(header), 0);
+                                combinedData.set(new Uint8Array(chunk), header.byteLength);
+                                webSocket.send(combinedData);
+                                header = null;
+                            } else {
+                                webSocket.send(chunk);
+                            }
+                        } catch (error) {
+                            log(`数据写入错误: ${error.message}`);
+                            controller.error(error);
                         }
-                    } catch (error) {
-                        log(`数据写入错误: ${error.message}`);
-                        throw error;
+                    },
+                    close() {
+                        isSocketClosed = true;
+                        log(`远程连接已关闭, 接收数据: ${hasIncomingData}`);
+                    },
+                    abort(reason) {
+                        isSocketClosed = true;
+                        log(`远程连接中断: ${reason}`);
                     }
-                },
-                close() {
-                    isSocketClosed = true;
-                    log(`远程连接已关闭, 接收数据: ${hasIncomingData}`);
-                },
-                abort(reason) {
-                    isSocketClosed = true;
-                    log(`远程连接中断: ${reason}`);
-                }
-            }))
+                })
+            )
             .catch((error) => {
                 log(`数据传输异常: ${error.message}`);
                 if (!isSocketClosed) {
