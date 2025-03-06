@@ -352,7 +352,7 @@ export default {
 									</div>
 									<div class="info-row">
 										<div class="info-label">客户端 IP</div>
-										<div class="info-value">${request.headers.get('CF-Connecting-IP') || '2a04:2181:c011:1::7a78:e132'}</div>
+										<div class="info-value">${request.headers.get('CF-Connecting-IP') || '127.0.0.1'}</div>
 									</div>
 									<div class="info-row">
 										<div class="info-label">User Agent</div>
@@ -627,7 +627,7 @@ export default {
 									</div>
 									<div class="info-row">
 										<div class="info-label">客户端 IP</div>
-										<div class="info-value">${request.headers.get('CF-Connecting-IP') || '2a04:2181:c011:1::7a78:e132'}</div>
+										<div class="info-value">${request.headers.get('CF-Connecting-IP') || '127.0.0.1'}</div>
 									</div>
 									<div class="info-row">
 										<div class="info-label">User Agent</div>
