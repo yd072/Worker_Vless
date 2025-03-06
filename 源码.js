@@ -1504,6 +1504,21 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				// 强制使用自定义PROXYIP
 				RproxyIP = 'false';
 			}
+			
+			// 读取自定义SOCKS5设置
+			const customSocks5 = await env.KV.get('SOCKS5.txt');
+			if (customSocks5 && customSocks5.trim()) {
+				socks5Address = customSocks5.trim().split('\n')[0];
+				socks5s = await 整理(socks5Address);
+				socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+				socks5Address = socks5Address.split('//')[1] || socks5Address;
+				console.log('使用自定义SOCKS5:', socks5Address);
+				enableSocks = true;
+			} else {
+				// 如果KV中没有SOCKS5设置，禁用SOCKS5
+				enableSocks = false;
+				socks5Address = '';
+			}
 		} catch (error) {
 			console.error('读取自定义PROXYIP时发生错误:', error);
 		}
