@@ -1491,9 +1491,10 @@ let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
-	// 在获取其他配置前,先尝试读取自定义的PROXYIP
+	// 在获取其他配置前,先尝试读取自定义的设置
 	if (env.KV) {
 		try {
+			// 读取自定义PROXYIP
 			const customProxyIP = await env.KV.get('PROXYIP.txt');
 			if (customProxyIP && customProxyIP.trim()) {
 				// 使用自定义PROXYIP覆盖环境变量中的值
@@ -1501,10 +1502,9 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				proxyIPs = await 整理(proxyIP);
 				proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
 				console.log('使用自定义PROXYIP:', proxyIP);
-				// 强制使用自定义PROXYIP
 				RproxyIP = 'false';
 			}
-			
+
 			// 读取自定义SOCKS5设置
 			const customSocks5 = await env.KV.get('SOCKS5.txt');
 			if (customSocks5 && customSocks5.trim()) {
@@ -1519,9 +1519,21 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				enableSocks = false;
 				socks5Address = '';
 			}
+
+			// 读取自定义SUB设置
+			const customSub = await env.KV.get('SUB.txt');
+			if (customSub && customSub.trim() && !sub) {
+				sub = customSub.trim().split('\n')[0];
+				console.log('使用自定义SUB:', sub);
+			}
 		} catch (error) {
-			console.error('读取自定义PROXYIP时发生错误:', error);
+			console.error('读取自定义设置时发生错误:', error);
 		}
+	}
+
+	// 如果没有自定义SUB且没有传入sub参数，使用默认值
+	if (!sub) {
+		sub = env.SUB || '';
 	}
 
 	if (sub) {
@@ -1662,18 +1674,18 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		}
 
 		let 订阅器 = '<br>';
+		let 判断是否绑定KV空间 = env.KV ? ` <a href='${_url.pathname}/edit'>编辑优选列表</a>` : '';
+		
 		if (sub) {
 			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
 			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
 			else if (RproxyIP == 'true') 订阅器 += `CFCDN（访问方式）: 自动获取ProxyIP<br>`;
 			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`
-			订阅器 += `<br>SUB（优选订阅生成器）: ${sub}`;
+			订阅器 += `<br>SUB（优选订阅生成器）: ${sub}${判断是否绑定KV空间}<br>`;
 		} else {
 			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
 			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
 			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
-			let 判断是否绑定KV空间 = '';
-			if (env.KV) 判断是否绑定KV空间 = ` <a href='${_url.pathname}/edit'>编辑优选列表</a>`;
 			订阅器 += `<br>您的订阅内容由 内置 addresses/ADD* 参数变量提供${判断是否绑定KV空间}<br>`;
 			if (addresses.length > 0) 订阅器 += `ADD（TLS优选域名&IP）: <br>&nbsp;&nbsp;${addresses.join('<br>&nbsp;&nbsp;')}<br>`;
 			if (addressesnotls.length > 0) 订阅器 += `ADDNOTLS（noTLS优选域名&IP）: <br>&nbsp;&nbsp;${addressesnotls.join('<br>&nbsp;&nbsp;')}<br>`;
@@ -2441,44 +2453,49 @@ async function KV(request, env, txt = 'ADD.txt') {
 }
 
 async function handlePostRequest(request, env, txt) {
-	if (!env.KV) {
-		return new Response("未绑定KV空间", { status: 400 });
-	}
-	try {
-		const content = await request.text();
-		const url = new URL(request.url);
-		const type = url.searchParams.get('type');
+    if (!env.KV) {
+        return new Response("未绑定KV空间", { status: 400 });
+    }
+    try {
+        const content = await request.text();
+        const url = new URL(request.url);
+        const type = url.searchParams.get('type');
 
-		// 根据类型保存到不同的KV
-		switch(type) {
-			case 'proxyip':
-				await env.KV.put('PROXYIP.txt', content);
-				break;
-			case 'socks5':
-				await env.KV.put('SOCKS5.txt', content);
-				break;
-			default:
-				await env.KV.put(txt, content);
-		}
-		
-		return new Response("保存成功");
-	} catch (error) {
-		console.error('保存KV时发生错误:', error);
-		return new Response("保存失败: " + error.message, { status: 500 });
-	}
+        // 根据类型保存到不同的KV
+        switch(type) {
+            case 'proxyip':
+                await env.KV.put('PROXYIP.txt', content);
+                break;
+            case 'socks5':
+                await env.KV.put('SOCKS5.txt', content);
+                break;
+            case 'sub':
+                await env.KV.put('SUB.txt', content);
+                break;
+            default:
+                await env.KV.put(txt, content);
+        }
+        
+        return new Response("保存成功");
+    } catch (error) {
+        console.error('保存KV时发生错误:', error);
+        return new Response("保存失败: " + error.message, { status: 500 });
+    }
 }
 
 async function handleGetRequest(env, txt) {
     let content = '';
     let hasKV = !!env.KV;
     let proxyIPContent = '';
-    let socks5Content = ''; // 添加SOCKS5内容变量
+    let socks5Content = '';
+    let subContent = ''; // 添加SUB内容变量
 
     if (hasKV) {
         try {
             content = await env.KV.get(txt) || '';
             proxyIPContent = await env.KV.get('PROXYIP.txt') || '';
-            socks5Content = await env.KV.get('SOCKS5.txt') || ''; // 获取SOCKS5设置
+            socks5Content = await env.KV.get('SOCKS5.txt') || '';
+            subContent = await env.KV.get('SUB.txt') || ''; // 获取SUB设置
         } catch (error) {
             console.error('读取KV时发生错误:', error);
             content = '读取数据时发生错误: ' + error.message;
@@ -2704,6 +2721,19 @@ user:pass@127.0.0.1:1080
                             >${socks5Content}</textarea>
                         </div>
 
+                        <!-- SUB设置 -->
+                        <div style="margin-bottom: 20px;">
+                            <label for="sub"><strong>SUB 设置</strong></label>
+                            <p style="margin: 5px 0; color: #666;">只支持单个优选订阅生成器地址</p>
+                            <textarea 
+                                id="sub" 
+                                class="proxyip-editor" 
+                                placeholder="例如:
+sub.google.com
+sub.example.com"
+                            >${subContent}</textarea>
+                        </div>
+
                         <!-- 统一的保存按钮 -->
                         <div>
                             <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
@@ -2799,7 +2829,7 @@ user:pass@127.0.0.1:1080
                 }
             }
 
-            // 替换原有的保存函数，改为统一的保存设置函数
+            // 修改保存设置函数
             async function saveSettings() {
                 const saveStatus = document.getElementById('settings-save-status');
                 saveStatus.textContent = '保存中...';
@@ -2819,7 +2849,14 @@ user:pass@127.0.0.1:1080
                         body: socks5Content
                     });
 
-                    if (proxyipResponse.ok && socks5Response.ok) {
+                    // 保存SUB设置
+                    const subContent = document.getElementById('sub').value;
+                    const subResponse = await fetch(window.location.href + '?type=sub', {
+                        method: 'POST',
+                        body: subContent
+                    });
+
+                    if (proxyipResponse.ok && socks5Response.ok && subResponse.ok) {
                         saveStatus.textContent = '✅ 保存成功';
                         setTimeout(() => {
                             saveStatus.textContent = '';
