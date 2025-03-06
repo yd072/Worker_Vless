@@ -2724,7 +2724,7 @@ user:pass@127.0.0.1:1080
                         <!-- SUB设置 -->
                         <div style="margin-bottom: 20px;">
                             <label for="sub"><strong>SUB 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">只支持一个优选订阅生成器地址</p>
+                            <p style="margin: 5px 0; color: #666;">只支持单个优选订阅生成器地址</p>
                             <textarea 
                                 id="sub" 
                                 class="proxyip-editor" 
