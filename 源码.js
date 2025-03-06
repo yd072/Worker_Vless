@@ -971,8 +971,15 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log) {
     // 优化 SOCKS5 模式检查
     const checkSocks5Mode = async (address) => {
+        // 如果没有启用 SOCKS5 或者没有配置 go2Socks5s,直接返回 false
+        if (!enableSocks || !go2Socks5s || go2Socks5s.length === 0) {
+            return false;
+        }
+
         const patterns = [atob('YWxsIGlu'), atob('Kg==')];
-        if (go2Socks5s.some(pattern => patterns.includes(pattern))) return true;
+        if (go2Socks5s.some(pattern => patterns.includes(pattern))) {
+            return true;
+        }
         
         const pattern = go2Socks5s.find(p => 
             new RegExp('^' + p.replace(/\*/g, '.*') + '$', 'i').test(address)
@@ -998,8 +1005,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                         keepAlive: true,
                         keepAliveInitialDelay: 60000,
                         signal: controller.signal
-                    })
-                ,
+                    }),
                 new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('连接超时')), 3000)
                 )
@@ -1027,7 +1033,11 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     const retryConnection = async () => {
         try {
             let tcpSocket;
-            if (enableSocks) {
+            // 首先检查是否应该使用 SOCKS5
+            const shouldUseSocks = await checkSocks5Mode(addressRemote);
+            
+            if (shouldUseSocks) {
+                log('使用 SOCKS5 代理重试连接');
                 tcpSocket = await createConnection(addressRemote, portRemote, true);
             } else {
                 // 处理 proxyIP
@@ -1045,6 +1055,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                     }
                     portRemote = port;
                 }
+                log('使用直接代理重试连接');
                 tcpSocket = await createConnection(proxyIP || addressRemote, portRemote);
             }
 
@@ -1061,11 +1072,17 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 
     try {
         // 主连接逻辑
-        const shouldUseSocks = enableSocks && go2Socks5s.length > 0 ? 
-            await checkSocks5Mode(addressRemote) : false;
-
-        const tcpSocket = await createConnection(addressRemote, portRemote, shouldUseSocks);
-        return remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retryConnection, log);
+        const shouldUseSocks = await checkSocks5Mode(addressRemote);
+        
+        if (shouldUseSocks) {
+            log('使用 SOCKS5 代理连接');
+            const tcpSocket = await createConnection(addressRemote, portRemote, true);
+            return remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retryConnection, log);
+        } else {
+            log('使用直接代理连接');
+            const tcpSocket = await createConnection(addressRemote, portRemote, false);
+            return remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, retryConnection, log);
+        }
     } catch (error) {
         log('主连接失败，尝试重试:', error);
         return retryConnection();
