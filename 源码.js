@@ -1677,8 +1677,8 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		let 判断是否绑定KV空间 = env.KV ? ` <a href='${_url.pathname}/edit'>编辑优选列表</a>` : '';
 		
 		if (sub) {
-			// 优先检查enableSocks
-			if (enableSocks) {
+			// 修改这里的逻辑,优先判断SOCKS5
+			if (env.SOCKS5 || socks5Address) {
 				订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
 			} else if (proxyIP && proxyIP != '') {
 				订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
@@ -1689,8 +1689,8 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}
 			订阅器 += `<br>SUB（优选订阅生成器）: ${sub}${判断是否绑定KV空间}<br>`;
 		} else {
-			// 这里也使用相同的逻辑
-			if (enableSocks) {
+			// 这里也修改同样的逻辑
+			if (env.SOCKS5 || socks5Address) {
 				订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
 			} else if (proxyIP && proxyIP != '') {
 				订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
