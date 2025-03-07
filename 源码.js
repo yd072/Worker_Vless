@@ -1494,28 +1494,50 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	// 在获取其他配置前,先尝试读取自定义的设置
 	if (env.KV) {
 		try {
-			// 读取自定义PROXYIP
+			// 修改PROXYIP设置逻辑
 			const customProxyIP = await env.KV.get('PROXYIP.txt');
 			if (customProxyIP && customProxyIP.trim()) {
-				// 使用自定义PROXYIP覆盖环境变量中的值
+				// 如果KV中有PROXYIP设置，使用KV中的设置
 				proxyIP = customProxyIP;
 				proxyIPs = await 整理(proxyIP);
-				proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
-				console.log('使用自定义PROXYIP:', proxyIP);
+				proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
+				console.log('使用KV中的PROXYIP:', proxyIP);
 				RproxyIP = 'false';
+			} else if (env.PROXYIP) {
+				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
+				proxyIP = env.PROXYIP;
+				proxyIPs = await 整理(proxyIP);
+				proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
+				console.log('使用环境变量中的PROXYIP:', proxyIP);
+				RproxyIP = 'false';
+			} else {
+				// 如果KV和环境变量中都没有设置，使用代码默认值
+				console.log('使用默认PROXYIP设置');
+				proxyIP = '';
+				RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
 			}
 
-			// 读取自定义SOCKS5设置
+			// 修改SOCKS5设置逻辑
 			const customSocks5 = await env.KV.get('SOCKS5.txt');
 			if (customSocks5 && customSocks5.trim()) {
+				// 如果KV中有SOCKS5设置，使用KV中的设置
 				socks5Address = customSocks5.trim().split('\n')[0];
 				socks5s = await 整理(socks5Address);
 				socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
 				socks5Address = socks5Address.split('//')[1] || socks5Address;
-				console.log('使用自定义SOCKS5:', socks5Address);
+				console.log('使用KV中的SOCKS5:', socks5Address);
+				enableSocks = true;
+			} else if (env.SOCKS5) {
+				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
+				socks5Address = env.SOCKS5;
+				socks5s = await 整理(socks5Address);
+				socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+				socks5Address = socks5Address.split('//')[1] || socks5Address;
+				console.log('使用环境变量中的SOCKS5:', socks5Address);
 				enableSocks = true;
 			} else {
-				// 如果KV中没有SOCKS5设置，禁用SOCKS5
+				// 如果KV和环境变量中都没有设置，使用代码默认值
+				console.log('使用默认SOCKS5设置');
 				enableSocks = false;
 				socks5Address = '';
 			}
@@ -1528,6 +1550,34 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}
 		} catch (error) {
 			console.error('读取自定义设置时发生错误:', error);
+		}
+	} else {
+		// 如果没有KV存储，直接使用环境变量中的设置
+		if (env.PROXYIP) {
+			proxyIP = env.PROXYIP;
+			proxyIPs = await 整理(proxyIP);
+			proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
+			console.log('使用环境变量中的PROXYIP:', proxyIP);
+			RproxyIP = 'false';
+		} else {
+			// 使用代码默认值
+			console.log('使用默认PROXYIP设置');
+			proxyIP = '';
+			RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
+		}
+
+		if (env.SOCKS5) {
+			socks5Address = env.SOCKS5;
+			socks5s = await 整理(socks5Address);
+			socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+			socks5Address = socks5Address.split('//')[1] || socks5Address;
+			console.log('使用环境变量中的SOCKS5:', socks5Address);
+			enableSocks = true;
+		} else {
+			// 使用代码默认值
+			console.log('使用默认SOCKS5设置');
+			enableSocks = false;
+			socks5Address = '';
 		}
 	}
 
@@ -1677,26 +1727,15 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		let 判断是否绑定KV空间 = env.KV ? ` <a href='${_url.pathname}/edit'>编辑优选列表</a>` : '';
 		
 		if (sub) {
-			// 修改这里的逻辑,优先判断SOCKS5
-			if (env.SOCKS5 || socks5Address) {
-				订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
-			} else if (proxyIP && proxyIP != '') {
-				订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
-			} else if (RproxyIP == 'true') {
-				订阅器 += `CFCDN（访问方式）: 自动获取ProxyIP<br>`;
-			} else {
-				订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
-			}
+			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
+			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
+			else if (RproxyIP == 'true') 订阅器 += `CFCDN（访问方式）: 自动获取ProxyIP<br>`;
+			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`
 			订阅器 += `<br>SUB（优选订阅生成器）: ${sub}${判断是否绑定KV空间}<br>`;
 		} else {
-			// 这里也修改同样的逻辑
-			if (env.SOCKS5 || socks5Address) {
-				订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
-			} else if (proxyIP && proxyIP != '') {
-				订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
-			} else {
-				订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
-			}
+			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
+			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
+			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
 			订阅器 += `<br>您的订阅内容由 内置 addresses/ADD* 参数变量提供${判断是否绑定KV空间}<br>`;
 			if (addresses.length > 0) 订阅器 += `ADD（TLS优选域名&IP）: <br>&nbsp;&nbsp;${addresses.join('<br>&nbsp;&nbsp;')}<br>`;
 			if (addressesnotls.length > 0) 订阅器 += `ADDNOTLS（noTLS优选域名&IP）: <br>&nbsp;&nbsp;${addressesnotls.join('<br>&nbsp;&nbsp;')}<br>`;
