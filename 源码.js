@@ -35,6 +35,7 @@ let proxyhosts = [];
 let proxyhostsURL = '';
 let RproxyIP = 'false';
 let httpsPorts = ["2053", "2083", "2087", "2096", "8443"];
+let httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
 let 有效时间 = 7;
 let 更新时间 = 3;
 let userIDLow;
@@ -1658,24 +1659,20 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}).join('.');
 		}
 
-		let counter = 1; // 添加计数器
-		const randomPorts = httpsPorts.concat('443'); // 合并所有可用端口
-
-		if (hostName.includes(".workers.dev")) {
+		let counter = 1;
+		if (hostName.includes("worker") || hostName.includes("notls")) {
+			const randomPorts = httpPorts.concat('80');
 			addressesnotls = addressesnotls.concat(
-				cfips.map(cidr => {
-					const ip = generateRandomIPFromCIDR(cidr);
-					const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
-					return `${ip}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`;
-				})
+				cfips.map(cidr => generateRandomIPFromCIDR(cidr) + ':' + 
+					randomPorts[Math.floor(Math.random() * randomPorts.length)] + 
+					'#CF随机节点' + String(counter++).padStart(2, '0'))
 			);
 		} else {
+			const randomPorts = httpsPorts.concat('443');
 			addresses = addresses.concat(
-				cfips.map(cidr => {
-					const ip = generateRandomIPFromCIDR(cidr);
-					const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
-					return `${ip}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`;
-				})
+				cfips.map(cidr => generateRandomIPFromCIDR(cidr) + ':' + 
+					randomPorts[Math.floor(Math.random() * randomPorts.length)] + 
+					'#CF随机节点' + String(counter++).padStart(2, '0'))
 			);
 		}
 	}
