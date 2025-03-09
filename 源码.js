@@ -1553,36 +1553,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		} catch (error) {
 			console.error('读取自定义设置时发生错误:', error);
 		}
-	} else {
-		// 如果没有KV存储，直接使用环境变量中的设置
-		if (env.PROXYIP) {
-			proxyIP = env.PROXYIP;
-			proxyIPs = await 整理(proxyIP);
-			proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
-			console.log('使用环境变量中的PROXYIP:', proxyIP);
-			RproxyIP = 'false';
-		} else {
-			// 使用代码默认值
-			console.log('使用默认PROXYIP设置');
-			proxyIP = '';
-			RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
-		}
-
-		if (env.SOCKS5) {
-			socks5Address = env.SOCKS5;
-			socks5s = await 整理(socks5Address);
-			socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
-			socks5Address = socks5Address.split('//')[1] || socks5Address;
-			console.log('使用环境变量中的SOCKS5:', socks5Address);
-			enableSocks = true;
-		} else {
-			// 使用代码默认值
-			console.log('使用默认SOCKS5设置');
-			enableSocks = false;
-			socks5Address = '';
-		}
 	}
-
 	// 如果没有自定义SUB且没有传入sub参数，使用默认值
 	if (!sub) {
 		sub = env.SUB || '';
