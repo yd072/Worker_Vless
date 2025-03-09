@@ -4,7 +4,7 @@
 ## 邦定KV
 KV变量名：KV
 
-添加高级设置可在线设置：PROXYIP、SOCKS5、SUB 
+添加高级设置可在线设置：PROXYIP、SOCKS5、SUB 、SUBAPI、SUBCONFIG
 
 # 变量
 | 常用变量 | 示例 |
