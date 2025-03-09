@@ -1546,9 +1546,19 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 
 			// 读取自定义SUB设置
 			const customSub = await env.KV.get('SUB.txt');
-			if (customSub && customSub.trim() && !sub) {
+			// 明确检查是否为null或空字符串
+			if (customSub !== null && customSub.trim() !== '') {
+				// 如果KV中有SUB设置，使用KV中的设置
 				sub = customSub.trim().split('\n')[0];
-				console.log('使用自定义SUB:', sub);
+				console.log('使用KV中的SUB:', sub);
+			} else if (env.SUB) {
+				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
+				sub = env.SUB;
+				console.log('使用环境变量中的SUB:', sub);
+			} else {
+				// 如果KV和环境变量中都没有设置，使用默认值
+				sub = '';
+				console.log('使用默认SUB设置:', sub);
 			}
 
 			// 读取自定义SUBAPI设置
@@ -1587,10 +1597,6 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		} catch (error) {
 			console.error('读取自定义设置时发生错误:', error);
 		}
-	}
-	// 如果没有自定义SUB且没有传入sub参数，使用默认值
-	if (!sub) {
-		sub = env.SUB || '';
 	}
 
 	if (sub) {
