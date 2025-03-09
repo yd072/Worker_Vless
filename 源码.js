@@ -2721,9 +2721,7 @@ async function handleGetRequest(env, txt) {
                             <textarea 
                                 id="proxyip" 
                                 class="proxyip-editor" 
-                                placeholder="例如:
-1.2.3.4:443
-proxy.example.com:8443"
+                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E0NDMKMS4yLjMuNCUzQTgwODAKcHJveHkuZXhhbXBsZS5jb20lM0E4NDQz'))}"
                             >${proxyIPContent}</textarea>
                         </div>
 
@@ -2734,9 +2732,7 @@ proxy.example.com:8443"
                             <textarea 
                                 id="socks5" 
                                 class="proxyip-editor" 
-                                placeholder="例如:
-user:pass@127.0.0.1:1080
-127.0.0.1:1080"
+                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}"
                             >${socks5Content}</textarea>
                         </div>
 
@@ -2747,9 +2743,7 @@ user:pass@127.0.0.1:1080
                             <textarea 
                                 id="sub" 
                                 class="proxyip-editor" 
-                                placeholder="例如:
-sub.google.com
-sub.example.com"
+                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}"
                             >${subContent}</textarea>
                         </div>
 
