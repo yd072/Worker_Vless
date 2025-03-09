@@ -1562,9 +1562,8 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				subConverter = env.SUBAPI;
 				console.log('使用环境变量中的SUBAPI:', subConverter);
 			} else {
-				// 如果KV和环境变量中都没有设置，使用空值
-				subConverter = '';
-				console.log('SUBAPI未设置，使用空值');
+				// 如果KV和环境变量中都没有设置，使用代码默认值
+				console.log('使用默认SUBAPI设置:', subConverter);
 			}
 
 			// 读取自定义SUBCONFIG设置
@@ -1579,9 +1578,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				console.log('使用环境变量中的SUBCONFIG:', subConfig);
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
-				// 这里不要直接使用默认值，而是清空subConfig
-				subConfig = '';
-				console.log('SUBCONFIG未设置，使用空值');
+				console.log('使用默认SUBCONFIG设置:', subConfig);
 			}
 		} catch (error) {
 			console.error('读取自定义设置时发生错误:', error);
