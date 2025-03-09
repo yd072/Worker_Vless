@@ -91,6 +91,14 @@ class WebSocketManager {
 
 	async handleStreamStart(controller, earlyDataHeader) {
 		try {
+			// 立即检查连接状态
+			if (!this.webSocket || this.webSocket.readyState !== 1) {
+				this.log('Connection failed');
+				this.cleanup();
+				controller.error(new Error('Connection failed'));
+				return;
+			}
+
 			// 优化消息处理
 			this.webSocket.addEventListener('message', async (event) => {
 				if (this.readableStreamCancel) return;
