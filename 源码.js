@@ -91,14 +91,6 @@ class WebSocketManager {
 
 	async handleStreamStart(controller, earlyDataHeader) {
 		try {
-			// 立即检查连接状态
-			if (!this.webSocket || this.webSocket.readyState !== 1) {
-				this.log('Connection failed');
-				this.cleanup();
-				controller.error(new Error('Connection failed'));
-				return;
-			}
-
 			// 优化消息处理
 			this.webSocket.addEventListener('message', async (event) => {
 				if (this.readableStreamCancel) return;
@@ -885,10 +877,11 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     let tcpSocket;
     const controller = new AbortController();
     const signal = controller.signal;
+    let timeoutId; // 添加timeoutId变量声明
 
     try {
         // 设置全局超时
-        const timeout = setTimeout(() => {
+        timeoutId = setTimeout(() => { // 使用timeoutId而不是timeout
             controller.abort('DNS query timeout');
             if (tcpSocket) {
                 try {
@@ -955,7 +948,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                 reader.releaseLock();
             }
 
-            clearTimeout(timeout);
+            clearTimeout(timeoutId); // 使用timeoutId而不是timeout
 
         } catch (error) {
             log(`DNS查询失败: ${error.message}`);
@@ -966,7 +959,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         log(`DNS查询失败: ${error.message}`);
         safeCloseWebSocket(webSocket);
     } finally {
-        clearTimeout(timeout);
+        clearTimeout(timeoutId); // 使用timeoutId而不是timeout
         if (tcpSocket) {
             try {
                 tcpSocket.close();
