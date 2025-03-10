@@ -877,11 +877,11 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     let tcpSocket;
     const controller = new AbortController();
     const signal = controller.signal;
-    let timeoutId; // 添加timeoutId变量声明
+    let timeout; 
 
     try {
         // 设置全局超时
-        timeoutId = setTimeout(() => { // 使用timeoutId而不是timeout
+        const timeout = setTimeout(() => {
             controller.abort('DNS query timeout');
             if (tcpSocket) {
                 try {
@@ -948,7 +948,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                 reader.releaseLock();
             }
 
-            clearTimeout(timeoutId); // 使用timeoutId而不是timeout
+            clearTimeout(timeout);
 
         } catch (error) {
             log(`DNS查询失败: ${error.message}`);
@@ -959,7 +959,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         log(`DNS查询失败: ${error.message}`);
         safeCloseWebSocket(webSocket);
     } finally {
-        clearTimeout(timeoutId); // 使用timeoutId而不是timeout
+        clearTimeout(timeout);
         if (tcpSocket) {
             try {
                 tcpSocket.close();
