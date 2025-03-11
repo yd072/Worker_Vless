@@ -1156,68 +1156,58 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     let header = responseHeader;
     let isSocketClosed = false;
     let retryAttempted = false;
-    let timeoutId;
 
     // 创建一个 AbortController 用于控制数据流
     const controller = new AbortController();
     const signal = controller.signal;
 
-    // 优化的数据写入函数 - 提前定义以避免在循环中重复创建
+    // 设置全局超时
+    const timeout = setTimeout(() => {
+        if (!hasIncomingData) {
+            controller.abort('连接超时');
+        }
+    }, 5000);
+
+    try {
+        // 优化的数据写入函数
     const writeData = async (chunk) => {
         if (webSocket.readyState !== WS_READY_STATE_OPEN) {
             throw new Error('WebSocket未连接');
         }
 
         if (header) {
-            // 使用更高效的数据合并方法
-            try {
-                const headerArray = new Uint8Array(header);
-                const chunkArray = new Uint8Array(chunk);
-                const combinedData = new Uint8Array(headerArray.length + chunkArray.length);
-                combinedData.set(headerArray);
-                combinedData.set(chunkArray, headerArray.length);
+                // 预先计算总长度
+                const totalLength = header.byteLength + chunk.byteLength;
+                // 使用预分配的 buffer
+                const combinedData = new Uint8Array(totalLength);
+                combinedData.set(new Uint8Array(header), 0);
+                combinedData.set(new Uint8Array(chunk), header.byteLength);
                 webSocket.send(combinedData);
-            } catch (error) {
-                log(`数据合并错误: ${error.message}`);
-                throw error;
-            }
-            header = null; // 立即释放header引用以节省内存
+                header = null; // 清除header引用
         } else {
             webSocket.send(chunk);
         }
         
-        // 收到数据后取消超时
-        if (!hasIncomingData) {
             hasIncomingData = true;
-            clearTimeout(timeoutId);
-        }
-    };
+        };
 
-    try {
-        // 设置全局超时 - 移到这里以确保在设置后能被清除
-        timeoutId = setTimeout(() => {
-            if (!hasIncomingData) {
-                controller.abort('连接超时');
-            }
-        }, 5000);
-
-        // 使用更简洁的流处理
         await remoteSocket.readable
             .pipeTo(
                 new WritableStream({
-                    async write(chunk) {
+                    async write(chunk, controller) {
                         try {
                             await writeData(chunk);
                         } catch (error) {
                             log(`数据写入错误: ${error.message}`);
-                            throw error; // 直接抛出错误，让pipeTo的catch处理
+                            controller.error(error);
                         }
                     },
                     close() {
                         isSocketClosed = true;
+                        clearTimeout(timeout);
                         log(`远程连接已关闭, 接收数据: ${hasIncomingData}`);
                         
-                        // 尝试重试逻辑优化
+                        // 如果没有收到数据且未尝试重试,则进行重试
                         if (!hasIncomingData && retry && !retryAttempted) {
                             retryAttempted = true;
                             log(`未收到数据,正在重试连接...`);
@@ -1226,19 +1216,22 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                     },
                     abort(reason) {
                         isSocketClosed = true;
+                        clearTimeout(timeout);
                         log(`远程连接中断: ${reason}`);
                     }
                 }),
-                { signal }
+                {
+                    signal,
+                    preventCancel: false
+                }
             )
             .catch((error) => {
                 log(`数据传输异常: ${error.message}`);
-                
-                // 关闭WebSocket和重试逻辑
                 if (!isSocketClosed) {
                     safeCloseWebSocket(webSocket);
                 }
                 
+                // 在连接失败且未收到数据时尝试重试
                 if (!hasIncomingData && retry && !retryAttempted) {
                     retryAttempted = true;
                     log(`连接失败,正在重试...`);
@@ -1247,23 +1240,23 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
             });
 
     } catch (error) {
+        clearTimeout(timeout);
         log(`连接处理异常: ${error.message}`);
-        
         if (!isSocketClosed) {
             safeCloseWebSocket(webSocket);
         }
         
-        // 重试逻辑
+        // 在发生异常且未收到数据时尝试重试
         if (!hasIncomingData && retry && !retryAttempted) {
             retryAttempted = true;
             log(`发生异常,正在重试...`);
             retry();
         }
-    } finally {
-        clearTimeout(timeoutId);
         
-        // 确保在信号中止时关闭WebSocket
-        if (signal.aborted && !isSocketClosed) {
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+        if (signal.aborted) {
             safeCloseWebSocket(webSocket);
         }
     }
