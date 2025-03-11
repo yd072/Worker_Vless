@@ -877,11 +877,11 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
     let tcpSocket;
     const controller = new AbortController();
     const signal = controller.signal;
-    let timeout; 
+    let timeoutId; 
 
     try {
         // 设置全局超时
-        const timeout = setTimeout(() => {
+        timeoutId = setTimeout(() => {
             controller.abort('DNS query timeout');
             if (tcpSocket) {
                 try {
@@ -893,6 +893,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         }, 3000);
 
         try {
+            // 使用Promise.race进行超时控制
             tcpSocket = await Promise.race([
                 connect({
                     hostname: DNS_SERVER.hostname,
@@ -914,11 +915,12 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                 writer.releaseLock();
             }
 
-            // 简化的数据流处理
+            // 优化的数据流处理
             let 维列斯Header = 维列斯ResponseHeader;
             const reader = tcpSocket.readable.getReader();
 
             try {
+                // 使用更高效的循环处理数据
                 while (true) {
                     const { done, value } = await reader.read();
                     
@@ -927,15 +929,20 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                         break;
                     }
 
+                    // 检查WebSocket是否仍然开放
                     if (webSocket.readyState !== WS_READY_STATE_OPEN) {
                         break;
                     }
 
                     try {
                         // 处理数据包
-                        const data = 维列斯Header ? mergeData(维列斯Header, value) : value;
-                        webSocket.send(data);
-                        维列斯Header = null; // 清除header,只在第一个包使用
+                        if (维列斯Header) {
+                            const data = mergeData(维列斯Header, value);
+                            webSocket.send(data);
+                            维列斯Header = null; // 清除header,只在第一个包使用
+                        } else {
+                            webSocket.send(value);
+                        }
                     } catch (error) {
                         log(`数据处理错误: ${error.message}`);
                         throw error;
@@ -948,8 +955,6 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                 reader.releaseLock();
             }
 
-            clearTimeout(timeout);
-
         } catch (error) {
             log(`DNS查询失败: ${error.message}`);
             throw error;
@@ -959,7 +964,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
         log(`DNS查询失败: ${error.message}`);
         safeCloseWebSocket(webSocket);
     } finally {
-        clearTimeout(timeout);
+        clearTimeout(timeoutId);
         if (tcpSocket) {
             try {
                 tcpSocket.close();
@@ -1151,58 +1156,68 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     let header = responseHeader;
     let isSocketClosed = false;
     let retryAttempted = false;
+    let timeoutId;
 
     // 创建一个 AbortController 用于控制数据流
     const controller = new AbortController();
     const signal = controller.signal;
 
-    // 设置全局超时
-    const timeout = setTimeout(() => {
-        if (!hasIncomingData) {
-            controller.abort('连接超时');
+    // 优化的数据写入函数 - 提前定义以避免在循环中重复创建
+    const writeData = async (chunk) => {
+        if (webSocket.readyState !== WS_READY_STATE_OPEN) {
+            throw new Error('WebSocket未连接');
         }
-    }, 5000);
+
+        if (header) {
+            // 使用更高效的数据合并方法
+            try {
+                const headerArray = new Uint8Array(header);
+                const chunkArray = new Uint8Array(chunk);
+                const combinedData = new Uint8Array(headerArray.length + chunkArray.length);
+                combinedData.set(headerArray);
+                combinedData.set(chunkArray, headerArray.length);
+                webSocket.send(combinedData);
+            } catch (error) {
+                log(`数据合并错误: ${error.message}`);
+                throw error;
+            }
+            header = null; // 立即释放header引用以节省内存
+        } else {
+            webSocket.send(chunk);
+        }
+        
+        // 收到数据后取消超时
+        if (!hasIncomingData) {
+            hasIncomingData = true;
+            clearTimeout(timeoutId);
+        }
+    };
 
     try {
-        // 优化的数据写入函数
-        const writeData = async (chunk) => {
-            if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                throw new Error('WebSocket未连接');
+        // 设置全局超时 - 移到这里以确保在设置后能被清除
+        timeoutId = setTimeout(() => {
+            if (!hasIncomingData) {
+                controller.abort('连接超时');
             }
+        }, 5000);
 
-            if (header) {
-                // 预先计算总长度
-                const totalLength = header.byteLength + chunk.byteLength;
-                // 使用预分配的 buffer
-                const combinedData = new Uint8Array(totalLength);
-                combinedData.set(new Uint8Array(header), 0);
-                combinedData.set(new Uint8Array(chunk), header.byteLength);
-                webSocket.send(combinedData);
-                header = null; // 清除header引用
-            } else {
-                webSocket.send(chunk);
-            }
-            
-            hasIncomingData = true;
-        };
-
+        // 使用更简洁的流处理
         await remoteSocket.readable
             .pipeTo(
                 new WritableStream({
-                    async write(chunk, controller) {
+                    async write(chunk) {
                         try {
                             await writeData(chunk);
                         } catch (error) {
                             log(`数据写入错误: ${error.message}`);
-                            controller.error(error);
+                            throw error; // 直接抛出错误，让pipeTo的catch处理
                         }
                     },
                     close() {
                         isSocketClosed = true;
-                        clearTimeout(timeout);
                         log(`远程连接已关闭, 接收数据: ${hasIncomingData}`);
                         
-                        // 如果没有收到数据且未尝试重试,则进行重试
+                        // 尝试重试逻辑优化
                         if (!hasIncomingData && retry && !retryAttempted) {
                             retryAttempted = true;
                             log(`未收到数据,正在重试连接...`);
@@ -1211,22 +1226,19 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                     },
                     abort(reason) {
                         isSocketClosed = true;
-                        clearTimeout(timeout);
                         log(`远程连接中断: ${reason}`);
                     }
                 }),
-                {
-                    signal,
-                    preventCancel: false
-                }
+                { signal }
             )
             .catch((error) => {
                 log(`数据传输异常: ${error.message}`);
+                
+                // 关闭WebSocket和重试逻辑
                 if (!isSocketClosed) {
                     safeCloseWebSocket(webSocket);
                 }
                 
-                // 在连接失败且未收到数据时尝试重试
                 if (!hasIncomingData && retry && !retryAttempted) {
                     retryAttempted = true;
                     log(`连接失败,正在重试...`);
@@ -1235,23 +1247,23 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
             });
 
     } catch (error) {
-        clearTimeout(timeout);
         log(`连接处理异常: ${error.message}`);
+        
         if (!isSocketClosed) {
             safeCloseWebSocket(webSocket);
         }
         
-        // 在发生异常且未收到数据时尝试重试
+        // 重试逻辑
         if (!hasIncomingData && retry && !retryAttempted) {
             retryAttempted = true;
             log(`发生异常,正在重试...`);
             retry();
         }
-        
-        throw error;
     } finally {
-        clearTimeout(timeout);
-        if (signal.aborted) {
+        clearTimeout(timeoutId);
+        
+        // 确保在信号中止时关闭WebSocket
+        if (signal.aborted && !isSocketClosed) {
             safeCloseWebSocket(webSocket);
         }
     }
@@ -1525,18 +1537,18 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				// 如果KV中有SOCKS5设置，使用KV中的设置
 				socks5Address = customSocks5.trim().split('\n')[0];
 				socks5s = await 整理(socks5Address);
-				socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+				socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 				socks5Address = socks5Address.split('//')[1] || socks5Address;
 				console.log('使用KV中的SOCKS5:', socks5Address);
-				enableSocks = true;
+				enableSocks = true; 
 			} else if (env.SOCKS5) {
 				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
 				socks5Address = env.SOCKS5;
 				socks5s = await 整理(socks5Address);
-				socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
+				socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 				socks5Address = socks5Address.split('//')[1] || socks5Address;
 				console.log('使用环境变量中的SOCKS5:', socks5Address);
-				enableSocks = true;
+				enableSocks = true; 
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
 				console.log('使用默认SOCKS5设置');
