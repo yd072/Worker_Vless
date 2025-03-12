@@ -831,41 +831,17 @@ async function 维列斯OverWSHandler(request) {
 }
 
 function mergeData(header, chunk) {
-    // 检查输入参数
     if (!header || !chunk) {
         throw new Error('Invalid input parameters');
     }
 
-    // 预先计算总长度
     const totalLength = header.length + chunk.length;
     
-    // 优化: 如果数据太小,使用固定大小的共享缓冲区
-    if (totalLength < 1024) { // 1KB阈值
-        // 使用静态缓冲区,避免频繁创建小数组
-        if (!mergeData.smallBuffer || mergeData.smallBuffer.length < totalLength) {
-            mergeData.smallBuffer = new Uint8Array(Math.max(1024, totalLength));
-        }
-        const buffer = mergeData.smallBuffer;
-        buffer.set(header, 0);
-        buffer.set(chunk, header.length);
-        // 返回一个新的视图,只包含实际数据
-        return new Uint8Array(buffer.buffer, 0, totalLength);
-    }
-
-    // 大数据使用标准合并
-    try {
-        const merged = new Uint8Array(totalLength);
-        merged.set(header, 0);
-        merged.set(chunk, header.length);
-        return merged;
-    } catch (error) {
-        console.error('Data merge failed:', error);
-        throw new Error('Failed to merge data: ' + error.message);
-    }
+    const merged = new Uint8Array(totalLength);
+    merged.set(header, 0);
+    merged.set(chunk, header.length);
+    return merged;
 }
-
-// 初始化静态缓冲区
-mergeData.smallBuffer = new Uint8Array(1024);
 
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     // 使用Google DNS服务器
