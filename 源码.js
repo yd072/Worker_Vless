@@ -375,16 +375,16 @@ export default {
 			const currentDate = new Date();
 			currentDate.setHours(0, 0, 0, 0);
 			const timestamp = Math.ceil(currentDate.getTime() / 1000);
-			const fakeUserIDMD5 = await 双重哈希(`${userID}${timestamp}`);
+			const fakeUserIDSHA256 = await 双重哈希(`${userID}${timestamp}`);
 			const fakeUserID = [
-				fakeUserIDMD5.slice(0, 8),
-				fakeUserIDMD5.slice(8, 12),
-				fakeUserIDMD5.slice(12, 16),
-				fakeUserIDMD5.slice(16, 20),
-				fakeUserIDMD5.slice(20)
+                fakeUserIDSHA256.slice(0, 8),
+                fakeUserIDSHA256.slice(8, 12),
+                fakeUserIDSHA256.slice(12, 16),
+                fakeUserIDSHA256.slice(16, 20),
+                fakeUserIDSHA256.slice(20, 32) 
 			].join('-');
 
-			const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
+			const fakeHostName = `${fakeUserIDSHA256.slice(6, 9)}.${fakeUserIDSHA256.slice(13, 19)}`;
 
 			// 修改PROXYIP初始化逻辑
 			if (env.KV) {
@@ -1395,14 +1395,17 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
 async function 双重哈希(文本) {
     const 编码器 = new TextEncoder();
 
-    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-    const 第一次十六进制 = Array.from(new Uint8Array(第一次哈希))
-        .map(字节 => 字节.toString(16).padStart(2, '0'))
+    // 计算第一次哈希 (SHA-256)
+    const 第一次哈希 = await crypto.subtle.digest('SHA-256', 编码器.encode(文本));
+    const 第一次十六进制 = [...new Uint8Array(第一次哈希)]
+        .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
 
-    const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-    const 第二次十六进制 = Array.from(new Uint8Array(第二次哈希))
-        .map(字节 => 字节.toString(16).padStart(2, '0'))
+    // 截取部分哈希值，并进行二次哈希
+    const 截取部分 = 第一次十六进制.substring(7, 27);
+    const 第二次哈希 = await crypto.subtle.digest('SHA-256', 编码器.encode(截取部分));
+    const 第二次十六进制 = [...new Uint8Array(第二次哈希)]
+        .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
 
     return 第二次十六进制.toLowerCase();
