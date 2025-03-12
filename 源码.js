@@ -375,16 +375,16 @@ export default {
 			const currentDate = new Date();
 			currentDate.setHours(0, 0, 0, 0);
 			const timestamp = Math.ceil(currentDate.getTime() / 1000);
-			const fakeUserIDMD5 = await 双重哈希(`${userID}${timestamp}`);
+			const fakeUserIDSHA256 = await 双重哈希(`${userID}${timestamp}`);
 			const fakeUserID = [
-				fakeUserIDMD5.slice(0, 8),
-				fakeUserIDMD5.slice(8, 12),
-				fakeUserIDMD5.slice(12, 16),
-				fakeUserIDMD5.slice(16, 20),
-				fakeUserIDMD5.slice(20)
+                fakeUserIDSHA256.slice(0, 8),
+                fakeUserIDSHA256.slice(8, 12),
+                fakeUserIDSHA256.slice(12, 16),
+                fakeUserIDSHA256.slice(16, 20),
+                fakeUserIDSHA256.slice(20, 32) 
 			].join('-');
 
-			const fakeHostName = `${fakeUserIDMD5.slice(6, 9)}.${fakeUserIDMD5.slice(13, 19)}`;
+			const fakeHostName = `${fakeUserIDSHA256.slice(6, 9)}.${fakeUserIDSHA256.slice(13, 19)}`;
 
 			// 修改PROXYIP初始化逻辑
 			if (env.KV) {
@@ -831,41 +831,19 @@ async function 维列斯OverWSHandler(request) {
 }
 
 function mergeData(header, chunk) {
-    // 检查输入参数
     if (!header || !chunk) {
         throw new Error('Invalid input parameters');
     }
 
-    // 预先计算总长度
     const totalLength = header.length + chunk.length;
     
-    // 优化: 如果数据太小,使用固定大小的共享缓冲区
-    if (totalLength < 1024) { // 1KB阈值
-        // 使用静态缓冲区,避免频繁创建小数组
-        if (!mergeData.smallBuffer || mergeData.smallBuffer.length < totalLength) {
-            mergeData.smallBuffer = new Uint8Array(Math.max(1024, totalLength));
-        }
-        const buffer = mergeData.smallBuffer;
-        buffer.set(header, 0);
-        buffer.set(chunk, header.length);
-        // 返回一个新的视图,只包含实际数据
-        return new Uint8Array(buffer.buffer, 0, totalLength);
-    }
-
-    // 大数据使用标准合并
-    try {
+    // 直接创建一个新的数组，避免复杂的缓冲区管理逻辑
         const merged = new Uint8Array(totalLength);
         merged.set(header, 0);
         merged.set(chunk, header.length);
         return merged;
-    } catch (error) {
-        console.error('Data merge failed:', error);
-        throw new Error('Failed to merge data: ' + error.message);
-    }
 }
 
-// 初始化静态缓冲区
-mergeData.smallBuffer = new Uint8Array(1024);
 
 async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log) {
     // 使用Google DNS服务器
@@ -915,7 +893,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                 writer.releaseLock();
             }
 
-            // 优化的数据流处理
+            // 简化的数据流处理
             let 维列斯Header = 维列斯ResponseHeader;
             const reader = tcpSocket.readable.getReader();
 
@@ -1419,14 +1397,17 @@ function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName,
 async function 双重哈希(文本) {
     const 编码器 = new TextEncoder();
 
-    const 第一次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(文本));
-    const 第一次十六进制 = Array.from(new Uint8Array(第一次哈希))
-        .map(字节 => 字节.toString(16).padStart(2, '0'))
+    // 计算第一次哈希 (SHA-256)
+    const 第一次哈希 = await crypto.subtle.digest('SHA-256', 编码器.encode(文本));
+    const 第一次十六进制 = [...new Uint8Array(第一次哈希)]
+        .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
 
-    const 第二次哈希 = await crypto.subtle.digest('MD5', 编码器.encode(第一次十六进制.slice(7, 27)));
-    const 第二次十六进制 = Array.from(new Uint8Array(第二次哈希))
-        .map(字节 => 字节.toString(16).padStart(2, '0'))
+    // 截取部分哈希值，并进行二次哈希
+    const 截取部分 = 第一次十六进制.substring(7, 27);
+    const 第二次哈希 = await crypto.subtle.digest('SHA-256', 编码器.encode(截取部分));
+    const 第二次十六进制 = [...new Uint8Array(第二次哈希)]
+        .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
 
     return 第二次十六进制.toLowerCase();
