@@ -1412,36 +1412,34 @@ async function 双重哈希(文本) {
     return 第二次十六进制.toLowerCase();
 }
 
-async function 代理URL(代理网址, 目标网址) {
+async function 代理URL(代理网址, 目标网址, 调试模式 = false) {
+    try {
     const 网址列表 = await 整理(代理网址);
+        if (!网址列表 || 网址列表.length === 0) {
+            throw new Error('代理网址列表为空');
+        }
     const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
     const 解析后的网址 = new URL(完整网址);
-    console.log(解析后的网址);
+        if (调试模式) console.log(`代理 URL: ${解析后的网址}`);
 
-    const 协议 = 解析后的网址.protocol.slice(0, -1) || 'https';
-    const 主机名 = 解析后的网址.hostname;
-    let 路径名 = 解析后的网址.pathname;
-    const 查询参数 = 解析后的网址.search;
+        const 目标URL = new URL(目标网址, 解析后的网址);
 
-    if (路径名.endsWith('/')) {
-        路径名 = 路径名.slice(0, -1);
-    }
-    路径名 += 目标网址.pathname;
-
-    const 新网址 = `${协议}://${主机名}${路径名}${查询参数}`;
-
-    const 响应 = await fetch(新网址);
+        const 响应 = await fetch(目标URL.toString(), { method: 'GET' });
 
     const 新响应 = new Response(响应.body, {
         status: 响应.status,
         statusText: 响应.statusText,
-        headers: 响应.headers
+            headers: new Headers(响应.headers)
     });
 
-    新响应.headers.set('X-New-URL', 新网址);
+        新响应.headers.set('X-New-URL', 目标URL.toString());
 
     return 新响应;
+    } catch (error) {
+        console.error(`代理请求失败: ${error.message}`);
+        return new Response(`代理请求失败: ${error.message}`, { status: 500 });
+    }
 }
 
 const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
