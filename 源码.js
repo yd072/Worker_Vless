@@ -2059,17 +2059,17 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 
 					<div class="section">
 						<div class="section-title">📝 proxyConfig</div>
-						<div class="config-info">
+						<div class="config-info" style="overflow-x: auto; max-width: 100%;">
 							<button class="copy-button" onclick="copyToClipboard('${proxyConfig}','qrcode_proxyConfig')">复制配置</button>
-							<div>${proxyConfig}</div>
+							<div style="word-break: break-all; overflow-wrap: anywhere;">${proxyConfig}</div>
 							<div id="qrcode_proxyConfig" class="qrcode-container"></div>
 						</div>
 					</div>
 
 					<div class="section">
 						<div class="section-title">⚙️ Clash Meta 配置</div>
-						<div class="config-info">
-							${clash}
+						<div class="config-info" style="overflow-x: auto; max-width: 100%;">
+							<div style="word-break: break-all; overflow-wrap: anywhere;">${clash}</div>
 						</div>
 					</div>
 
