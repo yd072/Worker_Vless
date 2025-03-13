@@ -690,7 +690,111 @@ export default {
 				} else {
 					if (env.URL302) return Response.redirect(env.URL302, 302);
 					else if (env.URL) return await 代理URL(env.URL, url);
-					else return new Response('不用怀疑！你UUID就是错的！！！', { status: 404 });
+					else {
+						// 美化错误页面
+						const html = `
+						<!DOCTYPE html>
+						<html>
+						<head>
+							<meta charset="utf-8">
+							<meta name="viewport" content="width=device-width, initial-scale=1">
+							<title>错误提示</title>
+							<style>
+								:root {
+									--primary-color: #e74c3c;
+									--border-color: #e0e0e0;
+									--background-color: #f5f5f5;
+									--error-bg: #fef5f5;
+									--error-border: #f8d7da;
+									--error-text: #721c24;
+								}
+								
+								body {
+									margin: 0;
+									padding: 20px;
+									font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+									line-height: 1.6;
+									background-color: var(--background-color);
+								}
+
+								.container {
+									max-width: 600px;
+									margin: 50px auto;
+									background: white;
+									padding: 25px;
+									border-radius: 10px;
+									box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+									text-align: center;
+								}
+
+								.error-icon {
+									font-size: 60px;
+									color: var(--primary-color);
+									margin-bottom: 20px;
+								}
+
+								.error-title {
+									font-size: 24px;
+									color: var(--error-text);
+									margin-bottom: 15px;
+								}
+
+								.error-message {
+									background-color: var(--error-bg);
+									border: 1px solid var(--error-border);
+									border-radius: 6px;
+									padding: 15px;
+									margin: 20px 0;
+									color: var(--error-text);
+									font-size: 16px;
+								}
+
+								.back-button {
+									display: inline-block;
+									padding: 10px 20px;
+									background-color: var(--primary-color);
+									color: white;
+									border-radius: 5px;
+									text-decoration: none;
+									font-weight: 500;
+									margin-top: 20px;
+									transition: background-color 0.3s;
+								}
+
+								.back-button:hover {
+									background-color: #c0392b;
+								}
+
+								@media (max-width: 768px) {
+									body {
+										padding: 10px;
+									}
+									
+									.container {
+										padding: 15px;
+									}
+								}
+							</style>
+						</head>
+						<body>
+							<div class="container">
+								<div class="error-icon">⚠️</div>
+								<div class="error-title">访问错误</div>
+								<div class="error-message">
+									不用怀疑！你的 UUID 输入错误！请检查配置并重试。
+								</div>
+								<a href="/" class="back-button">返回首页</a>
+							</div>
+						</body>
+						</html>`;
+
+						return new Response(html, { 
+							status: 404,
+							headers: {
+								'content-type': 'text/html;charset=utf-8',
+							},
+						});
+					}
 				}
 			} else {
 				socks5Address = url.searchParams.get('socks5') || socks5Address;
