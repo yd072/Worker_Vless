@@ -1070,7 +1070,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         log(`建立连接: ${address}:${port} ${socks ? '(SOCKS5)' : ''}`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         try {
             const tcpSocket = await Promise.race([
