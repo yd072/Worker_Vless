@@ -1246,7 +1246,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         if (!hasIncomingData) {
             controller.abort('连接超时');
         }
-    }, 3000);
+    }, 8000);
 
     try {
         // 发送数据的函数，确保 WebSocket 处于 OPEN 状态
