@@ -968,7 +968,7 @@ async function handleDNSQuery(udpChunk, webSocket, 维列斯ResponseHeader, log)
                     log(`关闭TCP连接出错: ${e.message}`);
                 }
             }
-        }, 2000);
+        }, );
 
         try {
             // 使用Promise.race进行超时控制
@@ -1070,7 +1070,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         log(`建立连接: ${address}:${port} ${socks ? '(SOCKS5)' : ''}`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeoutId = setTimeout(() => controller.abort(), );
 
         try {
             const tcpSocket = await Promise.race([
@@ -1246,7 +1246,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         if (!hasIncomingData) {
             controller.abort('连接超时');
         }
-    }, 8000);
+    }, 5000);
 
     try {
         // 发送数据的函数，确保 WebSocket 处于 OPEN 状态
