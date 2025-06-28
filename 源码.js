@@ -1254,6 +1254,12 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         if (webSocket.readyState !== WS_READY_STATE_OPEN) {
                 throw new Error('WebSocket 未连接');
         }
+        
+        // 添加额外检查，确保连接未关闭
+        if (isSocketClosed) {
+            log('尝试向已关闭的连接写入数据，已忽略');
+            return; // 直接返回而不是抛出错误
+        }
 
         if (header) {
                 // 预分配足够的 buffer，避免重复分配
