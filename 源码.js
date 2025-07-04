@@ -1721,45 +1721,48 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	}
 
 	if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
-		let cfips = [
-			        '104.16.0.0/13',
-				'104.24.0.0/14',
-				'162.158.0.0/15',
-				'188.114.96.0/20',
-				
-		];
+	    let cfips = [
+		             '104.16.0.0/13',
+		             '104.24.0.0/14',
+		             '162.158.0.0/15',
+		             '188.114.96.0/20',
+	    ];
 
-		function generateRandomIPFromCIDR(cidr) {
-			const [base, mask] = cidr.split('/');
-			const baseIP = base.split('.').map(Number);
-			const subnetMask = 32 - parseInt(mask, 10);
-			const maxHosts = Math.pow(2, subnetMask) - 1;
-			const randomHost = Math.floor(Math.random() * maxHosts);
+	    function generateRandomIPFromCIDR(cidr) {
+		    const [base, mask] = cidr.split('/');
+		    const baseIP = base.split('.').map(Number);
+		    const subnetBits = 32 - parseInt(mask, 10);
+		    const maxHosts = Math.pow(2, subnetBits) - 1;
+		    const randomHost = Math.floor(Math.random() * maxHosts);
 
-			return baseIP.map((octet, index) => {
-				if (index < 2) return octet;
-				if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-				return (octet & (255 << subnetMask)) + (randomHost & 255);
-			}).join('.');
-		}
+		    return baseIP.map((octet, index) => {
+			    if (index < 2) return octet;
+			    if (index === 2) return (octet & (255 << (subnetBits - 8))) + ((randomHost >> 8) & 255);
+			    return (octet & (255 << subnetBits)) + (randomHost & 255);
+		    }).join('.');
+	    }
 
-		let counter = 1;
-		if (hostName.includes("worker") || hostName.includes("notls")) {
-			const randomPorts = httpPorts.concat('80');
-			addressesnotls = addressesnotls.concat(
-				cfips.map(cidr => generateRandomIPFromCIDR(cidr) + ':' + 
-					randomPorts[Math.floor(Math.random() * randomPorts.length)] + 
-					'#CF随机节点' + String(counter++).padStart(2, '0'))
-			);
-		} else {
-			const randomPorts = httpsPorts.concat('443');
-			addresses = addresses.concat(
-				cfips.map(cidr => generateRandomIPFromCIDR(cidr) + ':' + 
-					randomPorts[Math.floor(Math.random() * randomPorts.length)] + 
-					'#CF随机节点' + String(counter++).padStart(2, '0'))
-			);
-		}
-	}
+	    let counter = 1;
+	    const totalIPsToGenerate = 10;
+
+	    if (hostName.includes("worker") || hostName.includes("notls")) {
+		    const randomPorts = httpPorts.concat('80');
+		    for (let i = 0; i < totalIPsToGenerate; i++) {
+			    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
+			    const randomIP = generateRandomIPFromCIDR(randomCIDR);
+			    const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
+			    addressesnotls.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
+		    }
+	    } else {
+		    const randomPorts = httpsPorts.concat('443');
+		        for (let i = 0; i < totalIPsToGenerate; i++) {
+			    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
+			    const randomIP = generateRandomIPFromCIDR(randomCIDR);
+			    const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
+			    addresses.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
+		    }
+	    }
+    }
 
 	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
