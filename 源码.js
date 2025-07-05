@@ -1724,7 +1724,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	    let cfips = [
 		             '104.16.0.0/13',
 		             '104.24.0.0/14',
-		             '162.158.0.0/15',
+		             '172.64.0.0/13',
 		             '188.114.96.0/20',
 	    ];
 
