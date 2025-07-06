@@ -656,7 +656,7 @@ export default {
 					return html;
 				} else if (url.pathname == `/${动态UUID}` || 路径 == `/${userID}`) {
 					await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${UA}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					const VillesConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+					const secureProtoConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
 					const now = Date.now();
 					//const timestamp = Math.floor(now / 1000);
 					const today = new Date(now);
@@ -667,7 +667,7 @@ export default {
 					let total = 24 * 1099511627776;
 
 					if (userAgent && userAgent.includes('mozilla')) {
-						return new Response(`<div style="font-size:13px;">${VillesConfig}</div>`, {
+						return new Response(`<div style="font-size:13px;">${secureProtoConfig}</div>`, {
 							status: 200,
 							headers: {
 								"Content-Type": "text/html;charset=utf-8",
@@ -677,7 +677,7 @@ export default {
 							}
 						});
 					} else {
-						return new Response(`${VillesConfig}`, {
+						return new Response(`${secureProtoConfig}`, {
 							status: 200,
 							headers: {
 								"Content-Disposition": `attachment; filename=${FileName}; filename*=utf-8''${encodeURIComponent(FileName)}`,
@@ -836,7 +836,7 @@ export default {
 					enableSocks = false;
 				}
 
-				return await VillesOverWSHandler(request);
+				return await secureProtoOverWSHandler(request);
 			}
 		} catch (err) {
 			let e = err;
@@ -845,7 +845,7 @@ export default {
 	},
 };
 
-async function VillesOverWSHandler(request) {
+async function secureProtoOverWSHandler(request) {
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
@@ -885,9 +885,9 @@ async function VillesOverWSHandler(request) {
                     portRemote = 443,
                     addressRemote = '',
                     rawDataIndex,
-                    VillesVersion = new Uint8Array([0, 0]),
+                    secureProtoVersion = new Uint8Array([0, 0]),
                     isUDP,
-                } = processVillesHeader(chunk, userID);
+                } = processsecureProtoHeader(chunk, userID);
 
                 address = addressRemote;
                 portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
@@ -901,15 +901,15 @@ async function VillesOverWSHandler(request) {
                         throw new Error('UDP 代理仅对 DNS（53 端口）启用');
                     }
                 }
-                const VillesResponseHeader = new Uint8Array([VillesVersion[0], 0]);
+                const secureProtoResponseHeader = new Uint8Array([secureProtoVersion[0], 0]);
                 const rawClientData = chunk.slice(rawDataIndex);
 
                 if (isDns) {
-                    return handleDNSQuery(rawClientData, webSocket, VillesResponseHeader, log);
+                    return handleDNSQuery(rawClientData, webSocket, secureProtoResponseHeader, log);
                 }
                 if (!banHostsSet.has(addressRemote)) {
                     log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                    handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, VillesResponseHeader, log);
+                    handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log);
                 } else {
                     throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
                 }
@@ -949,7 +949,7 @@ function mergeData(header, chunk) {
     return merged;
 }
 
-async function handleDNSQuery(udpChunk, webSocket, VillesResponseHeader, log) {
+async function handleDNSQuery(udpChunk, webSocket, secureProtoResponseHeader, log) {
     const DNS_SERVER = { hostname: '8.8.4.4', port: 53 };
     
     let tcpSocket;
@@ -994,7 +994,7 @@ async function handleDNSQuery(udpChunk, webSocket, VillesResponseHeader, log) {
             }
 
             // 简化的数据流处理
-            let VillesHeader = VillesResponseHeader;
+            let secureProtoHeader = secureProtoResponseHeader;
             const reader = tcpSocket.readable.getReader();
 
             try {
@@ -1014,10 +1014,10 @@ async function handleDNSQuery(udpChunk, webSocket, VillesResponseHeader, log) {
 
                     try {
                         // 处理数据包
-                        if (VillesHeader) {
-                            const data = mergeData(VillesHeader, value);
+                        if (secureProtoHeader) {
+                            const data = mergeData(secureProtoHeader, value);
                             webSocket.send(data);
-                            VillesHeader = null; // 清除header,只在第一个包使用
+                            secureProtoHeader = null; // 清除header,只在第一个包使用
                         } else {
                             webSocket.send(value);
                         }
@@ -1053,7 +1053,7 @@ async function handleDNSQuery(udpChunk, webSocket, VillesResponseHeader, log) {
     }
 }
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, VillesResponseHeader, log) {
+async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
     // 优化 SOCKS5 模式检查
     const checkSocks5Mode = async (address) => {
         const patterns = [atob('YWxsIGlu'), atob('Kg==')];
@@ -1138,7 +1138,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 .catch(error => log('重试连接关闭:', error))
                 .finally(() => safeCloseWebSocket(webSocket));
 
-            return remoteSocketToWS(tcpSocket, webSocket, VillesResponseHeader, null, log);
+            return remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, null, log);
         } catch (error) {
             log('重试失败:', error);
         }
@@ -1150,20 +1150,20 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             await checkSocks5Mode(addressRemote) : false;
 
         const tcpSocket = await createConnection(addressRemote, portRemote, shouldUseSocks);
-        return remoteSocketToWS(tcpSocket, webSocket, VillesResponseHeader, retryConnection, log);
+        return remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryConnection, log);
     } catch (error) {
         log('主连接失败，尝试重试:', error);
         return retryConnection();
     }
 }
 
-function processVillesHeader(VillesBuffer, userID) {
-    if (VillesBuffer.byteLength < 24) {
+function processsecureProtoHeader(secureProtoBuffer, userID) {
+    if (secureProtoBuffer.byteLength < 24) {
         return { hasError: true, message: 'Invalid data' };
     }
 
-    const version = new Uint8Array(VillesBuffer.slice(0, 1));
-    const userIDArray = new Uint8Array(VillesBuffer.slice(1, 17));
+    const version = new Uint8Array(secureProtoBuffer.slice(0, 1));
+    const userIDArray = new Uint8Array(secureProtoBuffer.slice(1, 17));
     const userIDString = stringify(userIDArray);
     const isValidUser = userIDString === userID || userIDString === userIDLow;
 
@@ -1171,8 +1171,8 @@ function processVillesHeader(VillesBuffer, userID) {
         return { hasError: true, message: 'Invalid user' };
     }
 
-    const optLength = new Uint8Array(VillesBuffer.slice(17, 18))[0];
-    const command = new Uint8Array(VillesBuffer.slice(18 + optLength, 18 + optLength + 1))[0];
+    const optLength = new Uint8Array(secureProtoBuffer.slice(17, 18))[0];
+    const command = new Uint8Array(secureProtoBuffer.slice(18 + optLength, 18 + optLength + 1))[0];
     let isUDP = false;
 
     switch (command) {
@@ -1183,10 +1183,10 @@ function processVillesHeader(VillesBuffer, userID) {
     }
 
     const portIndex = 18 + optLength + 1;
-    const portRemote = new DataView(VillesBuffer).getUint16(portIndex);
+    const portRemote = new DataView(secureProtoBuffer).getUint16(portIndex);
 
     const addressIndex = portIndex + 2;
-    const addressType = new Uint8Array(VillesBuffer.slice(addressIndex, addressIndex + 1))[0];
+    const addressType = new Uint8Array(secureProtoBuffer.slice(addressIndex, addressIndex + 1))[0];
     let addressValue = '';
     let addressLength = 0;
     let addressValueIndex = addressIndex + 1;
@@ -1194,16 +1194,16 @@ function processVillesHeader(VillesBuffer, userID) {
     switch (addressType) {
         case 1:
             addressLength = 4;
-            addressValue = new Uint8Array(VillesBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
+            addressValue = new Uint8Array(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
             break;
         case 2:
-            addressLength = new Uint8Array(VillesBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
+            addressLength = new Uint8Array(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
             addressValueIndex += 1;
-            addressValue = new TextDecoder().decode(VillesBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+            addressValue = new TextDecoder().decode(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
             break;
         case 3:
             addressLength = 16;
-            const dataView = new DataView(VillesBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+            const dataView = new DataView(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
             const ipv6 = [];
             for (let i = 0; i < 8; i++) {
                 ipv6.push(dataView.getUint16(i * 2).toString(16));
@@ -1224,7 +1224,7 @@ function processVillesHeader(VillesBuffer, userID) {
         addressType,
         portRemote,
         rawDataIndex: addressValueIndex + addressLength,
-        VillesVersion: version,
+        secureProtoVersion: version,
         isUDP,
     };
 }
@@ -2395,7 +2395,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			let 节点备注 = '';
 			const 协议类型 = atob(protocolEncodedFlag);
 
-            const VillesLink = `${协议类型}://${UUID}@${address}:${port}?` + 
+            const secureProtoLink = `${协议类型}://${UUID}@${address}:${port}?` + 
                 `encryption=none&` + 
                 `security=none&` + 
                 `type=ws&` + 
@@ -2403,7 +2403,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
                 `path=${encodeURIComponent(最终路径)}` + 
                 `#${encodeURIComponent(addressid + 节点备注)}`;
 
-			return VillesLink;
+			return secureProtoLink;
 
 		}).join('\n');
 
@@ -2466,7 +2466,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 
 		const 协议类型 = atob(protocolEncodedFlag);
 
-		const VillesLink = `${协议类型}://${UUID}@${address}:${port}?` + 
+		const secureProtoLink = `${协议类型}://${UUID}@${address}:${port}?` + 
 			`encryption=none&` +
 			`security=tls&` +
 			`sni=${伪装域名}&` +
@@ -2477,7 +2477,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
                         `path=${encodeURIComponent(最终路径)}` + 
 			`#${encodeURIComponent(addressid + 节点备注)}`;
 
-		return VillesLink;
+		return secureProtoLink;
 	}).join('\n');
 
 	let base64Response = responseBody; 
