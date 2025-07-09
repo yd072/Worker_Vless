@@ -1722,10 +1722,8 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 
 	if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
 	    let cfips = [
-		             '104.16.0.0/13',
-		             '104.24.0.0/14',
-		             '172.64.0.0/13',
-		             '188.114.96.0/20',
+		             '104.16.0.0/12',
+		             '162.159.0.0/16',
 	    ];
 
 	    function generateRandomIPFromCIDR(cidr) {
