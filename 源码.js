@@ -1722,7 +1722,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 
 	    if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
 	    		let cfips = [
-		             '104.16.0.0/12',
+		             '104.16.0.0/13',
 		             '162.159.0.0/16',
 	    		];
 
