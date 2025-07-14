@@ -1720,24 +1720,35 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 		}
 	}
 
-	if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
-	    let cfips = [
+	    if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
+	    		let cfips = [
 		             '104.16.0.0/12',
 		             '162.159.0.0/16',
-	    ];
+	    		];
+
+    		function ipToInt(ip) {
+        			return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+    		}
+
+    			function intToIp(int) {
+        			return [
+            			(int >>> 24) & 255,
+            			(int >>> 16) & 255,
+            			(int >>> 8) & 255,
+            			int & 255
+        				].join('.');
+    				}
 
 	    function generateRandomIPFromCIDR(cidr) {
 		    const [base, mask] = cidr.split('/');
-		    const baseIP = base.split('.').map(Number);
-		    const subnetBits = 32 - parseInt(mask, 10);
-		    const maxHosts = Math.pow(2, subnetBits) - 1;
-		    const randomHost = Math.floor(Math.random() * maxHosts);
+        		const baseInt = ipToInt(base);
+        		const maskBits = parseInt(mask, 10);
+        		const hostBits = 32 - maskBits;
+        		const maxHosts = Math.pow(2, hostBits);
+        		const randomOffset = Math.floor(Math.random() * maxHosts);
 
-		    return baseIP.map((octet, index) => {
-			    if (index < 2) return octet;
-			    if (index === 2) return (octet & (255 << (subnetBits - 8))) + ((randomHost >> 8) & 255);
-			    return (octet & (255 << subnetBits)) + (randomHost & 255);
-		    }).join('.');
+        		const randomIPInt = baseInt + randomOffset;
+        	return intToIp(randomIPInt);
 	    }
 
 	    let counter = 1;
