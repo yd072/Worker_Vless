@@ -1320,8 +1320,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     // 优化重试逻辑
     const retryConnection = async () => {
             let tcpSocket;
-
-        // 如果启用了 SOCKS5，它有自己的逻辑，不参与 PROXYIP/NAT64 回退
             if (enableSocks) {
             try {              
                 tcpSocket = await createConnection(addressRemote, portRemote, true);               
@@ -1382,7 +1380,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             }
         }
         
-        // 如果我们能到达这里，说明某个重试步骤成功了
         if (tcpSocket) {
             log('建立从远程服务器到客户端的数据流...');
             remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, null, log);
@@ -3311,7 +3308,7 @@ async function handleGetRequest(env, txt) {
                         body: subconfigContent // 即使是空字符串也会被保存
                     });
 
-					// 保存NAT64/DNS64设置
+		    // 保存NAT64/DNS64设置
                     const nat64Content = document.getElementById('nat64').value;
                     const nat64Response = await fetch(window.location.href + '?type=nat64', {
                         method: 'POST',
