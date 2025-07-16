@@ -633,7 +633,7 @@ export default {
                     DNS64Server = kv_dns64.trim().split('\n')[0]; // 读取并去除多余空格和换行
                 }
             }
-			DNS64Server = DNS64Server || env.DNS64 || env.NAT64 || atob("ZG5zNjQuY21saXVzc3NzLm5ldA==");
+			DNS64Server = DNS64Server || env.DNS64 || env.NAT64 || (DNS64Server != '' ? DNS64Server : atob("ZG5zNjQuY21saXVzc3NzLm5ldA=="));
 
 			if (socks5Address) {
 				try {
