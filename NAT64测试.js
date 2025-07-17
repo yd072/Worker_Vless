@@ -3143,7 +3143,9 @@ async function handleGetRequest(env, txt) {
                         <!-- NAT64/DNS64 设置 -->
                         <div style="margin-bottom: 20px;">
                             <label for="nat64"><strong>NAT64/DNS64</strong></label>
-                            <p style="margin: 5px 0; color: #666;"></p>
+    					<p style="margin: 5px 0; color: #666;">
+        				<a id="nat64-link" target="_blank" style="color: #666; text-decoration: underline;">自行查询</a>
+    					</p>
                             <textarea 
                                 id="nat64" 
                                 class="proxyip-editor" 
@@ -3151,6 +3153,11 @@ async function handleGetRequest(env, txt) {
                             >${nat64Content}</textarea>
                         </div>
 
+						<script>
+  						const encodedURL = 'aHR0cHM6Ly9uYXQ2NC54eXo=';
+  						const decodedURL = atob(encodedURL);
+  						document.getElementById('nat64-link').setAttribute('href', decodedURL);
+						</script>
                         <!-- 统一的保存按钮 -->
                         <div>
                             <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
@@ -3295,7 +3302,7 @@ async function handleGetRequest(env, txt) {
                     });
 
                     if (proxyipResponse.ok && socks5Response.ok && subResponse.ok && 
-                        subapiResponse.ok && subconfigResponse.ok) {
+                        subapiResponse.ok && subconfigResponse.ok && nat64Response.ok) {
                         saveStatus.textContent = '✅ 保存成功';
                         setTimeout(() => {
                             saveStatus.textContent = '';
@@ -3315,5 +3322,5 @@ async function handleGetRequest(env, txt) {
 
     return new Response(html, {
         headers: { "Content-Type": "text/html;charset=utf-8" }
-    })
+    });
 }	
