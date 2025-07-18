@@ -1871,7 +1871,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 				RproxyIP = 'false';
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
-				console.log('使用默认PROXYIP设置');
 				proxyIP = '';
 				RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
 			}
