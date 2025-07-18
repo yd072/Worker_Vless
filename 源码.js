@@ -569,13 +569,15 @@ export default {
 			// 修改PROXYIP初始化逻辑
 			if (env.KV) {
 				try {
-					const customProxyIP = await env.KV.get('PROXYIP.txt');
-					// 只有当KV中有非空值时才覆盖默认设置
-					if (customProxyIP && customProxyIP.trim()) {
-						proxyIP = customProxyIP;
+					const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+					if (advancedSettingsJSON) {
+						const settings = JSON.parse(advancedSettingsJSON);
+						if (settings.proxyip && settings.proxyip.trim()) {
+							proxyIP = settings.proxyip;
+						}
 					}
 				} catch (error) {
-					console.error('读取自定义PROXYIP时发生错误:', error);
+					console.error('从KV读取PROXYIP时发生错误:', error);
 				}
 			}
 			// 如果proxyIP为空，则使用环境变量或默认值
@@ -586,13 +588,15 @@ export default {
 			// 修改SOCKS5地址初始化逻辑
 			if (env.KV) {
 				try {
-					const kvSocks5 = await env.KV.get('SOCKS5.txt');
-					// 只有当KV中有非空值时才覆盖默认设置
-					if (kvSocks5 && kvSocks5.trim()) {
-						socks5Address = kvSocks5.split('\n')[0].trim();
+					const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+					if (advancedSettingsJSON) {
+						const settings = JSON.parse(advancedSettingsJSON);
+						if (settings.socks5 && settings.socks5.trim()) {
+							socks5Address = settings.socks5.split('\n')[0].trim();
+						}
 					}
 				} catch (error) {
-					console.error('读取SOCKS5设置时发生错误:', error);
+					console.error('从KV读取SOCKS5时发生错误:', error);
 				}
 			}
 			// 如果socks5Address为空，则使用环境变量或默认值
@@ -606,11 +610,17 @@ export default {
 			if (env.BAN) banHosts = await 整理(env.BAN);
 			
             // --- NAT64/DNS64 设置加载逻辑 ---
-            // 优先从KV读取，然后是环境变量，最后是默认值
             if (env.KV) {
-                const kv_dns64 = await env.KV.get('NAT64.txt');
-                if (kv_dns64 && kv_dns64.trim()) {
-                    DNS64Server = kv_dns64.trim().split('\n')[0]; // 读取并去除多余空格和换行
+				try {
+					const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+					if (advancedSettingsJSON) {
+						const settings = JSON.parse(advancedSettingsJSON);
+						if (settings.nat64 && settings.nat64.trim()) {
+							DNS64Server = settings.nat64.trim().split('\n')[0];
+						}
+					}
+				} catch (error) {
+					console.error('从KV读取NAT64时发生错误:', error);
                 }
             }
 			DNS64Server = DNS64Server || env.DNS64 || env.NAT64 || (DNS64Server != '' ? DNS64Server : atob("ZG5zNjQuY21saXVzc3NzLm5ldA=="));
@@ -1831,8 +1841,18 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	// 在获取其他配置前,先尝试读取自定义的设置
 	if (env.KV) {
 		try {
+			const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+			let settings = {};
+			if (advancedSettingsJSON) {
+				try {
+					settings = JSON.parse(advancedSettingsJSON);
+				} catch (e) {
+					console.error("解析settinggs.txt失败:", e);
+				}
+			}
+
 			// 修改PROXYIP设置逻辑
-			const customProxyIP = await env.KV.get('PROXYIP.txt');
+			const customProxyIP = settings.proxyip;
 			if (customProxyIP && customProxyIP.trim()) {
 				// 如果KV中有PROXYIP设置，使用KV中的设置
 				proxyIP = customProxyIP;
@@ -1855,7 +1875,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}
 
 			// 修改SOCKS5设置逻辑
-			const customSocks5 = await env.KV.get('SOCKS5.txt');
+			const customSocks5 = settings.socks5;			
 			if (customSocks5 && customSocks5.trim()) {
 				// 如果KV中有SOCKS5设置，使用KV中的设置
 				socks5Address = customSocks5.trim().split('\n')[0];
@@ -1880,7 +1900,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}
 
 			// 读取自定义SUB设置
-			const customSub = await env.KV.get('SUB.txt');
+			const customSub = settings.sub;
 			// 明确检查是否为null或空字符串
 			if (customSub !== null && customSub.trim() !== '') {
 				// 如果KV中有SUB设置，使用KV中的设置
@@ -1897,7 +1917,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}
 
 			// 读取自定义SUBAPI设置
-			const customSubAPI = await env.KV.get('SUBAPI.txt');
+			const customSubAPI = settings.subapi;
 			// 明确检查是否为null或空字符串
 			if (customSubAPI !== null && customSubAPI.trim() !== '') {
 				// 如果KV中有SUBAPI设置，使用KV中的设置
@@ -1914,8 +1934,7 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			}
 
 			// 读取自定义SUBCONFIG设置
-			const customSubConfig = await env.KV.get('SUBCONFIG.txt');
-			// 明确检查是否为null或空字符串
+			const customSubConfig = settings.subconfig;
 			if (customSubConfig !== null && customSubConfig.trim() !== '') {
 				// 如果KV中有SUBCONFIG设置，使用KV中的设置
 				subConfig = customSubConfig.trim().split('\n')[0];
@@ -2747,6 +2766,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 
 // 优化 整理 函数
 async function 整理(内容) {
+    if (!内容) return [];
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
     
@@ -2856,25 +2876,10 @@ async function handlePostRequest(request, env, txt) {
 
         // 根据类型保存到不同的KV
         switch(type) {
-            case 'proxyip':
-                await env.KV.put('PROXYIP.txt', content);
+            case 'advanced':
+                await env.KV.put('settinggs.txt', content);
                 break;
-            case 'socks5':
-                await env.KV.put('SOCKS5.txt', content);
-                break;
-            case 'sub':
-                await env.KV.put('SUB.txt', content);
-                break;
-            case 'subapi':
-                await env.KV.put('SUBAPI.txt', content);
-                break;
-            case 'subconfig':
-                await env.KV.put('SUBCONFIG.txt', content);
-                break;
-            case 'nat64': // 新增：处理NAT64设置的保存
-                await env.KV.put('NAT64.txt', content);
-                break;
-            default:
+            default: // 主列表内容保存到ADD.txt
                 await env.KV.put(txt, content);
         }
         
@@ -2893,18 +2898,22 @@ async function handleGetRequest(env, txt) {
     let subContent = ''; 
     let subAPIContent = '';
     let subConfigContent = '';
-    let nat64Content = ''; // 新增：NAT64内容变量
+    let nat64Content = '';
 
     if (hasKV) {
         try {
             content = await env.KV.get(txt) || '';
-            proxyIPContent = await env.KV.get('PROXYIP.txt') || '';
-            socks5Content = await env.KV.get('SOCKS5.txt') || '';
-            subContent = await env.KV.get('SUB.txt') || '';
-            // 修改这里：不要使用默认值，只读取KV中的值
-            subAPIContent = await env.KV.get('SUBAPI.txt') || '';
-            subConfigContent = await env.KV.get('SUBCONFIG.txt') || '';
-            nat64Content = await env.KV.get('NAT64.txt') || ''; // 新增：读取NAT64设置
+			
+            const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+            if (advancedSettingsJSON) {
+                const settings = JSON.parse(advancedSettingsJSON);
+                proxyIPContent = settings.proxyip || '';
+                socks5Content = settings.socks5 || '';
+                subContent = settings.sub || '';
+                subAPIContent = settings.subapi || '';
+                subConfigContent = settings.subconfig || '';
+                nat64Content = settings.nat64 || '';
+            }
         } catch (error) {
             console.error('读取KV时发生错误:', error);
             content = '读取数据时发生错误: ' + error.message;
@@ -3278,56 +3287,30 @@ async function handleGetRequest(env, txt) {
                 saveStatus.textContent = '保存中...';
                 
                 try {
-                    // 保存PROXYIP设置
-                    const proxyipContent = document.getElementById('proxyip').value;
-                    const proxyipResponse = await fetch(window.location.href + '?type=proxyip', {
+                    const advancedSettings = {
+                        proxyip: document.getElementById('proxyip').value,
+                        socks5: document.getElementById('socks5').value,
+                        sub: document.getElementById('sub').value,
+                        subapi: document.getElementById('subapi').value,
+                        subconfig: document.getElementById('subconfig').value,
+                        nat64: document.getElementById('nat64').value
+                    };
+
+                    const response = await fetch(window.location.href + '?type=advanced', {
                         method: 'POST',
-                        body: proxyipContent
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(advancedSettings)
                     });
 
-                    // 保存SOCKS5设置
-                    const socks5Content = document.getElementById('socks5').value;
-                    const socks5Response = await fetch(window.location.href + '?type=socks5', {
-                        method: 'POST',
-                        body: socks5Content
-                    });
-
-                    // 保存SUB设置
-                    const subContent = document.getElementById('sub').value;
-                    const subResponse = await fetch(window.location.href + '?type=sub', {
-                        method: 'POST',
-                        body: subContent
-                    });
-                    
-                    // 保存SUBAPI设置
-                    const subapiContent = document.getElementById('subapi').value;
-                    const subapiResponse = await fetch(window.location.href + '?type=subapi', {
-                        method: 'POST',
-                        body: subapiContent
-                    });
-                    
-                    // 保存SUBCONFIG设置
-                    const subconfigContent = document.getElementById('subconfig').value;
-                    const subconfigResponse = await fetch(window.location.href + '?type=subconfig', {
-                        method: 'POST',
-                        body: subconfigContent // 即使是空字符串也会被保存
-                    });
-
-		    // 保存NAT64/DNS64设置
-                    const nat64Content = document.getElementById('nat64').value;
-                    const nat64Response = await fetch(window.location.href + '?type=nat64', {
-                        method: 'POST',
-                        body: nat64Content // 即使是空字符串也会被保存
-                    });
-
-                    if (proxyipResponse.ok && socks5Response.ok && subResponse.ok && 
-                        subapiResponse.ok && subconfigResponse.ok && nat64Response.ok) {
+                    if (response.ok) {
                         saveStatus.textContent = '✅ 保存成功';
                         setTimeout(() => {
                             saveStatus.textContent = '';
                         }, 3000);
                     } else {
-                        throw new Error('保存失败');
+                        throw new Error('保存失败: ' + await response.text());
                     }
                 } catch (error) {
                     saveStatus.textContent = '❌ ' + error.message;
