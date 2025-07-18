@@ -42,7 +42,7 @@ let userIDLow;
 let userIDTime = "";
 let proxyIPPool = [];
 let path = '/?ed=2560';
-let 动态UUID;
+let 动态UUID = null;  
 let link = [];
 let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 let DNS64Server = '';
@@ -847,17 +847,21 @@ export default {
 							},
 						});
 					}
-				} else if (路径 == `/${fakeUserID}`) {
+				} else if (路径 === `/${fakeUserID}`) {
 					const fakeConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, 'CF-Workers-SUB', RproxyIP, url, fakeUserID, fakeHostName, env);
 					return new Response(`${fakeConfig}`, { status: 200 });
-				} else if (url.pathname == `/${动态UUID}/edit` || 路径 == `/${userID}/edit`) {
+				} 
+				// 【方案一：核心安全修复】在这里修改了判断逻辑
+				else if ((动态UUID && url.pathname === `/${动态UUID}/edit`) || 路径 === `/${userID}/edit`) {
 					const html = await KV(request, env);
 					return html;
-				} else if (url.pathname == `/${动态UUID}` || 路径 == `/${userID}`) {
+				} else if ((动态UUID && url.pathname === `/${动态UUID}`) || 路径 === `/${userID}`) {
 					await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${UA}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					const secureProtoConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+					
+					const uuid_to_use = (动态UUID && url.pathname === `/${动态UUID}`) ? 动态UUID : userID;
+					const secureProtoConfig = await 生成配置信息(uuid_to_use, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+
 					const now = Date.now();
-					//const timestamp = Math.floor(now / 1000);
 					const today = new Date(now);
 					today.setHours(0, 0, 0, 0);
 					const UD = Math.floor(((now - today.getTime()) / 86400000) * 24 * 1099511627776 / 2);
@@ -1837,7 +1841,7 @@ function 配置信息(UUID, 域名地址) {
 let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
-async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
+async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 	// 在获取其他配置前,先尝试读取自定义的设置
 	if (env.KV) {
 		try {
@@ -1858,14 +1862,12 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				proxyIP = customProxyIP;
 				proxyIPs = await 整理(proxyIP);
 				proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
-				console.log('使用KV中的PROXYIP:', proxyIP);
 				RproxyIP = 'false';
 			} else if (env.PROXYIP) {
 				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
 				proxyIP = env.PROXYIP;
 				proxyIPs = await 整理(proxyIP);
 				proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
-				console.log('使用环境变量中的PROXYIP:', proxyIP);
 				RproxyIP = 'false';
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
@@ -1882,7 +1884,6 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				socks5s = await 整理(socks5Address);
 				socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 				socks5Address = socks5Address.split('//')[1] || socks5Address;
-				console.log('使用KV中的SOCKS5:', socks5Address);
 				enableSocks = true; 
 			} else if (env.SOCKS5) {
 				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
@@ -1890,11 +1891,9 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 				socks5s = await 整理(socks5Address);
 				socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 				socks5Address = socks5Address.split('//')[1] || socks5Address;
-				console.log('使用环境变量中的SOCKS5:', socks5Address);
 				enableSocks = true; 
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
-				console.log('使用默认SOCKS5设置');
 				enableSocks = false;
 				socks5Address = '';
 			}
@@ -1905,15 +1904,12 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			if (customSub !== null && customSub.trim() !== '') {
 				// 如果KV中有SUB设置，使用KV中的设置
 				sub = customSub.trim().split('\n')[0];
-				console.log('使用KV中的SUB:', sub);
 			} else if (env.SUB) {
 				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
 				sub = env.SUB;
-				console.log('使用环境变量中的SUB:', sub);
 			} else {
 				// 如果KV和环境变量中都没有设置，使用默认值
 				sub = '';
-				console.log('使用默认SUB设置:', sub);
 			}
 
 			// 读取自定义SUBAPI设置
@@ -1922,15 +1918,12 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			if (customSubAPI !== null && customSubAPI.trim() !== '') {
 				// 如果KV中有SUBAPI设置，使用KV中的设置
 				subConverter = customSubAPI.trim().split('\n')[0];
-				console.log('使用KV中的SUBAPI:', subConverter);
 			} else if (env.SUBAPI) {
 				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
 				subConverter = env.SUBAPI;
-				console.log('使用环境变量中的SUBAPI:', subConverter);
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
 				subConverter = atob('U1VCQVBJLkNNTGl1c3Nzcy5uZXQ=');
-				console.log('使用默认SUBAPI设置:', subConverter);
 			}
 
 			// 读取自定义SUBCONFIG设置
@@ -1938,15 +1931,12 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 			if (customSubConfig !== null && customSubConfig.trim() !== '') {
 				// 如果KV中有SUBCONFIG设置，使用KV中的设置
 				subConfig = customSubConfig.trim().split('\n')[0];
-				console.log('使用KV中的SUBCONFIG:', subConfig);
 			} else if (env.SUBCONFIG) {
 				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
 				subConfig = env.SUBCONFIG;
-				console.log('使用环境变量中的SUBCONFIG:', subConfig);
 			} else {
 				// 如果KV和环境变量中都没有设置，使用代码默认值
 				subConfig = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvY29uZmlnL0FDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ==');
-				console.log('使用默认SUBCONFIG设置:', subConfig);
 			}
 		} catch (error) {
 			console.error('读取自定义设置时发生错误:', error);
@@ -2042,9 +2032,8 @@ async function 生成配置信息(userID, hostName, sub, UA, RproxyIP, _url, fak
 	    }
     }
 
-	const uuid = (_url.pathname == `/${动态UUID}`) ? 动态UUID : userID;
 	const userAgent = UA.toLowerCase();
-	const Config = 配置信息(userID, hostName);
+	const Config = 配置信息(uuid, hostName);
 	const proxyConfig = Config[0];
 	const clash = Config[1];
 	let proxyhost = "";
