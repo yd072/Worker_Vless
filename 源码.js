@@ -217,14 +217,14 @@ async function resolveToIPv6(target) {
             headers: { 'Accept': 'application/dns-json' }
         });
 
-        if (!response.ok) throw new Error('DNS query for IPv4 failed');
+        if (!response.ok) throw new Error('DNS查询失败');
 
         const data = await response.json();
         const ipv4s = (data.Answer || [])
             .filter(record => record.type === 1)
             .map(record => record.data);
 
-        if (ipv4s.length === 0) throw new Error('No IPv4 address found for the domain');
+        if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
         return ipv4s[Math.floor(Math.random() * ipv4s.length)];
     }
 
@@ -271,6 +271,7 @@ async function resolveToIPv6(target) {
         view.setUint16(offset, 0x0100); offset += 2;
         view.setUint16(offset, 1); offset += 2;
         view.setUint16(offset, 0); offset += 6;
+		 // 域名编码
         for (const label of domain.split('.')) {
             view.setUint8(offset++, label.length);
             for (let i = 0; i < label.length; i++) {
@@ -278,8 +279,10 @@ async function resolveToIPv6(target) {
             }
         }
         view.setUint8(offset++, 0);
-        view.setUint16(offset, 28); offset += 2;
-        view.setUint16(offset, 1); offset += 2;
+		// 查询类型和类
+        view.setUint16(offset, 28); offset += 2; // AAAA记录
+        view.setUint16(offset, 1); offset += 2; // IN类
+
         return new Uint8Array(buffer, 0, offset);
     }
 
@@ -1366,9 +1369,9 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                     try {
                         log(`重试：尝试策略 '${strategy.name}'...`);
                         tcpSocket = await strategy.execute();
-                        log(`✅ 策略 '${strategy.name}' 连接成功！`);
+                        log(`策略 '${strategy.name}' 连接成功！`);
                     } catch (error) {
-                        log(`❌ 策略 '${strategy.name}' 失败: ${error.message}`);
+                        log(`策略 '${strategy.name}' 失败: ${error.message}`);
                     }
                 }
             }
