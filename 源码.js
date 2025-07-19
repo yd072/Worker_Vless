@@ -385,6 +385,7 @@ export default {
 				const userIDs = await 生成动态UUID(动态UUID);
 				userID = userIDs[0];
 				userIDLow = userIDs[1];
+				userIDTime = userIDs[2];
 			}
 
 			if (!userID) {
