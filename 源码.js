@@ -1779,30 +1779,45 @@ async function 双重哈希(文本) {
     return 第二次十六进制.toLowerCase();
 }
 
-async function 代理URL(代理网址, 目标网址, 调试模式 = false) {
+async function 代理URL(request, 代理网址, 目标网址, 调试模式 = false) {
     try {
-    const 网址列表 = await 整理(代理网址);
+        const 网址列表 = await 整理(代理网址);
         if (!网址列表 || 网址列表.length === 0) {
             throw new Error('代理网址列表为空');
         }
-    const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
+        const 完整网址 = 网址列表[Math.floor(Math.random() * 网址列表.length)];
 
-    const 解析后的网址 = new URL(完整网址);
+        const 解析后的网址 = new URL(完整网址);
         if (调试模式) console.log(`代理 URL: ${解析后的网址}`);
 
-        const 目标URL = new URL(目标网址, 解析后的网址);
+        // 正确拼接目标路径和查询参数
+        const 目标URL = new URL(目标网址.pathname + 目标网址.search, 解析后的网址);
 
-        const 响应 = await fetch(目标URL.toString(), { method: 'GET' });
+        // 复制原始请求头，并可以进行一些清理
+        const newHeaders = new Headers(request.headers);
+        newHeaders.set('Host', 解析后的网址.hostname); // 将Host头修改为代理目标的域名
+        newHeaders.set('Referer', 解析后的网址.origin); // 可选：伪造或设置正确的Referer
 
-    const 新响应 = new Response(响应.body, {
-        status: 响应.status,
-        statusText: 响应.statusText,
+        const 响应 = await fetch(目标URL.toString(), {
+            method: request.method, // 传递原始请求方法
+            headers: newHeaders,    // 传递处理过的请求头，增强伪装
+            body: request.body,     // 传递请求体，支持POST等方法
+            redirect: 'manual'      // 手动处理重定向
+        });
+
+        const 新响应 = new Response(响应.body, {
+            status: 响应.status,
+            statusText: 响应.statusText,
             headers: new Headers(响应.headers)
-    });
+        });
 
-        新响应.headers.set('X-New-URL', 目标URL.toString());
+        // 移除可能暴露信息的特有请求头
+        新响应.headers.delete('cf-ray');
+        新响应.headers.delete('cf-connecting-ip');
+        新响应.headers.delete('x-forwarded-proto');
+        新响应.headers.delete('x-real-ip');		
 
-    return 新响应;
+        return 新响应;
     } catch (error) {
         console.error(`代理请求失败: ${error.message}`);
         return new Response(`代理请求失败: ${error.message}`, { status: 500 });
