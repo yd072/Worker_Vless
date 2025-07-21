@@ -1,3 +1,4 @@
+
 import { connect } from 'cloudflare:sockets';
 
 let userID = '';
@@ -1858,106 +1859,7 @@ let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
 const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQolMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjMlMjM='));
 
 async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
-	// 在获取其他配置前,先尝试读取自定义的设置
-	if (env.KV) {
-		try {
-			const advancedSettingsJSON = await env.KV.get('settinggs.txt');
-			let settings = {};
-			if (advancedSettingsJSON) {
-				try {
-					settings = JSON.parse(advancedSettingsJSON);
-				} catch (e) {
-					console.error("解析settinggs.txt失败:", e);
-				}
-			}
-
-			// 修改PROXYIP设置逻辑
-			const customProxyIP = settings.proxyip;
-			if (customProxyIP && customProxyIP.trim()) {
-				// 如果KV中有PROXYIP设置，使用KV中的设置
-				proxyIP = customProxyIP;
-				proxyIPs = await 整理(proxyIP);
-				proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
-				RproxyIP = 'false';
-			} else if (env.PROXYIP) {
-				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
-				proxyIP = env.PROXYIP;
-				proxyIPs = await 整理(proxyIP);
-				proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
-				RproxyIP = 'false';
-			} else {
-				// 如果KV和环境变量中都没有设置，使用代码默认值
-				proxyIP = '';
-				RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
-			}
-
-			// 修改SOCKS5设置逻辑
-			const customSocks5 = settings.socks5;			
-			if (customSocks5 && customSocks5.trim()) {
-				// 如果KV中有SOCKS5设置，使用KV中的设置
-				socks5Address = customSocks5.trim().split('\n')[0];
-				socks5s = await 整理(socks5Address);
-				socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
-				socks5Address = socks5Address.split('//')[1] || socks5Address;
-				enableSocks = true; 
-			} else if (env.SOCKS5) {
-				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
-				socks5Address = env.SOCKS5;
-				socks5s = await 整理(socks5Address);
-				socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
-				socks5Address = socks5Address.split('//')[1] || socks5Address;
-				enableSocks = true; 
-			} else {
-				// 如果KV和环境变量中都没有设置，使用代码默认值
-				enableSocks = false;
-				socks5Address = '';
-			}
-
-			// 读取自定义SUB设置
-			const customSub = settings.sub;
-			// 明确检查是否为null或空字符串
-			if (customSub !== null && customSub.trim() !== '') {
-				// 如果KV中有SUB设置，使用KV中的设置
-				sub = customSub.trim().split('\n')[0];
-			} else if (env.SUB) {
-				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
-				sub = env.SUB;
-			} else {
-				// 如果KV和环境变量中都没有设置，使用默认值
-				sub = '';
-			}
-
-			// 读取自定义SUBAPI设置
-			const customSubAPI = settings.subapi;
-			// 明确检查是否为null或空字符串
-			if (customSubAPI !== null && customSubAPI.trim() !== '') {
-				// 如果KV中有SUBAPI设置，使用KV中的设置
-				subConverter = customSubAPI.trim().split('\n')[0];
-			} else if (env.SUBAPI) {
-				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
-				subConverter = env.SUBAPI;
-			} else {
-				// 如果KV和环境变量中都没有设置，使用代码默认值
-				subConverter = atob('U1VCQVBJLkNNTGl1c3Nzcy5uZXQ=');
-			}
-
-			// 读取自定义SUBCONFIG设置
-			const customSubConfig = settings.subconfig;
-			if (customSubConfig !== null && customSubConfig.trim() !== '') {
-				// 如果KV中有SUBCONFIG设置，使用KV中的设置
-				subConfig = customSubConfig.trim().split('\n')[0];
-			} else if (env.SUBCONFIG) {
-				// 如果KV中没有设置但环境变量中有，使用环境变量中的设置
-				subConfig = env.SUBCONFIG;
-			} else {
-				// 如果KV和环境变量中都没有设置，使用代码默认值
-				subConfig = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvY29uZmlnL0FDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ==');
-			}
-		} catch (error) {
-			console.error('读取自定义设置时发生错误:', error);
-		}
-	}
-
+	
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
 		sub = match ? match[1] : sub;
