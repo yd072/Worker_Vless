@@ -1058,7 +1058,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                         port: port,
                         allowHalfOpen: false,
                         keepAlive: true,
-                        keepAliveInitialDelay: 60000,
                         signal: controller.signal
                     })
                 ,
