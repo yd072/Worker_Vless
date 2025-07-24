@@ -2951,7 +2951,7 @@ async function handleGetRequest(env, txt) {
                         
                         <!-- HTTP Proxy 设置 -->
                         <div style="margin-bottom: 20px;">
-                            <label for="httpproxy"><strong>HTTP 代理设置</strong></label>
+                            <label for="httpproxy"><strong>HTTP 设置</strong></label>
                             <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
                             <textarea 
                                 id="httpproxy" 
