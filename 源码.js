@@ -2912,15 +2912,6 @@ async function handleGetRequest(env, txt) {
                     background-color: #fafafa;
                 }
 
-                .toggle-arrow {
-                    font-size: 1.2em;
-                    transition: transform 0.2s ease-in-out;
-                }
-
-                .setting-header.open .toggle-arrow {
-                    transform: rotate(180deg);
-                }
-
                 .setting-editor {
                     width: 100%;
                     min-height: 80px;
@@ -2956,14 +2947,12 @@ async function handleGetRequest(env, txt) {
                 <div class="advanced-settings">
                     <div class="advanced-settings-header" onclick="toggleAdvancedSettings()">
                         <h3 style="margin: 0;">⚙️ 高级设置</h3>
-                        <span id="advanced-settings-toggle">∨</span>
                     </div>
                     <div id="advanced-settings-content">
                         <!-- PROXYIP设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>PROXYIP 设置</strong></span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                             <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">每行一个IP，格式：IP:端口(可不添加端口)</p>
@@ -2975,7 +2964,6 @@ async function handleGetRequest(env, txt) {
                         <div class="setting-item">
                              <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>SOCKS5 设置</strong></span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                             <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
@@ -2987,7 +2975,6 @@ async function handleGetRequest(env, txt) {
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>HTTP 设置</strong></span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                             <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
@@ -2999,7 +2986,6 @@ async function handleGetRequest(env, txt) {
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>SUB 设置</strong> (优选订阅生成器)</span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                             <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">只支持单个优选订阅生成器地址</p>
@@ -3011,7 +2997,6 @@ async function handleGetRequest(env, txt) {
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>SUBAPI 设置</strong> (订阅转换后端)</span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                             <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">订阅转换后端地址</p>
@@ -3023,7 +3008,6 @@ async function handleGetRequest(env, txt) {
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>SUBCONFIG 设置</strong> (订阅转换配置)</span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                             <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">订阅转换配置文件地址</p>
@@ -3035,13 +3019,12 @@ async function handleGetRequest(env, txt) {
                         <div class="setting-item">
                            <div class="setting-header" onclick="toggleSetting(this)">
                                 <span><strong>NAT64/DNS64 设置</strong></span>
-                                <span class="toggle-arrow">∨</span>
                             </div>
                              <div class="setting-content">
                                 <p style="margin: 5px 0; color: #666;">
                                     <a id="nat64-link" target="_blank" style="color: #666; text-decoration: underline;">自行查询</a>
                                 </p>
-                                <textarea id="nat64" class="setting-editor" placeholder="例如：\ndns64.example.com\n2a01:4f8:c2c:123f::/1">${nat64Content}</textarea>
+                                <textarea id="nat64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBJTBBZG5zNjQuZXhhbXBsZS5jb20lMEEyYTAxJTNBNGY4JTNBYzJjJTNBMTIzZiUzQSUzQSUyRjk2'))}">${nat64Content}</textarea>
                             </div>
                         </div>
 						<script>
@@ -3135,26 +3118,20 @@ async function handleGetRequest(env, txt) {
 
                 function toggleAdvancedSettings() {
                     const content = document.getElementById('advanced-settings-content');
-                    const toggle = document.getElementById('advanced-settings-toggle');
                     if (content.style.display === 'none' || !content.style.display) {
                         content.style.display = 'block';
-                        toggle.textContent = '∧';
                     } else {
                         content.style.display = 'none';
-                        toggle.textContent = '∨';
                     }
                 }
 
                 function toggleSetting(headerElement) {
                     const content = headerElement.nextElementSibling;
-                    const arrow = headerElement.querySelector('.toggle-arrow');
                     headerElement.classList.toggle('open');
                     if (content.style.display === 'none' || content.style.display === '') {
                         content.style.display = 'block';
-                        arrow.textContent = '∧';
                     } else {
                         content.style.display = 'none';
-                        arrow.textContent = '∨';
                     }
                 }
 
