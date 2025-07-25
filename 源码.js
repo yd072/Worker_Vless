@@ -964,7 +964,7 @@ async function handleDNSQuery(udpChunk, webSocket, secureProtoResponseHeader, lo
                     log(`关闭TCP连接出错: ${e.message}`);
                 }
             }
-        }, 5000);
+        }, 3000);
 
         try {
             // 使用Promise.race进行超时控制
@@ -1307,7 +1307,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                 retry();
             }
         }
-    }, 5000);
+    }, 3000);
 
     try {
         await remoteSocket.readable
