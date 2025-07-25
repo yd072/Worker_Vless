@@ -2869,20 +2869,6 @@ async function handleGetRequest(env, txt) {
                     margin: 20px 0;
                 }
 
-                @media (max-width: 768px) {
-                    body {
-                        padding: 10px;
-                    }
-                    
-                    .container {
-                        padding: 15px;
-                    }
-                    
-                    .editor {
-                        height: 400px;
-                    }
-                }
-
                 .advanced-settings {
                     margin: 20px 0;
                     padding: 20px;
@@ -2899,20 +2885,67 @@ async function handleGetRequest(env, txt) {
                     cursor: pointer;
                 }
 
-                .advanced-settings-content {
+                #advanced-settings-content {
                     display: none;
                 }
 
-                .proxyip-editor {
+                .setting-item {
+                    margin-bottom: 10px;
+                    border: 1px solid #ddd;
+                    border-radius: 6px;
+                    overflow: hidden;
+                }
+
+                .setting-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 10px 15px;
+                    background-color: #f0f0f0;
+                    cursor: pointer;
+                    font-weight: 500;
+                }
+                
+                .setting-content {
+                    display: none; /* Initially hidden */
+                    padding: 15px;
+                    background-color: #fafafa;
+                }
+
+                .toggle-arrow {
+                    font-size: 1.2em;
+                    transition: transform 0.2s ease-in-out;
+                }
+
+                .setting-header.open .toggle-arrow {
+                    transform: rotate(180deg);
+                }
+
+                .setting-editor {
                     width: 100%;
-                    height: 100px;
+                    min-height: 80px;
                     margin-top: 10px;
                     padding: 10px;
+                    box-sizing: border-box;
                     border: 1px solid var(--border-color);
                     border-radius: 4px;
                     font-family: Monaco, Consolas, "Courier New", monospace;
                     font-size: 14px;
                     resize: vertical;
+                }
+
+                @media (max-width: 768px) {
+                    body {
+                        padding: 10px;
+                    }
+                    
+                    .container {
+                        padding: 15px;
+                    }
+                    
+                    .editor {
+                        height: 400px;
+                    }
                 }
             </style>
         </head>
@@ -2925,94 +2958,101 @@ async function handleGetRequest(env, txt) {
                         <h3 style="margin: 0;">⚙️ 高级设置</h3>
                         <span id="advanced-settings-toggle">∨</span>
                     </div>
-                    <div id="advanced-settings-content" class="advanced-settings-content">
+                    <div id="advanced-settings-content">
                         <!-- PROXYIP设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="proxyip"><strong>PROXYIP 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">每行一个IP，格式：IP:端口(可不添加端口)</p>
-                            <textarea 
-                                id="proxyip" 
-                                class="proxyip-editor" 
-                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E0NDMKcHJveHkuZXhhbXBsZS5jb20lM0E4NDQz'))}"
-                            >${proxyIPContent}</textarea>
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>PROXYIP 设置</strong></span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                            <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">每行一个IP，格式：IP:端口(可不添加端口)</p>
+                                <textarea id="proxyip" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E0NDMKcHJveHkuZXhhbXBsZS5jb20lM0E4NDQz'))}">${proxyIPContent}</textarea>
+                            </div>
                         </div>
 
                         <!-- SOCKS5设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="socks5"><strong>SOCKS5 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
-                            <textarea 
-                                id="socks5" 
-                                class="proxyip-editor" 
-                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}"
-                            >${socks5Content}</textarea>
+                        <div class="setting-item">
+                             <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>SOCKS5 设置</strong></span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                            <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                                <textarea id="socks5" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${socks5Content}</textarea>
+                            </div>
                         </div>
                         
                         <!-- HTTP Proxy 设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="httpproxy"><strong>HTTP 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
-                            <textarea 
-                                id="httpproxy" 
-                                class="proxyip-editor" 
-                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXI6cGFzc0AxLjIuMy40OjgwODAKMS4yLjMuNDo4MDgw'))}"
-                            >${httpProxyContent}</textarea>
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>HTTP 设置</strong></span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                            <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                                <textarea id="httpproxy" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXI6cGFzc0AxLjIuMy40OjgwODAKMS4yLjMuNDo4MDgw'))}">${httpProxyContent}</textarea>
+                            </div>
                         </div>
 
                         <!-- SUB设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="sub"><strong>SUB 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">只支持单个优选订阅生成器地址</p>
-                            <textarea 
-                                id="sub" 
-                                class="proxyip-editor" 
-                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}"
-                            >${subContent}</textarea>
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>SUB 设置</strong> (优选订阅生成器)</span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                            <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">只支持单个优选订阅生成器地址</p>
+                                <textarea id="sub" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}">${subContent}</textarea>
+                            </div>
                         </div>
                         
                         <!-- SUBAPI设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="subapi"><strong>SUBAPI 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">订阅转换后端地址</p>
-                            <textarea 
-                                id="subapi" 
-                                class="proxyip-editor" 
-                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmFwaS52MS5tawpzdWIueGV0b24uZGV2'))}"
-                            >${subAPIContent}</textarea>
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>SUBAPI 设置</strong> (订阅转换后端)</span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                            <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">订阅转换后端地址</p>
+                                <textarea id="subapi" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmFwaS52MS5tawpzdWIueGV0b24uZGV2'))}">${subAPIContent}</textarea>
+                            </div>
                         </div>
                         
                         <!-- SUBCONFIG设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="subconfig"><strong>SUBCONFIG 设置</strong></label>
-                            <p style="margin: 5px 0; color: #666;">订阅转换配置文件地址</p>
-                            <textarea 
-                                id="subconfig" 
-                                class="proxyip-editor" 
-                                placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRkFDTDRTU1IlMkZBQ0w0U1NSJTI1MkZtYXN0ZXIlMkZDbGFzaCUyRmNvbmZpZyUyRkFDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ=='))}"
-                            >${subConfigContent}</textarea>
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>SUBCONFIG 设置</strong> (订阅转换配置)</span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                            <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">订阅转换配置文件地址</p>
+                                <textarea id="subconfig" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRkFDTDRTU1IlMkZBQ0w0U1NSJTI1MkZtYXN0ZXIlMkZDbGFzaCUyRmNvbmZpZyUyRkFDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ=='))}">${subConfigContent}</textarea>
+                            </div>
                         </div>
 
                         <!-- NAT64/DNS64 设置 -->
-                        <div style="margin-bottom: 20px;">
-                            <label for="nat64"><strong>NAT64/DNS64</strong></label>
-    						<p style="margin: 5px 0; color: #666;">
-        					<a id="nat64-link" target="_blank" style="color: #666; text-decoration: underline;">自行查询</a>
-    						</p>
-                            <textarea 
-                                id="nat64" 
-                                class="proxyip-editor" 
-                                placeholder="例如：\ndns64.example.com\n2a01:4f8:c2c:123f::/1"
-                            >${nat64Content}</textarea>
+                        <div class="setting-item">
+                           <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>NAT64/DNS64 设置</strong></span>
+                                <span class="toggle-arrow">∨</span>
+                            </div>
+                             <div class="setting-content">
+                                <p style="margin: 5px 0; color: #666;">
+                                    <a id="nat64-link" target="_blank" style="color: #666; text-decoration: underline;">自行查询</a>
+                                </p>
+                                <textarea id="nat64" class="setting-editor" placeholder="例如：\ndns64.example.com\n2a01:4f8:c2c:123f::/1">${nat64Content}</textarea>
+                            </div>
                         </div>
-
 						<script>
   							const encodedURL = 'aHR0cHM6Ly9uYXQ2NC54eXo=';
   							const decodedURL = atob(encodedURL);
   							document.getElementById('nat64-link').setAttribute('href', decodedURL);
 						</script>
+
                         <!-- 统一的保存按钮 -->
-                        <div>
-                            <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+                        <div style="margin-top: 20px;">
+                            <button class="btn btn-primary" onclick="saveSettings()">保存</button>
                             <span id="settings-save-status" class="save-status"></span>
                         </div>
                     </div>
@@ -3044,104 +3084,116 @@ async function handleGetRequest(env, txt) {
             </div>
 
             <script>
-            function goBack() {
-                const pathParts = window.location.pathname.split('/');
-                pathParts.pop(); // 移除 "edit"
-                const newPath = pathParts.join('/');
-                window.location.href = newPath;
-            }
+                function goBack() {
+                    const pathParts = window.location.pathname.split('/');
+                    pathParts.pop(); // 移除 "edit"
+                    const newPath = pathParts.join('/');
+                    window.location.href = newPath;
+                }
 
-            async function saveContent(button) {
-                try {
-                    button.disabled = true;
-                    const content = document.getElementById('content').value;
-                    const saveStatus = document.getElementById('saveStatus');
-                    
+                async function saveContent(button) {
+                    try {
+                        button.disabled = true;
+                        const content = document.getElementById('content').value;
+                        const saveStatus = document.getElementById('saveStatus');
+                        
+                        saveStatus.textContent = '保存中...';
+                        
+                        const response = await fetch(window.location.href, {
+                            method: 'POST',
+                            body: content
+                        });
+
+                        if (response.ok) {
+                            saveStatus.textContent = '✅ 保存成功';
+                            setTimeout(() => {
+                                saveStatus.textContent = '';
+                            }, 3000);
+                        } else {
+                            throw new Error('保存失败');
+                        }
+                    } catch (error) {
+                        const saveStatus = document.getElementById('saveStatus');
+                        saveStatus.textContent = '❌ ' + error.message;
+                        console.error('保存时发生错误:', error);
+                    } finally {
+                        button.disabled = false;
+                    }
+                }
+
+                function toggleNotice() {
+                    const noticeContent = document.getElementById('noticeContent');
+                    const noticeToggle = document.getElementById('noticeToggle');
+                    if (noticeContent.style.display === 'none') {
+                        noticeContent.style.display = 'block';
+                        noticeToggle.textContent = 'ℹ️ 注意事项 ∧';
+                    } else {
+                        noticeContent.style.display = 'none';
+                        noticeToggle.textContent = 'ℹ️ 注意事项 ∨';
+                    }
+                }
+
+                function toggleAdvancedSettings() {
+                    const content = document.getElementById('advanced-settings-content');
+                    const toggle = document.getElementById('advanced-settings-toggle');
+                    if (content.style.display === 'none' || !content.style.display) {
+                        content.style.display = 'block';
+                        toggle.textContent = '∧';
+                    } else {
+                        content.style.display = 'none';
+                        toggle.textContent = '∨';
+                    }
+                }
+
+                function toggleSetting(headerElement) {
+                    const content = headerElement.nextElementSibling;
+                    const arrow = headerElement.querySelector('.toggle-arrow');
+                    headerElement.classList.toggle('open');
+                    if (content.style.display === 'none' || content.style.display === '') {
+                        content.style.display = 'block';
+                        arrow.textContent = '∧';
+                    } else {
+                        content.style.display = 'none';
+                        arrow.textContent = '∨';
+                    }
+                }
+
+                async function saveSettings() {
+                    const saveStatus = document.getElementById('settings-save-status');
                     saveStatus.textContent = '保存中...';
                     
-                    const response = await fetch(window.location.href, {
-                        method: 'POST',
-                        body: content
-                    });
+                    try {
+                        const advancedSettings = {
+                            proxyip: document.getElementById('proxyip').value,
+                            socks5: document.getElementById('socks5').value,
+                            httpproxy: document.getElementById('httpproxy').value,
+                            sub: document.getElementById('sub').value,
+                            subapi: document.getElementById('subapi').value,
+                            subconfig: document.getElementById('subconfig').value,
+                            nat64: document.getElementById('nat64').value
+                        };
 
-                    if (response.ok) {
-                        saveStatus.textContent = '✅ 保存成功';
-                        setTimeout(() => {
-                            saveStatus.textContent = '';
-                        }, 3000);
-                    } else {
-                        throw new Error('保存失败');
+                        const response = await fetch(window.location.href + '?type=advanced', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(advancedSettings)
+                        });
+
+                        if (response.ok) {
+                            saveStatus.textContent = '✅ 保存成功';
+                            setTimeout(() => {
+                                saveStatus.textContent = '';
+                            }, 3000);
+                        } else {
+                            throw new Error('保存失败: ' + await response.text());
+                        }
+                    } catch (error) {
+                        saveStatus.textContent = '❌ ' + error.message;
+                        console.error('保存设置时发生错误:', error);
                     }
-                } catch (error) {
-                    const saveStatus = document.getElementById('saveStatus');
-                    saveStatus.textContent = '❌ ' + error.message;
-                    console.error('保存时发生错误:', error);
-                } finally {
-                    button.disabled = false;
                 }
-            }
-
-            function toggleNotice() {
-                const noticeContent = document.getElementById('noticeContent');
-                const noticeToggle = document.getElementById('noticeToggle');
-                if (noticeContent.style.display === 'none') {
-                    noticeContent.style.display = 'block';
-                    noticeToggle.textContent = 'ℹ️ 注意事项 ∧';
-                } else {
-                    noticeContent.style.display = 'none';
-                    noticeToggle.textContent = 'ℹ️ 注意事项 ∨';
-                }
-            }
-
-            function toggleAdvancedSettings() {
-                const content = document.getElementById('advanced-settings-content');
-                const toggle = document.getElementById('advanced-settings-toggle');
-                if (content.style.display === 'none' || !content.style.display) {
-                    content.style.display = 'block';
-                    toggle.textContent = '∧';
-                } else {
-                    content.style.display = 'none';
-                    toggle.textContent = '∨';
-                }
-            }
-
-            // 修改保存设置函数
-            async function saveSettings() {
-                const saveStatus = document.getElementById('settings-save-status');
-                saveStatus.textContent = '保存中...';
-                
-                try {
-                    const advancedSettings = {
-                        proxyip: document.getElementById('proxyip').value,
-                        socks5: document.getElementById('socks5').value,
-                        httpproxy: document.getElementById('httpproxy').value,
-                        sub: document.getElementById('sub').value,
-                        subapi: document.getElementById('subapi').value,
-                        subconfig: document.getElementById('subconfig').value,
-                        nat64: document.getElementById('nat64').value
-                    };
-
-                    const response = await fetch(window.location.href + '?type=advanced', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(advancedSettings)
-                    });
-
-                    if (response.ok) {
-                        saveStatus.textContent = '✅ 保存成功';
-                        setTimeout(() => {
-                            saveStatus.textContent = '';
-                        }, 3000);
-                    } else {
-                        throw new Error('保存失败: ' + await response.text());
-                    }
-                } catch (error) {
-                    saveStatus.textContent = '❌ ' + error.message;
-                    console.error('保存设置时发生错误:', error);
-                }
-            }
             </script>
         </body>
         </html>
