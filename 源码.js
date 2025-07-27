@@ -1,5 +1,4 @@
 
-
 import { connect } from 'cloudflare:sockets';
 
 let userID = '';
@@ -339,7 +338,7 @@ async function statusPage() {
                 --bg-color: #f4f7f9;
                 --card-bg-color: #ffffff;
                 --text-color: #333;
-                --primary-color: #2dce89; /* Green for operational */
+                --primary-color: #0d6efd;
                 --secondary-color: #8898aa;
                 --border-color: #e9ecef;
                 --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -1925,23 +1924,14 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 				<title>${FileName} 配置信息</title>
 				<style>
 					:root {
-						--primary-color: #4CAF50;
-						--secondary-color: #45a049;
+						--primary-color: #0d6efd;
+						--secondary-color: #0b5ed7;
 						--border-color: #e0e0e0;
-						--text-color: #333;
+						--text-color: #212529;
 						--background-color: #f5f5f5;
 						--section-bg: #ffffff;
-						--link-color: #0066cc;
-					}
-
-					body.dark-mode {
-						--primary-color: #2dce89;
-						--secondary-color: #2dce89;
-						--border-color: #333;
-						--text-color: #f5f5f5;
-						--background-color: #121212;
-						--section-bg: #1e1e1e;
-						--link-color: #8ab4f8;
+						--link-color: #1a0dab;
+						--visited-link-color: #6c00a2;
 					}
 
 					body {
@@ -1957,6 +1947,10 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 					a {
 						color: var(--link-color);
 						text-decoration: none;
+					}
+
+					a:visited {
+						color: var(--visited-link-color);
 					}
 
 					a:hover {
@@ -1982,7 +1976,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 
 					.section-title {
 						font-size: 1.2em;
-						color: var(--primary-color);
+						color: var(--text-color);
 						margin-bottom: 15px;
 						padding-bottom: 10px;
 						border-bottom: 2px solid var(--border-color);
@@ -2002,14 +1996,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 						border-radius: 6px;
 						border: 1px solid var(--border-color);
 						word-break: break-all;
-					}
-
-					body.dark-mode .subscription-link {
-						background: #2a2a2a;
-					}
-
-					.subscription-link a {
-						color: var(--link-color);
 					}
 
 					.qrcode-container {
@@ -2032,11 +2018,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 						margin: 10px 0;
 						border-radius: 0 8px 8px 0;
 					}
-					
-					body.dark-mode .notice-content {
-						background: #2a2a2a;
-					}
-					
+
 					.config-info {
 						background: #f8f9fa;
 						padding: 15px;
@@ -2045,16 +2027,12 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 						font-size: 13px;
 						overflow-x: auto;
 					}
-					
-					body.dark-mode .config-info {
-						background: #2a2a2a;
-					}
 
 					.copy-button {
 						display: inline-block;
 						padding: 6px 12px;
 						background: var(--primary-color);
-						color: white;
+						color: #fff;
 						border: none;
 						border-radius: 4px;
 						cursor: pointer;
@@ -2065,64 +2043,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 					.copy-button:hover {
 						background: var(--secondary-color);
 					}
-					
-					.theme-switch-wrapper {
-						display: flex;
-						align-items: center;
-						position: fixed;
-						top: 15px;
-						right: 15px;
-					}
-
-					.theme-switch {
-						display: inline-block;
-						height: 34px;
-						position: relative;
-						width: 60px;
-					}
-
-					.theme-switch input {
-						display:none;
-					}
-
-					.slider {
-						background-color: #ccc;
-						bottom: 0;
-						cursor: pointer;
-						left: 0;
-						position: absolute;
-						right: 0;
-						top: 0;
-						transition: .4s;
-					}
-
-					.slider:before {
-						background-color: #fff;
-						bottom: 4px;
-						content: "";
-						height: 26px;
-						left: 4px;
-						position: absolute;
-						transition: .4s;
-						width: 26px;
-					}
-
-					input:checked + .slider {
-						background-color: var(--primary-color);
-					}
-
-					input:checked + .slider:before {
-						transform: translateX(26px);
-					}
-
-					.slider.round {
-						border-radius: 34px;
-					}
-
-					.slider.round:before {
-						border-radius: 50%;
-					}
-
 
 					@media (max-width: 768px) {
 						body {
@@ -2140,12 +2060,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 				</style>
 			</head>
 			<body>
-				<div class="theme-switch-wrapper">
-					<label class="theme-switch" for="checkbox">
-						<input type="checkbox" id="checkbox" />
-						<div class="slider round"></div>
-					</label>
-				</div>
 				<div class="container">
 					<div class="section">
 						<div class="section-title">📋 订阅信息</div>
@@ -2273,30 +2187,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 							noticeToggle.textContent = '实用订阅技巧 ∨';
 						}
 					}
-					
-					const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
-					const currentTheme = localStorage.getItem('theme');
-
-					if (currentTheme) {
-						document.body.classList.add(currentTheme);
-					
-						if (currentTheme === 'dark-mode') {
-							toggleSwitch.checked = true;
-						}
-					}
-
-					function switchTheme(e) {
-						if (e.target.checked) {
-							document.body.classList.add('dark-mode');
-							localStorage.setItem('theme', 'dark-mode');
-						} else {
-							document.body.classList.remove('dark-mode');
-							localStorage.setItem('theme', 'light-mode');
-						}    
-					}
-
-					toggleSwitch.addEventListener('change', switchTheme, false);
-
 				</script>
 			</body>
 			</html>
@@ -2852,21 +2742,14 @@ async function handleGetRequest(env, txt) {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
                 :root {
-                    --primary-color: #4CAF50;
-                    --secondary-color: #45a049;
+                    --primary-color: #0d6efd;
+                    --secondary-color: #0b5ed7;
                     --border-color: #e0e0e0;
-                    --text-color: #333;
+                    --text-color: #212529;
                     --background-color: #f5f5f5;
-					--link-color: #0066cc;
-                }
-
-                body.dark-mode {
-                    --primary-color: #2dce89;
-                    --secondary-color: #2dce89;
-                    --border-color: #333;
-                    --text-color: #f5f5f5;
-                    --background-color: #121212;
-					--link-color: #8ab4f8;
+                    --section-bg: white;
+                    --link-color: #1a0dab;
+                    --visited-link-color: #6c00a2;
                 }
 
                 body {
@@ -2876,29 +2759,28 @@ async function handleGetRequest(env, txt) {
                     line-height: 1.6;
                     color: var(--text-color);
                     background-color: var(--background-color);
-                    transition: background-color 0.3s, color 0.3s;
                 }
-				
-				a {
-					color: var(--link-color);
-					text-decoration: none;
-				}
 
-				a:hover {
-					text-decoration: underline;
-				}
+                a {
+                    color: var(--link-color);
+                    text-decoration: none;
+                }
+
+                a:visited {
+                    color: var(--visited-link-color);
+                }
+
+                a:hover {
+                    text-decoration: underline;
+                }
 
                 .container {
                     max-width: 1000px;
                     margin: 0 auto;
-                    background: var(--section-bg, white);
+                    background: var(--section-bg);
                     padding: 25px;
                     border-radius: 10px;
                     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }
-                
-                body.dark-mode .container {
-                    background: #1e1e1e;
                 }
 
                 .title {
@@ -2926,23 +2808,19 @@ async function handleGetRequest(env, txt) {
                     line-height: 1.5;
                     resize: vertical;
                     transition: border-color 0.3s ease;
-                    background-color: var(--section-bg, white);
+                    background-color: var(--section-bg);
                     color: var(--text-color);
                 }
-                
-                body.dark-mode .editor {
-                    background-color: #2a2a2a;
-                }
-
 
                 .editor:focus {
                     outline: none;
                     border-color: var(--primary-color);
-                    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+                    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.1);
                 }
 
                 .button-group {
                     display: flex;
+                    align-items: center;
                     gap: 12px;
                     margin-top: 15px;
                 }
@@ -2964,7 +2842,7 @@ async function handleGetRequest(env, txt) {
 
                 .btn-primary {
                     background: var(--primary-color);
-                    color: white;
+                    color: #fff;
                 }
 
                 .btn-primary:hover:not(:disabled) {
@@ -2972,16 +2850,15 @@ async function handleGetRequest(env, txt) {
                 }
 
                 .btn-secondary {
-                    background: #666;
-                    color: white;
+                    background: #6c757d;
+                    color: #fff;
                 }
 
                 .btn-secondary:hover:not(:disabled) {
-                    background: #555;
+                    background: #5c636a;
                 }
 
                 .save-status {
-                    margin-left: 10px;
                     font-size: 14px;
                     color: #666;
                 }
@@ -3001,10 +2878,6 @@ async function handleGetRequest(env, txt) {
                     margin: 10px 0;
                     border-radius: 0 8px 8px 0;
                 }
-                
-                body.dark-mode .notice-content {
-						background: #2a2a2a;
-				}
 
                 .divider {
                     height: 1px;
@@ -3019,10 +2892,6 @@ async function handleGetRequest(env, txt) {
                     border-radius: 8px;
                     border: 1px solid var(--border-color);
                 }
-                
-                 body.dark-mode .advanced-settings {
-						background: #2a2a2a;
-				}
 
                 .advanced-settings-header {
                     display: flex;
@@ -3038,7 +2907,7 @@ async function handleGetRequest(env, txt) {
 
                 .setting-item {
                     margin-bottom: 10px;
-                    border: 1px solid #ddd;
+                    border: 1px solid var(--border-color);
                     border-radius: 6px;
                     overflow: hidden;
                 }
@@ -3052,25 +2921,18 @@ async function handleGetRequest(env, txt) {
                     cursor: pointer;
                     font-weight: 500;
                 }
-                
-                 body.dark-mode .setting-header {
-						background: #333;
-				}
 
                 .setting-content {
-                    display: none; /* Initially hidden */
+                    display: none;
                     padding: 15px;
                     background-color: #fafafa;
                 }
-                
-                 body.dark-mode .setting-content {
-						background: #222;
-				}
-				 
-				 body.dark-mode .setting-content a {
-					color: var(--link-color) !important;
-				 }
-				 
+
+                 .setting-content p {
+                     margin: 5px 0;
+                     color: #666;
+                 }
+
                 .setting-editor {
                     width: 100%;
                     min-height: 80px;
@@ -3082,76 +2944,21 @@ async function handleGetRequest(env, txt) {
                     font-family: Monaco, Consolas, "Courier New", monospace;
                     font-size: 14px;
                     resize: vertical;
-                    background-color: var(--background-color);
+                    background-color: #fff;
                     color: var(--text-color);
                 }
 
-                .theme-switch-wrapper {
-						display: flex;
-						align-items: center;
-						position: fixed;
-						top: 15px;
-						right: 15px;
-					}
-
-					.theme-switch {
-						display: inline-block;
-						height: 34px;
-						position: relative;
-						width: 60px;
-					}
-
-					.theme-switch input {
-						display:none;
-					}
-
-					.slider {
-						background-color: #ccc;
-						bottom: 0;
-						cursor: pointer;
-						left: 0;
-						position: absolute;
-						right: 0;
-						top: 0;
-						transition: .4s;
-					}
-
-					.slider:before {
-						background-color: #fff;
-						bottom: 4px;
-						content: "";
-						height: 26px;
-						left: 4px;
-						position: absolute;
-						transition: .4s;
-						width: 26px;
-					}
-
-					input:checked + .slider {
-						background-color: var(--primary-color);
-					}
-
-					input:checked + .slider:before {
-						transform: translateX(26px);
-					}
-
-					.slider.round {
-						border-radius: 34px;
-					}
-
-					.slider.round:before {
-						border-radius: 50%;
-					}
+                .setting-editor::placeholder {
+                    color: #aaa;
+                }
 
                 @media (max-width: 768px) {
                     body {
                         padding: 10px;
                     }
-
                     .container {
                         padding: 15px;
                     }
-
                     .editor {
                         height: 400px;
                     }
@@ -3159,12 +2966,6 @@ async function handleGetRequest(env, txt) {
             </style>
         </head>
         <body>
-            <div class="theme-switch-wrapper">
-                <label class="theme-switch" for="checkbox">
-                    <input type="checkbox" id="checkbox" />
-                    <div class="slider round"></div>
-                </label>
-            </div>
             <div class="container">
                 <div class="title">📝 ${FileName} 优选订阅列表</div>
 
@@ -3179,7 +2980,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>PROXYIP 设置</strong></span>
                             </div>
                             <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">每行一个IP，格式：IP:端口(可不添加端口)</p>
+                                <p>每行一个IP，格式：IP:端口(可不添加端口)</p>
                                 <textarea id="proxyip" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E0NDMKcHJveHkuZXhhbXBsZS5jb20lM0E4NDQz'))}">${proxyIPContent}</textarea>
                             </div>
                         </div>
@@ -3190,7 +2991,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>SOCKS5 设置</strong></span>
                             </div>
                             <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                                <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
                                 <textarea id="socks5" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${socks5Content}</textarea>
                             </div>
                         </div>
@@ -3201,7 +3002,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>HTTP 设置</strong></span>
                             </div>
                             <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                                <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
                                 <textarea id="httpproxy" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXI6cGFzc0AxLjIuMy40OjgwODAKMS4yLjMuNDo4MDgw'))}">${httpProxyContent}</textarea>
                             </div>
                         </div>
@@ -3212,7 +3013,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>SUB 设置</strong> (优选订阅生成器)</span>
                             </div>
                             <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">只支持单个优选订阅生成器地址</p>
+                                <p>只支持单个优选订阅生成器地址</p>
                                 <textarea id="sub" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}">${subContent}</textarea>
                             </div>
                         </div>
@@ -3223,7 +3024,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>SUBAPI 设置</strong> (订阅转换后端)</span>
                             </div>
                             <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">订阅转换后端地址</p>
+                                <p>订阅转换后端地址</p>
                                 <textarea id="subapi" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmFwaS52MS5tawpzdWIueGV0b24uZGV2'))}">${subAPIContent}</textarea>
                             </div>
                         </div>
@@ -3234,7 +3035,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>SUBCONFIG 设置</strong> (订阅转换配置)</span>
                             </div>
                             <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">订阅转换配置文件地址</p>
+                                <p>订阅转换配置文件地址</p>
                                 <textarea id="subconfig" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRkFDTDRTU1IlMkZBQ0w0U1NSJTI1MkZtYXN0ZXIlMkZDbGFzaCUyRmNvbmZpZyUyRkFDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ=='))}">${subConfigContent}</textarea>
                             </div>
                         </div>
@@ -3245,7 +3046,7 @@ async function handleGetRequest(env, txt) {
                                 <span><strong>NAT64/DNS64 设置</strong></span>
                             </div>
                              <div class="setting-content">
-                                <p style="margin: 5px 0; color: #666;">
+                                <p>
                                     <a id="nat64-link" target="_blank">自行查询</a>
                                 </p>
                                 <textarea id="nat64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBJTBBZG5zNjQuZXhhbXBsZS5jb20lMEEyYTAxJTNBNGY4JTNBYzJjJTNBMTIzZiUzQSUzQSUyRjk2'))}">${nat64Content}</textarea>
@@ -3312,7 +3113,7 @@ async function handleGetRequest(env, txt) {
                         });
 
                         if (response.ok) {
-                            saveStatus.textContent = '✅ 保存成功';
+                            saveStatus.textContent = '保存成功';
                             setTimeout(() => {
                                 saveStatus.textContent = '';
                             }, 3000);
@@ -3383,7 +3184,7 @@ async function handleGetRequest(env, txt) {
                         });
 
                         if (response.ok) {
-                            saveStatus.textContent = '✅ 保存成功';
+                            saveStatus.textContent = '保存成功';
                             setTimeout(() => {
                                 saveStatus.textContent = '';
                             }, 3000);
@@ -3395,29 +3196,6 @@ async function handleGetRequest(env, txt) {
                         console.error('保存设置时发生错误:', error);
                     }
                 }
-
-                const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
-                const currentTheme = localStorage.getItem('theme');
-
-                if (currentTheme) {
-                    document.body.classList.add(currentTheme);
-                
-                    if (currentTheme === 'dark-mode') {
-                        toggleSwitch.checked = true;
-                    }
-                }
-
-                function switchTheme(e) {
-                    if (e.target.checked) {
-                        document.body.classList.add('dark-mode');
-                        localStorage.setItem('theme', 'dark-mode');
-                    } else {
-                        document.body.classList.remove('dark-mode');
-                        localStorage.setItem('theme', 'light-mode');
-                    }    
-                }
-
-                toggleSwitch.addEventListener('change', switchTheme, false);
             </script>
         </body>
         </html>
