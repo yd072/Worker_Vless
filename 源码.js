@@ -1182,7 +1182,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         name: '内置的默认 NAT64',
         execute: async () => {
             if (!DNS64Server || DNS64Server.trim() === '') {
-                DNS64Server = atob("ZG5zNjQuY21pLnp0dmkub3Jn");;
+                DNS64Server = atob("ZG5zNjQuY21pLnp0dmkub3Jn");
             }
             const nat64Address = await resolveToIPv6(addressRemote);
             return createConnection(`[${nat64Address}]`, 443);
