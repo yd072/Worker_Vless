@@ -3277,7 +3277,7 @@ async function handleGetRequest(env, txt) {
                         <!-- PROXYIP设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>PROXYIP 设置</strong></span>
+                                <span><strong>PROXYIP </strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>每行一个IP，格式：IP:端口(可不添加端口)</p>
@@ -3288,7 +3288,7 @@ async function handleGetRequest(env, txt) {
                         <!-- SOCKS5设置 -->
                         <div class="setting-item">
                              <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SOCKS5 设置</strong></span>
+                                <span><strong>SOCKS5 </strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
@@ -3299,7 +3299,7 @@ async function handleGetRequest(env, txt) {
                         <!-- HTTP Proxy 设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>HTTP 设置</strong></span>
+                                <span><strong>HTTP </strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
@@ -3310,7 +3310,7 @@ async function handleGetRequest(env, txt) {
                         <!-- SUB设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUB 设置</strong> (优选订阅生成器)</span>
+                                <span><strong>SUB </strong> (优选订阅生成器)</span>
                             </div>
                             <div class="setting-content">
                                 <p>只支持单个优选订阅生成器地址</p>
@@ -3321,7 +3321,7 @@ async function handleGetRequest(env, txt) {
                         <!-- SUBAPI设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUBAPI 设置</strong> (订阅转换后端)</span>
+                                <span><strong>SUBAPI </strong> (订阅转换后端)</span>
                             </div>
                             <div class="setting-content">
                                 <p>订阅转换后端地址</p>
@@ -3332,7 +3332,7 @@ async function handleGetRequest(env, txt) {
                         <!-- SUBCONFIG设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUBCONFIG 设置</strong> (订阅转换配置)</span>
+                                <span><strong>SUBCONFIG </strong> (订阅转换配置)</span>
                             </div>
                             <div class="setting-content">
                                 <p>订阅转换配置文件地址</p>
@@ -3343,7 +3343,7 @@ async function handleGetRequest(env, txt) {
                         <!-- NAT64/DNS64 设置 -->
                         <div class="setting-item">
                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>NAT64/DNS64 设置</strong></span>
+                                <span><strong>NAT64/DNS64 </strong></span>
                             </div>
                              <div class="setting-content">
                                 <p>
@@ -3361,7 +3361,7 @@ async function handleGetRequest(env, txt) {
 						<!-- HTTPS Ports Setting -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>随机节点 TLS 端口设置</strong></span>
+                                <span><strong>随机节点 TLS 端口</strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>请选择用于随机生成 TLS 节点时使用的端口。</p>
@@ -3374,7 +3374,7 @@ async function handleGetRequest(env, txt) {
                         <!-- HTTP Ports Setting -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>随机节点 noTLS 端口设置</strong></span>
+                                <span><strong>随机节点 noTLS 端口</strong></span>
                             </div>
                             <div class="setting-content">
                                 <div class="switch-container">
