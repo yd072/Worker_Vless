@@ -961,7 +961,7 @@ async function handleDNSQuery(udpChunk, webSocket, secureProtoResponseHeader, lo
                     log(`关闭TCP连接出错: ${e.message}`);
                 }
             }
-        }, 3000);
+        }, 5000);
 
         try {
             // 使用Promise.race进行超时控制
@@ -1073,7 +1073,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 
 			const tcpSocket = await Promise.race([
 				tcpSocketPromise,
-				new Promise((_, reject) => setTimeout(() => reject(new Error('连接超时')), 3000))
+				new Promise((_, reject) => setTimeout(() => reject(new Error('连接超时')), 5000))
 			]);
 
 			clearTimeout(timeoutId);
@@ -1280,7 +1280,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
             // 设置超时，如果3秒内没收到任何数据则中止
             controller.abort('连接超时');
         }
-    }, 3000);
+    }, 5000);
 
     try {
         const writeData = async (chunk) => {
