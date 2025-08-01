@@ -39,8 +39,8 @@ let ChatID = '';
 let proxyhosts = [];
 let proxyhostsURL = '';
 let RproxyIP = 'false';
-let httpsPorts = ["2053", "2083", "2087", "2096", "8443"];
-let httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
+let httpsPorts = ["443", "2053", "2083", "2087", "2096", "8443"];
+let httpPorts = ["80", "8080", "8880", "2052", "2082", "2086", "2095"];
 let 有效时间 = 7;
 let 更新时间 = 3;
 let userIDLow;
@@ -122,6 +122,15 @@ async function loadConfigurations(env) {
                 if (settings.subapi && settings.subapi.trim()) subConverter = settings.subapi.trim().split('\n')[0];
                 if (settings.subconfig && settings.subconfig.trim()) subConfig = settings.subconfig.trim().split('\n')[0];
                 if (settings.nat64 && settings.nat64.trim()) DNS64Server = settings.nat64.trim().split('\n')[0];
+				if (settings.httpsports && settings.httpsports.trim()) {
+                    httpsPorts = await 整理(settings.httpsports);
+                }
+                if (settings.httpports && settings.httpports.trim()) {
+                    httpPorts = await 整理(settings.httpports);
+                }
+				if (settings.notls) {
+                    noTLS = settings.notls;
+                }
             }
 
             const preferList = await env.KV.get('ADD.txt');
@@ -1742,7 +1751,7 @@ function 配置信息(UUID, 域名地址) {
 	const SNI = 域名地址;
 	const 指纹 = 'randomized';
 
-	if (域名地址.includes('.workers.dev')) {
+	if (域名地址.includes('.workers.dev') || noTLS === 'true') {
 		地址 = atob('dmlzYS5jbg==');
 		端口 = 80;
 		传输层安全 = ['', false];
@@ -1801,8 +1810,8 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 	    let counter = 1;
 	    const totalIPsToGenerate = 10;
 
-	    if (hostName.includes("worker") || hostName.includes("notls")) {
-		    const randomPorts = httpPorts.concat('80');
+	    if (hostName.includes("worker") || hostName.includes("notls") || noTLS === 'true') {
+		    const randomPorts = httpPorts.length > 0 ? httpPorts : ['80'];
 		    for (let i = 0; i < totalIPsToGenerate; i++) {
 			    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
 			    const randomIP = generateRandomIPFromCIDR(randomCIDR);
@@ -1810,7 +1819,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			    addressesnotls.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
 		    }
 	    } else {
-		    const randomPorts = httpsPorts.concat('443');
+		    const randomPorts = httpsPorts.length > 0 ? httpsPorts : ['443'];
 		        for (let i = 0; i < totalIPsToGenerate; i++) {
 			    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
 			    const randomIP = generateRandomIPFromCIDR(randomCIDR);
@@ -2033,7 +2042,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 						cursor: pointer;
 						font-size: 14px;
 						margin: 5px 0;
-						transition: background-color 0.2s;
+						transition: background-color: 0.2s;
 					}
 
 					.copy-button:hover {
@@ -2295,14 +2304,14 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		let newAddressesnotlsapi = [];
 		let newAddressesnotlscsv = [];
 
-		if (hostName.includes(".workers.dev")) {
+		if (hostName.includes(".workers.dev") || noTLS === 'true') {
 			noTLS = 'true';
 			fakeHostName = `${fakeHostName}.workers.dev`;
 			newAddressesnotlsapi = await 整理优选列表(addressesnotlsapi);
 			newAddressesnotlscsv = await 整理测速结果('FALSE');
 		} else if (hostName.includes(".pages.dev")) {
 			fakeHostName = `${fakeHostName}.pages.dev`;
-		} else if (hostName.includes("worker") || hostName.includes("notls") || noTLS == 'true') {
+		} else if (hostName.includes("worker") || hostName.includes("notls")) {
 			noTLS = 'true';
 			fakeHostName = `notls${fakeHostName}.net`;
 			newAddressesnotlsapi = await 整理优选列表(addressesnotlsapi);
@@ -2562,9 +2571,9 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 				addressid = match[3] || address;
 			}
 
-			const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
+			const localHttpPorts = httpPorts.length > 0 ? httpPorts : ["80", "8080", "8880", "2052", "2082", "2086", "2095"];
 			if (!isValidIPv4(address) && port == "-1") {
-				for (let httpPort of httpPorts) {
+				for (let httpPort of localHttpPorts) {
 					if (address.includes(httpPort)) {
 						port = httpPort;
 						break;
@@ -2624,9 +2633,10 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 			port = match[2] || port;
 			addressid = match[3] || address;
 		}
-
+		
+		const localHttpsPorts = httpsPorts.length > 0 ? httpsPorts : ["443", "2053", "2083", "2087", "2096", "8443"];
 		if (!isValidIPv4(address) && port == "-1") {
-			for (let httpsPort of httpsPorts) {
+			for (let httpsPort of localHttpsPorts) {
 				if (address.includes(httpsPort)) {
 					port = httpsPort;
 					break;
@@ -2804,6 +2814,9 @@ async function handleGetRequest(env, txt) {
     let subAPIContent = '';
     let subConfigContent = '';
     let nat64Content = '';
+	let httpsPortsContent = '';
+    let httpPortsContent = '';
+    let noTLSContent = 'false';
 
     if (hasKV) {
         try {
@@ -2819,12 +2832,43 @@ async function handleGetRequest(env, txt) {
                 subAPIContent = settings.subapi || '';
                 subConfigContent = settings.subconfig || '';
                 nat64Content = settings.nat64 || '';
-            }
+				httpsPortsContent = settings.httpsports || httpsPorts.join(',');
+                httpPortsContent = settings.httpports || httpPorts.join(',');
+                noTLSContent = settings.notls || 'false';
+            } else {
+				httpsPortsContent = httpsPorts.join(',');
+				httpPortsContent = httpPorts.join(',');
+			}
         } catch (error) {
             console.error('读取KV时发生错误:', error);
             content = '读取数据时发生错误: ' + error.message;
         }
     }
+	
+	// 为端口选择框生成HTML
+    const defaultHttpsPorts = ["443", "2053", "2083", "2087", "2096", "8443"];
+    const defaultHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086", "2095"];
+
+    const savedHttpsPorts = httpsPortsContent.split(',');
+    const allHttpsPorts = [...new Set([...defaultHttpsPorts, ...savedHttpsPorts])].filter(p => p.trim() !== "");
+    const httpsCheckboxesHTML = allHttpsPorts.map(port => {
+        const isChecked = savedHttpsPorts.includes(port.trim());
+        return `<div class="checkbox-item">
+                    <input type="checkbox" id="https-port-${port.trim()}" name="httpsports" value="${port.trim()}" ${isChecked ? 'checked' : ''}>
+                    <label for="https-port-${port.trim()}">${port.trim()}</label>
+                </div>`;
+    }).join('\n');
+
+    const savedHttpPorts = httpPortsContent.split(',');
+    const allHttpPorts = [...new Set([...defaultHttpPorts, ...savedHttpPorts])].filter(p => p.trim() !== "");
+    const httpCheckboxesHTML = allHttpPorts.map(port => {
+        const isChecked = savedHttpPorts.includes(port.trim());
+        return `<div class="checkbox-item">
+                    <input type="checkbox" id="http-port-${port.trim()}" name="httpports" value="${port.trim()}" ${isChecked ? 'checked' : ''}>
+                    <label for="http-port-${port.trim()}">${port.trim()}</label>
+                </div>`;
+    }).join('\n');
+
 
     const html = `
         <!DOCTYPE html>
@@ -2938,7 +2982,7 @@ async function handleGetRequest(env, txt) {
                     line-height: 1.5;
                     resize: vertical;
                 }
-
+				
                 .button-group {
                     display: flex;
 					align-items: center;
@@ -3071,7 +3115,7 @@ async function handleGetRequest(env, txt) {
 				}
 				 
 				 .setting-content p {
-					 margin: 5px 0;
+					 margin: 5px 0 10px 0;
 					 color: #666;
 				 }
 
@@ -3099,6 +3143,35 @@ async function handleGetRequest(env, txt) {
 				html.dark-mode .setting-editor::placeholder {
 					color: #666;
 				}
+				
+				.switch-container {
+					display: flex;
+					align-items: center;
+					gap: 10px;
+                    margin-bottom: 15px;
+				}
+                
+                .checkbox-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+                    gap: 10px;
+                    margin-top: 10px;
+                }
+
+                .checkbox-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                }
+
+                .checkbox-item input[type="checkbox"] {
+                    cursor: pointer;
+                }
+                
+                .checkbox-item label {
+                    cursor: pointer;
+                    user-select: none;
+                }
 
                 .theme-switch-wrapper {
 						display: flex;
@@ -3168,6 +3241,10 @@ async function handleGetRequest(env, txt) {
 
                     .editor {
                         height: 400px;
+                    }
+
+                    .checkbox-grid {
+                        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
                     }
                 }
             </style>
@@ -3280,6 +3357,39 @@ async function handleGetRequest(env, txt) {
   							const decodedURL = atob(encodedURL);
   							document.getElementById('nat64-link').setAttribute('href', decodedURL);
 						</script>
+						
+						<!-- HTTPS Ports Setting -->
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>随机节点 TLS 端口设置</strong></span>
+                            </div>
+                            <div class="setting-content">
+                                <p>请选择用于随机生成 TLS 节点时使用的端口。</p>
+                                <div class="checkbox-grid" id="httpsports-grid">
+                                    ${httpsCheckboxesHTML}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- HTTP Ports Setting -->
+                        <div class="setting-item">
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>随机节点 noTLS 端口设置</strong></span>
+                            </div>
+                            <div class="setting-content">
+                                <div class="switch-container">
+                                    <label class="theme-switch" for="notls-checkbox">
+                                        <input type="checkbox" id="notls-checkbox" ${noTLSContent === 'true' ? 'checked' : ''}>
+                                        <div class="slider round"></div>
+                                    </label>
+                                    <span>启用 noTLS (将不使用 TLS 加密)</span>
+                                </div>
+                                <p>请选择用于随机生成 noTLS 节点时使用的端口。</p>
+                                <div class="checkbox-grid" id="httpports-grid">
+                                    ${httpCheckboxesHTML}
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- 统一的保存按钮 -->
                         <div style="margin-top: 20px;">
@@ -3399,6 +3509,9 @@ async function handleGetRequest(env, txt) {
                     saveStatus.textContent = '保存中...';
 
                     try {
+						const selectedHttpsPorts = Array.from(document.querySelectorAll('input[name="httpsports"]:checked')).map(cb => cb.value).join(',');
+						const selectedHttpPorts = Array.from(document.querySelectorAll('input[name="httpports"]:checked')).map(cb => cb.value).join(',');
+
                         const advancedSettings = {
                             proxyip: document.getElementById('proxyip').value,
                             socks5: document.getElementById('socks5').value,
@@ -3406,7 +3519,10 @@ async function handleGetRequest(env, txt) {
                             sub: document.getElementById('sub').value,
                             subapi: document.getElementById('subapi').value,
                             subconfig: document.getElementById('subconfig').value,
-                            nat64: document.getElementById('nat64').value
+                            nat64: document.getElementById('nat64').value,
+							notls: document.getElementById('notls-checkbox').checked.toString(),
+							httpsports: selectedHttpsPorts,
+                            httpports: selectedHttpPorts
                         };
 
                         const response = await fetch(window.location.href + '?type=advanced', {
