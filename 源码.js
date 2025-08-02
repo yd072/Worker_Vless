@@ -1,6 +1,12 @@
 
 import { connect } from 'cloudflare:sockets';
 
+// --- 全局配置缓存 ---
+let cachedSettings = null;       // 用于存储从KV读取的配置对象
+let cacheTimestamp = 0;          // 存储上次缓存的时间戳
+const CACHE_TTL = 10 * 60 * 1000; // 10分钟有效期
+// --------------------
+
 let userID = '';
 let proxyIP = '';
 //let sub = '';
@@ -80,11 +86,15 @@ const utils = {
  * @param {any} env
  */
 async function loadConfigurations(env) {
-    // 1. 从环境变量加载，如果存在则覆盖默认值
+    // 1. 检查内存缓存是否有效
+    if (cachedSettings && (Date.now() - cacheTimestamp < CACHE_TTL)) {
+        return; // 缓存命中，直接返回
+    }
+
+    // 2. 从环境变量加载，如果存在则覆盖默认值
     if (env.UUID || env.uuid || env.PASSWORD || env.pswd) userID = env.UUID || env.uuid || env.PASSWORD || env.pswd;
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
     if (env.SOCKS5) socks5Address = env.SOCKS5;
-    // --- [修改] 从环境变量加载 HTTP  ---
     if (env.HTTP) httpProxyAddress = env.HTTP;
     if (env.SUBAPI) subConverter = atob(env.SUBAPI);
     if (env.SUBCONFIG) subConfig = atob(env.SUBCONFIG);
@@ -106,12 +116,18 @@ async function loadConfigurations(env) {
     if (env.TGID) ChatID = env.TGID;
     if (env.SUBEMOJI || env.EMOJI) subEmoji = env.SUBEMOJI || env.EMOJI;
 
-    // 2. 如果存在 KV，则使用 KV 的值覆盖所有之前的值
+    // 3. 如果存在 KV，则使用 KV 的值覆盖所有之前的值
     if (env.KV) {
         try {
             const advancedSettingsJSON = await env.KV.get('settinggs.txt');
             if (advancedSettingsJSON) {
                 const settings = JSON.parse(advancedSettingsJSON);
+                
+                // 将新配置存入内存缓存
+                cachedSettings = settings;
+                cacheTimestamp = Date.now();
+
+                // 使用KV中的配置覆盖当前变量
                 if (settings.proxyip && settings.proxyip.trim()) proxyIP = settings.proxyip;
                 if (settings.socks5 && settings.socks5.trim()) socks5Address = settings.socks5.split('\n')[0].trim();
                 if (settings.httpproxy && settings.httpproxy.trim()) httpProxyAddress = settings.httpproxy.split('\n')[0].trim();
@@ -128,8 +144,6 @@ async function loadConfigurations(env) {
 				if (settings.notls) {
                     noTLS = settings.notls;
                 }
-
-                // --- 从 KV 的 ADD 字段加载优选地址 ---
                 if (settings.ADD) {
                     const 优选地址数组 = await 整理(settings.ADD);
                     const 分类地址 = { 接口地址: new Set(), 链接地址: new Set(), 优选地址: new Set() };
@@ -148,8 +162,7 @@ async function loadConfigurations(env) {
         }
     }
 
-    // 3. 最终处理
-
+    // 4. 最终处理
     if (subConverter.includes("http://")) {
         subConverter = subConverter.split("//")[1];
         subProtocol = 'http';
@@ -164,7 +177,6 @@ async function loadConfigurations(env) {
     socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 	socks5Address = socks5Address.split('//')[1] || socks5Address;
 
-    // --- 解析和启用 HTTP 代理 ---
     if (httpProxyAddress) {
         try {
             parsedHttpProxyAddress = httpProxyAddressParser(httpProxyAddress);
@@ -670,7 +682,7 @@ async function resolveToIPv6(target) {
 export default {
 	async fetch(request, env, ctx) {
 		try {
-            // 1. 统一加载所有配置
+            // 1. 统一加载所有配置 (此函数现在使用内存缓存)
             await loadConfigurations(env);
 
             // 2. 处理动态 UUID
@@ -1102,6 +1114,12 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     async function tryConnectionStrategies(strategies) {
         if (!strategies || strategies.length === 0) {
             log('All connection strategies failed. Closing WebSocket.');
+            
+            // 自愈机制：当所有策略都失败后，清空缓存，强制下一次请求从KV重新加载。
+            log('Invalidating configuration cache due to connection failures.');
+            cachedSettings = null;
+            cacheTimestamp = 0;
+            
             safeCloseWebSocket(webSocket);
             return;
         }
