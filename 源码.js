@@ -1014,19 +1014,6 @@ async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
     };
 }
 
-function mergeData(header, chunk) {
-    if (!header || !chunk) {
-        throw new Error('Invalid input parameters');
-    }
-
-    const totalLength = header.length + chunk.length;
-
-    const merged = new Uint8Array(totalLength);
-    merged.set(header, 0);
-    merged.set(chunk, header.length);
-    return merged;
-}
-
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
 
 	const createConnection = async (address, port, proxyOptions = null) => {
@@ -1179,7 +1166,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     // --- 启动策略链 ---
     await tryConnectionStrategies(connectionStrategies);
 }
-
 
 function processsecureProtoHeader(secureProtoBuffer, userID) {
     if (secureProtoBuffer.byteLength < 24) {
@@ -2726,6 +2712,11 @@ async function handlePostRequest(request, env) {
         // 将合并后的 settings 对象写回 KV
         await env.KV.put('settinggs.txt', JSON.stringify(settings, null, 2));
 
+        // --- 清除内存缓存以实现即时生效 ---
+		cachedSettings = null;
+		cacheTimestamp = 0;
+		console.log("配置已更新，内存缓存已清除。");
+		
         return new Response("保存成功");
     } catch (error) {
         console.error('保存KV时发生错误:', error);
