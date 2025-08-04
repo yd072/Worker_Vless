@@ -867,83 +867,151 @@ async function secureProtoOverWSHandler(request) {
         const timestamp = new Date().toISOString();
         console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
     };
-
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
     const readableWebSocketStream = new WebSocketManager(webSocket, log).makeReadableStream(earlyDataHeader);
 
-    let remoteSocketWrapper = { value: null };
-    let isDns = false;
+    let remoteSocketWrapper = {
+        value: null
+    };
+    let udpStreamProcessed = false;
     const banHostsSet = new Set(banHosts);
+    let secureProtoResponseHeader = null;
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
-            try {
-                if (isDns) {
-                    return handleDNSQuery(chunk, webSocket, null, log);
-                }
-                if (remoteSocketWrapper.value) {
-                    const writer = remoteSocketWrapper.value.writable.getWriter();
-                    await writer.write(chunk);
-                    writer.releaseLock();
-                    return;
-                }
-
-                const {
-                    hasError,
-                    message,
-                    addressType,
-                    portRemote = 443,
-                    addressRemote = '',
-                    rawDataIndex,
-                    secureProtoVersion = new Uint8Array([0, 0]),
-                    isUDP,
-                } = processsecureProtoHeader(chunk, userID);
-
-                address = addressRemote;
-                portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
-                if (hasError) {
-                    throw new Error(message);
-                }
-                if (isUDP) {
-                    if (portRemote === 53) {
-                        isDns = true;
-                    } else {
-                        throw new Error('UDP 代理仅对 DNS（53 端口）启用');
-                    }
-                }
-                const secureProtoResponseHeader = new Uint8Array([secureProtoVersion[0], 0]);
-                const rawClientData = chunk.slice(rawDataIndex);
-
-                if (isDns) {
-                    return handleDNSQuery(rawClientData, webSocket, secureProtoResponseHeader, log);
-                }
-                if (!banHostsSet.has(addressRemote)) {
-                    log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                    handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log);
-                } else {
-                    throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                }
-            } catch (error) {
-                log('处理数据时发生错误', error.message);
-                webSocket.close(1011, '内部错误');
+            if (udpStreamProcessed) {
+                return;
             }
+            if (remoteSocketWrapper.value) {
+                const writer = remoteSocketWrapper.value.writable.getWriter();
+                await writer.write(chunk);
+                writer.releaseLock();
+                return;
+            }
+
+            const {
+                hasError,
+                message,
+                addressType,
+                portRemote = 443,
+                addressRemote = '',
+                rawDataIndex,
+                secureProtoVersion = new Uint8Array([0, 0]),
+                isUDP,
+            } = processsecureProtoHeader(chunk, userID);
+
+            address = addressRemote;
+            portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
+            if (hasError) {
+                throw new Error(message);
+            }
+
+            secureProtoResponseHeader = new Uint8Array([secureProtoVersion[0], 0]);
+            const rawClientData = chunk.slice(rawDataIndex);
+
+            if (isUDP) {
+                // UDP-specific handling
+                if (portRemote === 53) {
+                    const udpHandler = await handleUDPOutBound(webSocket, secureProtoResponseHeader, log);
+                    udpHandler.write(rawClientData);
+                    udpStreamProcessed = true;
+                } else {
+                    // All other UDP traffic is blocked
+                    throw new Error('UDP proxying is only enabled for DNS on port 53');
+                }
+                return;
+            }
+
+            // TCP-specific handling
+            if (banHosts.includes(addressRemote)) {
+                throw new Error('Domain is blocked');
+            }
+            log(`Handling TCP outbound for ${addressRemote}:${portRemote}`);
+            await handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log);
         },
         close() {
-            log(`readableWebSocketStream 已关闭`);
+            log(`readableWebSocketStream is closed`);
         },
         abort(reason) {
-            log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
+            log(`readableWebSocketStream is aborted`, JSON.stringify(reason));
         },
     })).catch((err) => {
-        log('readableWebSocketStream 管道错误', err);
-        webSocket.close(1011, '管道错误');
+        log('readableWebSocketStream pipe error', err);
     });
 
     return new Response(null, {
         status: 101,
-        // @ts-ignore
         webSocket: client,
     });
+}
+
+/**
+ * 处理出站 UDP (DNS over HTTPS) 
+ * @param {import("@cloudflare/workers-types").WebSocket} webSocket 
+ * @param {ArrayBuffer} secureProtoResponseHeader 
+ * @param {(string)=> void} log 
+ */
+async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
+
+    const DOH_URL = 'https://dns.google/dns-query'; //https://cloudflare-dns.com/dns-query
+
+    let issecureProtoHeaderSent = false;
+    let buffer = new Uint8Array(0);
+    const transformStream = new TransformStream({
+        transform(chunk, controller) {
+            const newBuffer = new Uint8Array(buffer.length + chunk.length);
+            newBuffer.set(buffer);
+            newBuffer.set(chunk, buffer.length);
+            buffer = newBuffer;
+            while (buffer.length >= 2) {
+                const udpPacketLength = new DataView(buffer.buffer, buffer.byteOffset, 2).getUint16(0);
+                if (buffer.length >= 2 + udpPacketLength) {
+                    const udpData = buffer.slice(2, 2 + udpPacketLength);
+                    controller.enqueue(udpData);
+                    buffer = buffer.slice(2 + udpPacketLength);
+                } else {
+                    break;
+                }
+            }
+        },
+    });
+
+    transformStream.readable.pipeTo(new WritableStream({
+        async write(chunk) {
+            // 将DNS查询发送到指定的DoH服务器
+            const resp = await fetch(DOH_URL, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/dns-message',
+                },
+                body: chunk,
+            });
+
+            const dnsQueryResult = await resp.arrayBuffer();
+            const udpSize = dnsQueryResult.byteLength;
+            const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
+
+            if (webSocket.readyState === WS_READY_STATE_OPEN) {
+                log(`DoH查询成功，DNS消息长度为: ${udpSize}`);
+                if (issecureProtoHeaderSent) {
+                    webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                } else {
+                    webSocket.send(await new Blob([secureProtoResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                    issecureProtoHeaderSent = true;
+                }
+            }
+        }
+    })).catch((error) => {
+        log('处理DNS UDP时出错: ' + error);
+    });
+
+    const writer = transformStream.writable.getWriter();
+
+    return {
+        write(chunk) {
+            writer.write(chunk);
+        }
+    };
 }
 
 function mergeData(header, chunk) {
@@ -957,110 +1025,6 @@ function mergeData(header, chunk) {
     merged.set(header, 0);
     merged.set(chunk, header.length);
     return merged;
-}
-
-async function handleDNSQuery(udpChunk, webSocket, secureProtoResponseHeader, log) {
-    const DNS_SERVER = { hostname: '8.8.4.4', port: 53 };
-
-    let tcpSocket;
-    const controller = new AbortController();
-    const signal = controller.signal;
-    let timeoutId;
-
-    try {
-        // 设置全局超时
-        timeoutId = setTimeout(() => {
-            controller.abort('DNS query timeout');
-            if (tcpSocket) {
-                try {
-                    tcpSocket.close();
-                } catch (e) {
-                    log(`关闭TCP连接出错: ${e.message}`);
-                }
-            }
-        }, 5000);
-
-        try {
-            // 使用Promise.race进行超时控制
-            tcpSocket = await Promise.race([
-                connect({
-                    hostname: DNS_SERVER.hostname,
-                    port: DNS_SERVER.port,
-                    signal,
-                }),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('DNS连接超时')), 1500)
-                )
-            ]);
-
-            log(`成功连接到DNS服务器 ${DNS_SERVER.hostname}:${DNS_SERVER.port}`);
-
-            // 发送DNS查询
-            const writer = tcpSocket.writable.getWriter();
-            try {
-                await writer.write(udpChunk);
-            } finally {
-                writer.releaseLock();
-            }
-
-            // 简化的数据流处理
-            let secureProtoHeader = secureProtoResponseHeader;
-            const reader = tcpSocket.readable.getReader();
-
-            try {
-                // 使用更高效的循环处理数据
-                while (true) {
-                    const { done, value } = await reader.read();
-
-                    if (done) {
-                        log('DNS数据流处理完成');
-                        break;
-                    }
-
-                    // 检查WebSocket是否仍然开放
-                    if (webSocket.readyState !== WS_READY_STATE_OPEN) {
-                        break;
-                    }
-
-                    try {
-                        // 处理数据包
-                        if (secureProtoHeader) {
-                            const data = mergeData(secureProtoHeader, value);
-                            webSocket.send(data);
-                            secureProtoHeader = null; // 清除header,只在第一个包使用
-                        } else {
-                            webSocket.send(value);
-                        }
-                    } catch (error) {
-                        log(`数据处理错误: ${error.message}`);
-                        throw error;
-                    }
-                }
-            } catch (error) {
-                log(`数据读取错误: ${error.message}`);
-                throw error;
-            } finally {
-                reader.releaseLock();
-            }
-
-        } catch (error) {
-            log(`DNS查询失败: ${error.message}`);
-            throw error;
-        }
-
-    } catch (error) {
-        log(`DNS查询失败: ${error.message}`);
-        safeCloseWebSocket(webSocket);
-    } finally {
-        clearTimeout(timeoutId);
-        if (tcpSocket) {
-            try {
-                tcpSocket.close();
-            } catch (e) {
-                log(`关闭TCP连接出错: ${e.message}`);
-            }
-        }
-    }
 }
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
