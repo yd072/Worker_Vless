@@ -2710,7 +2710,6 @@ async function handlePostRequest(request, env) {
 
         // --- 清除内存缓存以实现即时生效 ---
 		cachedSettings = null;
-		cacheTimestamp = 0;
 		console.log("配置已更新，内存缓存已清除。");
 		
         return new Response("保存成功");
