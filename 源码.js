@@ -3,8 +3,6 @@ import { connect } from 'cloudflare:sockets';
 
 // --- 全局配置缓存 ---
 let cachedSettings = null;       // 用于存储从KV读取的配置对象
-let cacheTimestamp = 0;          // 存储上次缓存的时间戳
-const CACHE_TTL = 10 * 60 * 1000; // 10分钟有效期
 // --------------------
 
 let userID = '';
@@ -86,8 +84,8 @@ const utils = {
  * @param {any} env
  */
 async function loadConfigurations(env) {
-    // 1. 检查内存缓存是否有效
-    if (cachedSettings && (Date.now() - cacheTimestamp < CACHE_TTL)) {
+    // 1. 检查内存缓存
+    if (cachedSettings ) {
         return; // 缓存命中，直接返回
     }
 
@@ -125,7 +123,6 @@ async function loadConfigurations(env) {
                 
                 // 将新配置存入内存缓存
                 cachedSettings = settings;
-                cacheTimestamp = Date.now();
 
                 // 使用KV中的配置覆盖当前变量
                 if (settings.proxyip && settings.proxyip.trim()) proxyIP = settings.proxyip;
@@ -1069,7 +1066,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             // 自愈机制：当所有策略都失败后，清空缓存，强制下一次请求从KV重新加载。
             log('Invalidating configuration cache due to connection failures.');
             cachedSettings = null;
-            cacheTimestamp = 0;
             
             safeCloseWebSocket(webSocket);
             return;
