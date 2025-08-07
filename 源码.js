@@ -1672,17 +1672,20 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
         				].join('.');
     				}
 
-	    function generateRandomIPFromCIDR(cidr) {
-		    const [base, mask] = cidr.split('/');
-        		const baseInt = ipToInt(base);
-        		const maskBits = parseInt(mask, 10);
-        		const hostBits = 32 - maskBits;
-        		const maxHosts = Math.pow(2, hostBits);
-        		const randomOffset = Math.floor(Math.random() * maxHosts);
+        function generateRandomIPFromCIDR(cidr) {
+            const [base, mask] = cidr.split('/');
+                const baseInt = ipToInt(base);
+                const maskBits = parseInt(mask, 10);
+                const hostBits = 32 - maskBits;
+                if (hostBits < 2) {
+                return intToIp(baseInt);
+                }
+                const usableHosts = Math.pow(2, hostBits) - 2;
+                const randomOffset = Math.floor(Math.random() * usableHosts) + 1;
 
-        		const randomIPInt = baseInt + randomOffset;
-        	return intToIp(randomIPInt);
-	    }
+                const randomIPInt = baseInt + randomOffset;
+            return intToIp(randomIPInt);
+        }
 
 	    let counter = 1;
 	    const totalIPsToGenerate = 10;
