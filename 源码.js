@@ -117,9 +117,9 @@ async function loadConfigurations(env) {
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
     if (env.SOCKS5) socks5Address = env.SOCKS5;
     if (env.HTTP) httpProxyAddress = env.HTTP;
-    if (env.SUBAPI) subConverter = (env.SUBAPI);
-    if (env.SUBCONFIG) subConfig = (env.SUBCONFIG);
-    if (env.SUBNAME) FileName = (env.SUBNAME);
+    if (env.SUBAPI) subConverter = env.SUBAPI;
+    if (env.SUBCONFIG) subConfig = env.SUBCONFIG;
+    if (env.SUBNAME) FileName = env.SUBNAME;
     if (env.DNS64 || env.NAT64) DNS64Server = env.DNS64 || env.NAT64;
 
     if (env.ADD) addresses = await 整理(env.ADD);
