@@ -117,9 +117,9 @@ async function loadConfigurations(env) {
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
     if (env.SOCKS5) socks5Address = env.SOCKS5;
     if (env.HTTP) httpProxyAddress = env.HTTP;
-    if (env.SUBAPI) subConverter = atob(env.SUBAPI);
-    if (env.SUBCONFIG) subConfig = atob(env.SUBCONFIG);
-    if (env.SUBNAME) FileName = atob(env.SUBNAME);
+    if (env.SUBAPI) subConverter = (env.SUBAPI);
+    if (env.SUBCONFIG) subConfig = (env.SUBCONFIG);
+    if (env.SUBNAME) FileName = (env.SUBNAME);
     if (env.DNS64 || env.NAT64) DNS64Server = env.DNS64 || env.NAT64;
 
     if (env.ADD) addresses = await 整理(env.ADD);
@@ -129,7 +129,7 @@ async function loadConfigurations(env) {
     if (env.ADDCSV) addressescsv = await 整理(env.ADDCSV);
     if (env.LINK) link = await 整理(env.LINK);
     if (env.GO2SOCKS5) go2Socks5s = await 整理(env.GO2SOCKS5);
-    if (env.BAN) banHosts = (await 整理(env.BAN)).map(h => atob(h));
+    if (env.BAN) banHosts = 整理(env.BAN);
 
     if (env.DLS) DLS = Number(env.DLS);
     if (env.CSVREMARK) remarkIndex = Number(env.CSVREMARK);
