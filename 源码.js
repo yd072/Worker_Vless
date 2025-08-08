@@ -122,14 +122,14 @@ async function loadConfigurations(env) {
     if (env.SUBNAME) FileName = env.SUBNAME;
     if (env.DNS64 || env.NAT64) DNS64Server = env.DNS64 || env.NAT64;
 
-    if (env.ADD) addresses = await 整理(env.ADD);
-    if (env.ADDAPI) addressesapi = await 整理(env.ADDAPI);
-    if (env.ADDNOTLS) addressesnotls = await 整理(env.ADDNOTLS);
-    if (env.ADDNOTLSAPI) addressesnotlsapi = await 整理(env.ADDNOTLSAPI);
-    if (env.ADDCSV) addressescsv = await 整理(env.ADDCSV);
-    if (env.LINK) link = await 整理(env.LINK);
-    if (env.GO2SOCKS5) go2Socks5s = await 整理(env.GO2SOCKS5);
-    if (env.BAN) banHosts = await 整理(env.BAN);
+    if (env.ADD) addresses = 整理(env.ADD);
+    if (env.ADDAPI) addressesapi = 整理(env.ADDAPI);
+    if (env.ADDNOTLS) addressesnotls = 整理(env.ADDNOTLS);
+    if (env.ADDNOTLSAPI) addressesnotlsapi = 整理(env.ADDNOTLSAPI);
+    if (env.ADDCSV) addressescsv = 整理(env.ADDCSV);
+    if (env.LINK) link = 整理(env.LINK);
+    if (env.GO2SOCKS5) go2Socks5s = 整理(env.GO2SOCKS5);
+    if (env.BAN) banHosts = 整理(env.BAN);
 
     if (env.DLS) DLS = Number(env.DLS);
     if (env.CSVREMARK) remarkIndex = Number(env.CSVREMARK);
@@ -156,16 +156,16 @@ async function loadConfigurations(env) {
                 if (settings.subconfig && settings.subconfig.trim()) subConfig = settings.subconfig.trim().split('\n')[0];
                 if (settings.nat64 && settings.nat64.trim()) DNS64Server = settings.nat64.trim().split('\n')[0];
 				if (settings.httpsports && settings.httpsports.trim()) {
-                    httpsPorts = await 整理(settings.httpsports);
+                    httpsPorts = 整理(settings.httpsports);
                 }
                 if (settings.httpports && settings.httpports.trim()) {
-                    httpPorts = await 整理(settings.httpports);
+                    httpPorts = 整理(settings.httpports);
                 }
 				if (settings.notls) {
                     noTLS = settings.notls;
                 }
                 if (settings.ADD) {
-                    const 优选地址数组 = await 整理(settings.ADD);
+                    const 优选地址数组 = 整理(settings.ADD);
                     const 分类地址 = { 接口地址: new Set(), 链接地址: new Set(), 优选地址: new Set() };
                     for (const 元素 of 优选地址数组) {
                         if (元素.startsWith('https://')) 分类地址.接口地址.add(元素);
@@ -190,10 +190,10 @@ async function loadConfigurations(env) {
         subConverter = subConverter.split("//")[1] || subConverter;
     }
 
-    proxyIPs = await 整理(proxyIP);
+    proxyIPs = 整理(proxyIP);
     proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
 
-    socks5s = await 整理(socks5Address);
+    socks5s = 整理(socks5Address);
     socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 	socks5Address = socks5Address.split('//')[1] || socks5Address;
 
@@ -1565,7 +1565,7 @@ async function 双重哈希(文本) {
 
 async function 代理URL(request, 代理网址, 目标网址, 调试模式 = false) {
     try {
-        const 网址列表 = await 整理(代理网址);
+        const 网址列表 = 整理(代理网址);
         if (!网址列表 || 网址列表.length === 0) {
             throw new Error('代理网址列表为空');
         }
@@ -1647,7 +1647,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
 		sub = match ? match[1] : sub;
-		const subs = await 整理(sub);
+		const subs = 整理(sub);
 		sub = subs.length > 1 ? subs[0] : sub;
 	}
 
@@ -2324,7 +2324,7 @@ async function 整理优选列表(api) {
 				} else {
 					if (api[index].includes('proxyip=true')) {
 						// 如果URL带有'proxyip=true'，则将内容添加到proxyIPPool
-						proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
+						proxyIPPool = proxyIPPool.concat((整理(content)).map(item => {
 							const baseItem = item.split('#')[0] || item;
 							if (baseItem.includes(':')) {
 								const port = baseItem.split(':')[1];
@@ -2347,7 +2347,7 @@ async function 整理优选列表(api) {
 		clearTimeout(timeout);
 	}
 
-	const newAddressesapi = await 整理(newapi);
+	const newAddressesapi = 整理(newapi);
 
 	return newAddressesapi;
 }
@@ -2563,7 +2563,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	return btoa(base64Response);
 }
 
-async function 整理(内容) {
+function 整理(内容) {
     if (!内容) return [];
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
@@ -3286,7 +3286,7 @@ async function handleGetRequest(env) {
                 </a>
 
                 <div id="noticeContent" class="notice-content" style="display: none">
-				    ${decodeURIComponent(atob('JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU1JUI4JUI4JUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUI3JUU2JThCJUFDJUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUE0JUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEExMjcuMC4wLjElM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5SVAlM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTNDYnIlM0UlMEElNUIyNjA2JTNBNDcwMCUzQSUzQSU1RCUzQTIwNTMlMjMlRTQlQkMlOTglRTklODAlODlJUHY2JTNDYnIlM0UlM0NiciUzRSUwQSUwQSUzQ3N0cm9uZyUzRTIuJTNDJTJGc3Ryb25nJTNFJTIwQUREQVBJJTIwJUU1JUE2JTgyJUU2JTlFJTlDJUU2JTk4JUFGJUU0JUJCJUEzJUU3JTkwJTg2SVAlRUYlQkMlOEMlRTUlOEYlQUYlRTQlQkQlOUMlRTQlQjglQkFQUk9YWUlQJUU3JTlBJTg0JUU4JUFGJTlEJUVGJUJDJThDJUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGcHJveHlpcCUzRHRydWUlMjIlRTUlOEYlODIlRTYlOTUlQjAlRTYlQjclQkIlRTUlOEElQTAlRTUlODglQjAlRTklOTMlQkUlRTYlOEUlQTUlRTYlOUMlQUIlRTUlQjAlQkUlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQlM0Zwcm94eWlwJTNEdHJ1ZSUzQ2JyJTNFJTNDYnIlM0UlMEElMEElM0NzdHJvbmclM0UzLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJ2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JyUzRUNsb3VkZmxhcmVTcGVlZFRlc3QlM0MlMkZhJTNFJTIwJUU3JTlBJTg0JTIwY3N2JTIwJUU3JUJCJTkzJUU2JTlFJTlDJUU2JTk2JTg3JUU0JUJCJUI2JUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
+				    ${decodeURIComponent(atob('JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU1JUI4JUI4JUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUI3JUU2JThCJUFDJUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUE0JUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEExMjcuMC4wLjElM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5SVAlM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTNDYnIlM0UlMEElNUIyNjA2JTNBNDcwMCUzQSUzQSU1RCUzQTIwNTMlMjMlRTQlQkMlOTglRTklODAlODlJUHY2JTNDYnIlM0UlM0NiciUzRSUwQSUwQSUzQ3N0cm9uZyUzRTIuJTNDJTJGc3Ryb25nJTNFJTIwQUREQVBJJTIwJUU1JUE2JTgyJUU2JTlFJTlDJUU2JTk4JUFGJUU0JUJCJUEzJUU3JTkwJTg2SVAlRUYlQkMlOEMlRTUlOEYlQUYlRTQlQkQlOUMlRTQlQjglQkFQUk9YWUlQJUU3JTlBJTg0JUU4JUFGJTlEJUVGJUJDJThDJUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGcHJveHlpcCUzRHRydWUlMjIlRTUlOEYlODIlRTYlOTUlQjAlRTYlQjclQkIlRTUlOEElQTAlRTUlODglQjAlRTklOTMlQkUlRTYlOEUlQTUlRTYlOUMlQUIlRTUlQjAlQkUlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGY3Njbi5vbmxpbmUlMkZzY3ZuZGUlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JTJGcmF3JTJGcmVmc0UyRkhlYWRzJTJGbWFzdGVyJTJGY2YudHh0JTNGcHJveHlpcCUzRHRydWUlM0NiciUzRSUzQ2JyJTNFJTBBJTBBJTNDc3Ryb25nJTNFMzAlM0MlMkZzdHJvbmclM0UlMjBTVUIlMjAlRTUlQjAlOEYlRTUlQkUlQjQlRTklODAlODklRTUlOEYlODklRTQlQkIlOEUlMjAlRTQlQjglQTclRTclQUQlOUQlRTYlOUMlQUYlRTQlQkElQTclRTQlQkQlQUMlRTQlQkIlOEUlRTYlODklODAlRTklODYlOTElM0ElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGY2YtY2RuLnZjc3ViLmNvbSUyRnN1YiUzQ2JyJTNFJTBBJTBBJTNDc3Ryb25nJTNFNy4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTUlQjAlQkUlRTQlQjglQkElRTQlQkMlODYlM0ElM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTBBaHR0cHMlM0ElMkYlMkZleGFtcGxlLmNvbSUyRnN1YnNjcmlwdGlvbiUwQXZtc3MlM0ElMkYlMkZleGFtcGxlJTQwMTI3LjAuMC4xJTNBMTA4MCUzQyUyZmJyJTNF'))}
                 </div>
 
                 <div class="editor-container">
