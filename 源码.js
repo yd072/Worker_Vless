@@ -1310,7 +1310,7 @@ async function socks5Connect(addressType, addressRemote, portRemote, log) {
         res = (await reader.read()).value;
         if (res[0] !== 0x01 || res[1] !== 0x00) {
             log("SOCKS5 authentication failed");
-            throw new Error("SOCKS5 authentication failed");
+            return;
         }
     }
 
