@@ -122,14 +122,14 @@ async function loadConfigurations(env) {
     if (env.SUBNAME) FileName = env.SUBNAME;
     if (env.DNS64 || env.NAT64) DNS64Server = env.DNS64 || env.NAT64;
 
-    if (env.ADD) addresses = 整理(env.ADD);
-    if (env.ADDAPI) addressesapi = 整理(env.ADDAPI);
-    if (env.ADDNOTLS) addressesnotls = 整理(env.ADDNOTLS);
-    if (env.ADDNOTLSAPI) addressesnotlsapi = 整理(env.ADDNOTLSAPI);
-    if (env.ADDCSV) addressescsv = 整理(env.ADDCSV);
-    if (env.LINK) link = 整理(env.LINK);
-    if (env.GO2SOCKS5) go2Socks5s = 整理(env.GO2SOCKS5);
-    if (env.BAN) banHosts = 整理(env.BAN);
+    if (env.ADD) addresses = await 整理(env.ADD);
+    if (env.ADDAPI) addressesapi = await 整理(env.ADDAPI);
+    if (env.ADDNOTLS) addressesnotls = await 整理(env.ADDNOTLS);
+    if (env.ADDNOTLSAPI) addressesnotlsapi = await 整理(env.ADDNOTLSAPI);
+    if (env.ADDCSV) addressescsv = await 整理(env.ADDCSV);
+    if (env.LINK) link = await 整理(env.LINK);
+    if (env.GO2SOCKS5) go2Socks5s = await 整理(env.GO2SOCKS5);
+    if (env.BAN) banHosts = await 整理(env.BAN);
 
     if (env.DLS) DLS = Number(env.DLS);
     if (env.CSVREMARK) remarkIndex = Number(env.CSVREMARK);
@@ -156,16 +156,16 @@ async function loadConfigurations(env) {
                 if (settings.subconfig && settings.subconfig.trim()) subConfig = settings.subconfig.trim().split('\n')[0];
                 if (settings.nat64 && settings.nat64.trim()) DNS64Server = settings.nat64.trim().split('\n')[0];
 				if (settings.httpsports && settings.httpsports.trim()) {
-                    httpsPorts = 整理(settings.httpsports);
+                    httpsPorts = await 整理(settings.httpsports);
                 }
                 if (settings.httpports && settings.httpports.trim()) {
-                    httpPorts = 整理(settings.httpports);
+                    httpPorts = await 整理(settings.httpports);
                 }
 				if (settings.notls) {
                     noTLS = settings.notls;
                 }
                 if (settings.ADD) {
-                    const 优选地址数组 = 整理(settings.ADD);
+                    const 优选地址数组 = await 整理(settings.ADD);
                     const 分类地址 = { 接口地址: new Set(), 链接地址: new Set(), 优选地址: new Set() };
                     for (const 元素 of 优选地址数组) {
                         if (元素.startsWith('https://')) 分类地址.接口地址.add(元素);
@@ -190,10 +190,10 @@ async function loadConfigurations(env) {
         subConverter = subConverter.split("//")[1] || subConverter;
     }
 
-    proxyIPs = 整理(proxyIP);
+    proxyIPs = await 整理(proxyIP);
     proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
 
-    socks5s = 整理(socks5Address);
+    socks5s = await 整理(socks5Address);
     socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
 	socks5Address = socks5Address.split('//')[1] || socks5Address;
 
@@ -1565,7 +1565,7 @@ async function 双重哈希(文本) {
 
 async function 代理URL(request, 代理网址, 目标网址, 调试模式 = false) {
     try {
-        const 网址列表 = 整理(代理网址);
+        const 网址列表 = await 整理(代理网址);
         if (!网址列表 || 网址列表.length === 0) {
             throw new Error('代理网址列表为空');
         }
@@ -1647,7 +1647,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
 		sub = match ? match[1] : sub;
-		const subs = 整理(sub);
+		const subs = await 整理(sub);
 		sub = subs.length > 1 ? subs[0] : sub;
 	}
 
@@ -2324,7 +2324,7 @@ async function 整理优选列表(api) {
 				} else {
 					if (api[index].includes('proxyip=true')) {
 						// 如果URL带有'proxyip=true'，则将内容添加到proxyIPPool
-						proxyIPPool = proxyIPPool.concat((整理(content)).map(item => {
+						proxyIPPool = proxyIPPool.concat((await 整理(content)).map(item => {
 							const baseItem = item.split('#')[0] || item;
 							if (baseItem.includes(':')) {
 								const port = baseItem.split(':')[1];
@@ -2347,7 +2347,7 @@ async function 整理优选列表(api) {
 		clearTimeout(timeout);
 	}
 
-	const newAddressesapi = 整理(newapi);
+	const newAddressesapi = await 整理(newapi);
 
 	return newAddressesapi;
 }
@@ -2563,7 +2563,7 @@ function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv,
 	return btoa(base64Response);
 }
 
-function 整理(内容) {
+async function 整理(内容) {
     if (!内容) return [];
     const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
         .replace(/^,|,$/g, '');
