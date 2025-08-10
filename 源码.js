@@ -223,8 +223,16 @@ function parseProxyIP(proxyString, defaultPort) {
         [address, port] = address.split(']:');
         address += ']';
     } else if (address.includes(':')) {
-        [address, port] = address.split(':');
+        const parts = address.split(':');
+        // 处理IPv6地址中包含多个冒号的情况
+        if (parts.length > 2) {
+            port = parts.pop();
+            address = parts.join(':');
+        } else {
+            [address, port] = parts;
+        }
     }
+
 
     if (address.includes('.tp')) {
         port = address.split('.tp')[1].split('.')[0] || port;
@@ -982,9 +990,9 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		try {
 			let tcpSocketPromise;
 			if (proxyType === 'http') {
-				tcpSocketPromise = httpConnect(address, port, log);
+				tcpSocketPromise = httpConnect(address, port, log, controller.signal);
 			} else if (proxyType === 'socks5') {
-				tcpSocketPromise = socks5Connect(addressType, address, port, log);
+				tcpSocketPromise = socks5Connect(addressType, address, port, log, controller.signal);
 			} else {
 				tcpSocketPromise = connect({
 					hostname: address,
@@ -1271,9 +1279,9 @@ function stringify(arr, offset = 0) {
     return uuid;
 }
 
-async function socks5Connect(addressType, addressRemote, portRemote, log) {
+async function socks5Connect(addressType, addressRemote, portRemote, log, signal = null) {
     const { username, password, hostname, port } = parsedSocks5Address;
-    const socket = connect({ hostname, port });
+    const socket = await connect({ hostname, port, signal });
 
     const socksGreeting = new Uint8Array([5, 2, 0, 2]);
     const writer = socket.writable.getWriter();
@@ -1417,11 +1425,12 @@ function httpProxyAddressParser(address) {
     }
 }
 
-async function httpConnect(addressRemote, portRemote, log) {
+async function httpConnect(addressRemote, portRemote, log, signal = null) {
 	const { username, password, hostname, port } = parsedHttpProxyAddress;
 	const sock = await connect({
 		hostname: hostname,
-		port: port
+		port: port,
+		signal: signal
 	});
 
 	// 构建HTTP CONNECT请求
@@ -2652,20 +2661,26 @@ async function KV(request, env) {
 }
 
 async function handlePostRequest(request, env) {
+    const url = new URL(request.url);
+    const action = url.searchParams.get('action');
+
+    // 新增：根据 'action' 参数进行路由
+    if (action === 'test') {
+        return handleTestConnection(request);
+    }
+
+    // 默认行为是保存配置
     if (!env.KV) {
         return new Response("未绑定KV空间", { status: 400 });
     }
     try {
-        const url = new URL(request.url);
         const type = url.searchParams.get('type');
-
-        // 获取当前的 settings 对象
         const settingsJSON = await env.KV.get('settinggs.txt');
         let settings = settingsJSON ? JSON.parse(settingsJSON) : {};
 
         if (type === 'advanced') {
             // 更新高级设置
-            const advancedSettingsUpdate = JSON.parse(await request.text());
+            const advancedSettingsUpdate = await request.json();
             settings = { ...settings, ...advancedSettingsUpdate };
         } else {
             // 更新主列表内容 (ADD)
@@ -2885,6 +2900,11 @@ async function handleGetRequest(env) {
                     opacity: 0.6;
                     cursor: not-allowed;
                 }
+                
+                .btn-sm {
+                    padding: 5px 10px;
+                    font-size: 12px;
+                }
 
                 .btn-primary {
                     background: var(--primary-color);
@@ -3024,7 +3044,38 @@ async function handleGetRequest(env) {
 				html.dark-mode .setting-editor::placeholder {
 					color: #666;
 				}
-				
+
+                /* 新增：测试连接按钮和状态的样式 */
+                .setting-item-footer {
+                    display: flex;
+                    justify-content: flex-start;
+                    align-items: center;
+                    gap: 15px;
+                    padding: 0 15px 10px 15px;
+                    background-color: #fafafa;
+                }
+                html.dark-mode .setting-item-footer {
+                    background-color: #3a3a3a;
+                }
+                .test-status {
+                    font-size: 14px;
+                    font-weight: 500;
+                }
+                .test-status.success {
+                    color: #28a745;
+                }
+                .test-status.error {
+                    color: #dc3545;
+                }
+                .test-note {
+                    font-size: 12px;
+                    color: #6c757d;
+                    margin: 0;
+                }
+                html.dark-mode .test-note {
+                    color: #aaa;
+                }
+
 				.switch-container {
 					display: flex;
 					align-items: center;
@@ -3158,40 +3209,55 @@ async function handleGetRequest(env) {
                         <!-- PROXYIP设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>PROXYIP </strong></span>
+                                <span><strong>PROXYIP</strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>每行一个IP，格式：IP:端口(可不添加端口)</p>
-                                <textarea id="proxyip" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E0NDMKcHJveHkuZXhhbXBsZS5jb20lM0E4NDQz'))}">${proxyIPContent}</textarea>
+                                <textarea id="proxyip" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E4MApwcml2YXRlLmV4YW1wbGUuY29tJTNBMjA1Mg=='))}">${proxyIPContent}</textarea>
+                            </div>
+                            <div class="setting-item-footer">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'proxyip')">测试连接</button>
+                                <span id="proxyip-status" class="test-status"></span>
+                                <p class="test-note">（仅测试列表中的第一个地址）</p>
                             </div>
                         </div>
 
                         <!-- SOCKS5设置 -->
                         <div class="setting-item">
-                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SOCKS5 </strong></span>
+                            <div class="setting-header" onclick="toggleSetting(this)">
+                                <span><strong>SOCKS5</strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
                                 <textarea id="socks5" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${socks5Content}</textarea>
+                            </div>
+                            <div class="setting-item-footer">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'socks5')">测试连接</button>
+                                <span id="socks5-status" class="test-status"></span>
+                                <p class="test-note">（仅测试列表中的第一个地址）</p>
                             </div>
                         </div>
 
                         <!-- HTTP Proxy 设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>HTTP </strong></span>
+                                <span><strong>HTTP</strong></span>
                             </div>
                             <div class="setting-content">
                                 <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
                                 <textarea id="httpproxy" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXI6cGFzc0AxLjIuMy40OjgwODAKMS4yLjMuNDo4MDgw'))}">${httpProxyContent}</textarea>
+                            </div>
+                             <div class="setting-item-footer">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'http')">测试连接</button>
+                                <span id="http-status" class="test-status"></span>
+                                <p class="test-note">（仅测试列表中的第一个地址）</p>
                             </div>
                         </div>
 
                         <!-- SUB设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUB </strong> (优选订阅生成器)</span>
+                                <span><strong>SUB</strong> (优选订阅生成器)</span>
                             </div>
                             <div class="setting-content">
                                 <p>只支持单个优选订阅生成器地址</p>
@@ -3202,7 +3268,7 @@ async function handleGetRequest(env) {
                         <!-- SUBAPI设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUBAPI </strong> (订阅转换后端)</span>
+                                <span><strong>SUBAPI</strong> (订阅转换后端)</span>
                             </div>
                             <div class="setting-content">
                                 <p>订阅转换后端地址</p>
@@ -3213,7 +3279,7 @@ async function handleGetRequest(env) {
                         <!-- SUBCONFIG设置 -->
                         <div class="setting-item">
                             <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUBCONFIG </strong> (订阅转换配置)</span>
+                                <span><strong>SUBCONFIG</strong> (订阅转换配置)</span>
                             </div>
                             <div class="setting-content">
                                 <p>订阅转换配置文件地址</p>
@@ -3224,13 +3290,18 @@ async function handleGetRequest(env) {
                         <!-- NAT64/DNS64 设置 -->
                         <div class="setting-item">
                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>NAT64/DNS64 </strong></span>
+                                <span><strong>NAT64/DNS64</strong></span>
                             </div>
                              <div class="setting-content">
                                 <p>
                                     <a id="nat64-link" target="_blank">自行查询</a>
                                 </p>
                                 <textarea id="nat64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBJTBBZG5zNjQuZXhhbXBsZS5jb20lMEEyYTAxJTNBNGY4JTNBYzJjJTNBMTIzZiUzQSUzQSUyRjk2'))}">${nat64Content}</textarea>
+                            </div>
+                            <div class="setting-item-footer">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'nat64')">测试连接</button>
+                                <span id="nat64-status" class="test-status"></span>
+                                <p class="test-note">（将尝试解析 www.cloudflare.com）</p>
                             </div>
                         </div>
 						<script>
@@ -3368,6 +3439,10 @@ async function handleGetRequest(env) {
                         allSettings.forEach(setting => {
                             setting.style.display = 'none';
                         });
+                        const allFooters = document.querySelectorAll('.setting-item-footer');
+                        allFooters.forEach(footer => {
+                            footer.style.display = 'none';
+                        });
                         const allHeaders = document.querySelectorAll('.setting-header');
                         allHeaders.forEach(header => {
                             header.classList.remove('open');
@@ -3377,13 +3452,78 @@ async function handleGetRequest(env) {
 
                 function toggleSetting(headerElement) {
                     const content = headerElement.nextElementSibling;
+                    const footer = content.nextElementSibling;
                     headerElement.classList.toggle('open');
                     if (content.style.display === 'none' || content.style.display === '') {
                         content.style.display = 'block';
+                        if (footer && footer.classList.contains('setting-item-footer')) {
+                           footer.style.display = 'flex';
+                        }
                     } else {
                         content.style.display = 'none';
+                         if (footer && footer.classList.contains('setting-item-footer')) {
+                           footer.style.display = 'none';
+                        }
                     }
                 }
+                
+                // 新增：连接测试函数
+                async function testSetting(event, type) {
+                    // httpproxy is the id for http type
+                    const elementId = type === 'http' ? 'httpproxy' : type;
+                    const address = document.getElementById(elementId).value.trim();
+                    const statusEl = document.getElementById(type + '-status');
+                    const testButton = event.target;
+
+                    if (!address) {
+                        statusEl.textContent = '❌ 地址不能为空';
+                        statusEl.className = 'test-status error';
+                        return;
+                    }
+
+                    const firstAddress = address.split(/\\r?\\n/)[0].trim();
+                    if (!firstAddress) {
+                        statusEl.textContent = '❌ 地址不能为空';
+                        statusEl.className = 'test-status error';
+                        return;
+                    }
+
+                    statusEl.textContent = '测试中...';
+                    statusEl.className = 'test-status';
+                    testButton.disabled = true;
+
+                    try {
+                        const response = await fetch(window.location.href.split('?')[0] + '?action=test', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                type: type,
+                                address: firstAddress
+                            })
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            statusEl.textContent = \`✅ \${result.message}\`;
+                            statusEl.className = 'test-status success';
+                        } else {
+                            statusEl.textContent = \`❌ \${result.message}\`;
+                            statusEl.className = 'test-status error';
+                        }
+
+                    } catch (error) {
+                        statusEl.textContent = '❌ 请求失败，请检查网络或Worker日志';
+                        statusEl.className = 'test-status error';
+                        console.error('Test connection error:', error);
+                    } finally {
+                        testButton.disabled = false;
+                        setTimeout(() => {
+                            statusEl.textContent = '';
+                        }, 8000);
+                    }
+                }
+
 
                 async function saveSettings() {
                     const saveStatus = document.getElementById('settings-save-status');
@@ -3434,6 +3574,11 @@ async function handleGetRequest(env) {
                     if (currentTheme === 'dark-mode') {
                         toggleSwitch.checked = true;
                     }
+                    
+                    // Hide all setting-item-footers initially
+                    document.querySelectorAll('.setting-item-footer').forEach(footer => {
+                        footer.style.display = 'none';
+                    });
                 })();
 
                 function switchTheme(e) {
@@ -3455,3 +3600,162 @@ async function handleGetRequest(env) {
         headers: { "Content-Type": "text/html;charset=utf-8" }
     });
 }
+
+/**
+ * 新增：处理连接测试的后端函数 (使用 HTTP 路由探针)
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function handleTestConnection(request) {
+    if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
+    }
+
+    const log = (info) => { console.log(`[TestConnection] ${info}`); };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort('连接超时 (5秒)'), 5000);
+
+    try {
+        const { type, address } = await request.json();
+        if (!type || !address || address.trim() === '') {
+            throw new Error('请求参数不完整或地址为空');
+        }
+
+        log(`Testing type: ${type}, address: ${address}`);
+        let successMessage = '连接成功！';
+
+        switch (type) {
+            case 'http': {
+                parsedHttpProxyAddress = httpProxyAddressParser(address);
+                const testSocket = await httpConnect('www.cloudflare.com', 443, log, controller.signal);
+                await testSocket.close();
+                break;
+            }
+            case 'socks5': {
+                parsedSocks5Address = socks5AddressParser(address);
+                const testSocket = await socks5Connect(2, 'www.cloudflare.com', 443, log, controller.signal);
+                await testSocket.close();
+                break;
+            }
+            case 'proxyip': {
+                // 对于 PROXYIP，我们默认测试其作为 HTTP 反向代理的能力，所以使用 443 端口
+                const { address: ip, port } = parseProxyIP(address, 443);
+                log(`PROXYIP Test: 步骤 1/2 - 正在连接到 ${ip}:${port}`);
+                const testSocket = await connect({ hostname: ip, port: port, signal: controller.signal });
+                log(`PROXYIP Test: TCP 连接成功。`);
+
+                try {
+                    log(`PROXYIP Test: 步骤 2/2 - 正在发送 HTTP 路由探针...`);
+                    const writer = testSocket.writable.getWriter();
+                    const workerHostname = new URL(request.url).hostname;
+                    
+                    // 构造一个简单的 HTTP GET 请求作为探针
+                    const httpProbeRequest = [
+                        `GET / HTTP/1.1`,
+                        `Host: ${workerHostname}`,
+                        'User-Agent: Cloudflare-Connectivity-Test',
+                        'Connection: close', // 确保服务器在响应后关闭连接
+                        '\r\n'
+                    ].join('\r\n');
+
+                    await writer.write(new TextEncoder().encode(httpProbeRequest));
+                    writer.releaseLock();
+                    log(`PROXYIP Test: 已发送 GET 请求, Host: ${workerHostname}`);
+
+                    const reader = testSocket.readable.getReader();
+                    const { value, done } = await reader.read();
+                    
+                    if (done) {
+                        throw new Error("连接已关闭，未收到任何响应。");
+                    }
+
+                    const responseText = new TextDecoder().decode(value);
+                    log(`PROXYIP Test: 收到响应:\n${responseText.substring(0, 200)}...`);
+
+                    // 成功的关键标志：响应头中包含 "Server: cloudflare"
+                    if (responseText.toLowerCase().includes('server: cloudflare')) {
+                        log(`PROXYIP Test: 响应头包含 "Server: cloudflare"。测试通过。`);
+                        successMessage = '连接成功';
+                    } else {
+                        throw new Error("该IP可能无效。");
+                    }
+                    
+                    // 确保最终关闭 socket
+                    await testSocket.close();
+                    reader.releaseLock();
+
+                } catch(err) {
+                    // 确保在内部块出错时也能关闭socket
+                    if (testSocket) await testSocket.close();
+                    throw err; // 将错误重新抛出到外部catch块
+                }
+                break;
+            }
+            case 'nat64': {
+                DNS64Server = address;
+                if (!DNS64Server || DNS64Server.trim() === '') {
+                    throw new Error("NAT64/DNS64 服务器地址不能为空");
+                }
+                log(`NAT64 Test: 步骤 1/2 - 正在使用 ${DNS64Server} 解析 www.cloudflare.com...`);
+                const ipv6Address = await resolveToIPv6('www.cloudflare.com');
+                log(`NAT64 Test: 解析成功，获得 IPv6 地址: ${ipv6Address}`);
+
+                log(`NAT64 Test: 步骤 2/2 - 正在通过 Socket 连接到 [${ipv6Address}]:80 并请求 /cdn-cgi/trace...`);
+                const testSocket = await connect({ hostname: `[${ipv6Address}]`, port: 80, signal: controller.signal });
+                log(`NAT64 Test: TCP 连接成功。`);
+                try {
+                    const writer = testSocket.writable.getWriter();
+                    const httpProbeRequest = [
+                        `GET /cdn-cgi/trace HTTP/1.1`,
+                        `Host: www.cloudflare.com`,
+                        'User-Agent: Cloudflare-NAT64-Test',
+                        'Connection: close',
+                        '\r\n'
+                    ].join('\r\n');
+
+                    await writer.write(new TextEncoder().encode(httpProbeRequest));
+                    writer.releaseLock();
+                    
+                    const reader = testSocket.readable.getReader();
+                    const { value, done } = await reader.read();
+
+                    if (done) {
+                        throw new Error("连接已关闭，未收到任何响应。");
+                    }
+                    
+                    const responseText = new TextDecoder().decode(value);
+                    if (responseText.includes('h=www.cloudflare.com') && responseText.includes('colo=')) {
+                        log(`NAT64 Test: /cdn-cgi/trace 响应有效。测试通过。`);
+                        successMessage = `可用！解析到 ${ipv6Address}`;
+                    } else {
+                        throw new Error("收到的响应无效，或非 Cloudflare trace 信息。");
+                    }
+                    await testSocket.close();
+                    reader.releaseLock();
+                } catch(err) {
+                    if (testSocket) await testSocket.close();
+                    throw err;
+                }
+                break;
+            }
+            default:
+                throw new Error('不支持的测试类型');
+        }
+        
+        log(`Test successful for ${type}: ${address}`);
+        return new Response(JSON.stringify({ success: true, message: successMessage }), { 
+            status: 200,
+            headers: { 'Content-Type': 'application/json;charset=utf-8' } 
+        });
+
+    } catch (err) {
+        console.error(`[TestConnection] Error: ${err.stack || err}`);
+        return new Response(JSON.stringify({ success: false, message: `测试失败: ${err.message}` }), { 
+            status: 200, 
+            headers: { 'Content-Type': 'application/json;charset=utf-8' } 
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
