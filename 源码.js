@@ -1675,7 +1675,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 	    		let cfips = [
 		            '104.16.0.0/14',
 		            '104.21.0.0/16',
-		            '188.114.96.0/20',
+		            '104.24.0.0/14',
 
 	    		];
 
