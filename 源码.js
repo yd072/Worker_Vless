@@ -57,6 +57,14 @@ let banHosts = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
 let DNS64Server = '';
 const validFingerprints = ['chrome', 'random', 'randomized'];
 
+// --- 全局正则表达式常量 (一次编译，多次使用) ---
+const REGEX_SOCKS5_URL_PARAM = new RegExp('/socks5=', 'i');
+const REGEX_SOCKS_PROTOCOL_URL = new RegExp('/socks5?://', 'i'); // 合并了 socks:// 和 socks5://
+const REGEX_PROXYIP_URL_PARAM = new RegExp('/proxyip=', 'i');
+const REGEX_PROXYIP_URL_PATH = new RegExp('/proxyip\\.', 'i'); // 注意对点进行转义
+const REGEX_PYIP_URL_PARAM = new RegExp('/pyip=', 'i');
+// --- 结束定义 ---
+
 /**
  * 辅助工具函数
  */
@@ -785,8 +793,9 @@ export default {
 			} else {
                 // WebSocket 请求处理
 				socks5Address = url.searchParams.get('socks5') || socks5Address;
-				if (new RegExp('/socks5=', 'i').test(url.pathname)) socks5Address = url.pathname.split('5=')[1];
-				else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
+				if (REGEX_SOCKS5_URL_PARAM.test(url.pathname)) { // <-- 使用常量
+					socks5Address = url.pathname.split('5=')[1];
+				} else if (REGEX_SOCKS_PROTOCOL_URL.test(url.pathname)) { // <-- 使用常量
 					socks5Address = url.pathname.split('://')[1].split('#')[0];
 					if (socks5Address.includes('@')) {
 						let userPassword = socks5Address.split('@')[0];
@@ -811,13 +820,13 @@ export default {
 				if (url.searchParams.has('proxyip')) {
 					proxyIP = url.searchParams.get('proxyip');
 					enableSocks = false;
-				} else if (new RegExp('/proxyip=', 'i').test(url.pathname)) {
+				} else if (REGEX_PROXYIP_URL_PARAM.test(url.pathname)) { // <-- 使用常量
 					proxyIP = url.pathname.toLowerCase().split('/proxyip=')[1];
 					enableSocks = false;
-				} else if (new RegExp('/proxyip.', 'i').test(url.pathname)) {
+				} else if (REGEX_PROXYIP_URL_PATH.test(url.pathname)) { // <-- 使用常量
 					proxyIP = `proxyip.${url.pathname.toLowerCase().split("/proxyip.")[1]}`;
 					enableSocks = false;
-				} else if (new RegExp('/pyip=', 'i').test(url.pathname)) {
+				} else if (REGEX_PYIP_URL_PARAM.test(url.pathname)) { // <-- 使用常量
 					proxyIP = url.pathname.toLowerCase().split('/pyip=')[1];
 					enableSocks = false;
 				}
