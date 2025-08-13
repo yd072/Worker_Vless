@@ -2,7 +2,7 @@
 ![eom](./eom.png)
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，优化响应快稳定连接。
 
-内置简单的 Clash/Sing-box/Loon 配置生成无需转换，如未配SUB将使用内置配置生成
+内置简单的 Clash/Sing-box/Loon 配置生成无需转换，如未配订阅转换将使用内置配置生成
 
 ## 邦定KV
 KV变量名：KV
