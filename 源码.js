@@ -2655,8 +2655,8 @@ function generateClashConfig(nodeObjects) {
     const proxyNames = nodeObjects.map(p => p.name);
     
     // 定义规范化的代理组名称
-    const autoSelectGroupName = "🚀 Auto-Select";
-    const manualSelectGroupName = "Manual-Select";
+    const autoSelectGroupName = "🚀 自动选择";
+    const manualSelectGroupName = "手动选择";
 
     // --- START: 将规则定义为数组以确保正确格式化 ---
     const customRulesArray = [
@@ -2830,8 +2830,8 @@ function generateLoonConfig(nodeObjects) {
     const proxyNames = nodeObjects.map(p => JSON.stringify(p.name));
 
     // 定义策略组名称
-    const autoSelectGroupName = "🚀 Auto-Select";
-    const manualSelectGroupName = "Manual-Select";
+    const autoSelectGroupName = "🚀 自动选择";
+    const manualSelectGroupName = "手机选择";
 
     // --- START: 使用内置简单规则重写的规则集 ---
     const customRules = `
