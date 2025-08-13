@@ -18,7 +18,7 @@ KV变量名：KV
 | ADDAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
 | ADDNOTLS | icook.tw:80#优选域名/1.2.3.4 :80#优选IP |
 | ADDNOTLSAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
-| NAT64 | ndns64.example.com或2001:67c:2960:6464::/96 |
+| NAT64 | dns64.example.com或2001:67c:2960:6464::/96 |
 | SUB | 自定义 |
 | SUBAPI | 自定义 |
 | ····· | ····· |
