@@ -2593,7 +2593,7 @@ async function prepareNodeList(host, UUID, noTLS) {
 }
 
 /**
- * 【重构】根据节点对象数组生成 Base64 编码的订阅内容
+ * 根据节点对象数组生成 Base64 编码的订阅内容
  * @param {Array} nodeObjects - 由 prepareNodeList 生成的节点对象数组
  * @returns {string} - Base64 编码后的订阅链接字符串
  */
@@ -2625,7 +2625,7 @@ function 生成本地订阅(nodeObjects) {
  * @returns {string} - YAML 格式的 Clash 配置
  */
 function generateClashConfig(nodeObjects) {
-    // 生成 proxies 部分的 YAML 字符串 (块格式)
+    // 生成 proxies 部分的 YAML 字符串
     const proxiesYaml = nodeObjects.map(p => {
         let proxyString = `  - name: ${JSON.stringify(p.name)}\n`;
         proxyString += `    type: ${p.type}\n`;
@@ -2656,7 +2656,23 @@ function generateClashConfig(nodeObjects) {
     
     // 定义规范化的代理组名称
     const autoSelectGroupName = "🚀 Auto-Select";
-    const manualSelectGroupName = "Manual-Select"; // 移除前后空格
+    const manualSelectGroupName = "Manual-Select";
+
+    // --- START: 将规则定义为数组以确保正确格式化 ---
+    const customRulesArray = [
+        `DOMAIN-SUFFIX,googleapis.cn,${manualSelectGroupName}`,
+        `DOMAIN-SUFFIX,gstatic.com,${manualSelectGroupName}`,
+        `DOMAIN-KEYWORD,google,${manualSelectGroupName}`,
+        'GEOSITE,category-ads-all,REJECT',
+        'GEOSITE,private,DIRECT',
+        'GEOIP,private,DIRECT,no-resolve',
+        'GEOSITE,cn,DIRECT',
+        'GEOIP,CN,DIRECT',
+        `MATCH,${manualSelectGroupName}`
+    ];
+    // 将规则数组转换为格式正确的YAML字符串
+    const rulesYaml = customRulesArray.map(rule => `  - ${rule}`).join('\n');
+    // --- END: 修正 ---
 
     // 拼接完整的 YAML 配置
     const config = `
@@ -2688,11 +2704,11 @@ ${proxyNames.map(name => `      - ${JSON.stringify(name)}`).join('\n')}
     proxies:
       - ${JSON.stringify(autoSelectGroupName)}
       - DIRECT
+      - REJECT
 ${proxyNames.map(name => `      - ${JSON.stringify(name)}`).join('\n')}
 
 rules:
-  - GEOIP,CN,DIRECT
-  - MATCH, ${manualSelectGroupName}
+${rulesYaml}
 `;
     return config.trim();
 }
@@ -2735,6 +2751,23 @@ function generateSingboxConfig(nodeObjects) {
     
     const proxyNames = outbounds.map(o => o.tag);
 
+    // --- START: 新增的规则 ---
+    // 将用户提供的规则转换为Sing-box格式
+    const customRules = [
+        { "domain_suffix": ["googleapis.cn", "gstatic.com"], "outbound": "manual-select", "remarks": "Google cn" },
+        { "geosite": "category-ads-all", "outbound": "block", "remarks": "阻止广告" },
+        { "geoip": "private", "outbound": "direct", "remarks": "绕过局域网IP" },
+        { "geosite": "private", "outbound": "direct", "remarks": "绕过局域网域名" },
+        {
+            "ip": [ "223.5.5.5", "223.6.6.6", "119.29.29.29", "1.12.12.12", "120.53.53.53", "180.76.76.76", "114.114.114.114", "114.114.115.115", "114.114.114.119", "114.114.115.119", "114.114.114.110", "114.114.115.110", "180.184.1.1", "180.184.2.2", "101.226.4.6", "218.30.118.6", "123.125.81.6", "140.207.198.6", "1.2.4.8", "210.2.4.8", "52.80.66.66", "117.50.22.22", "117.50.10.10", "52.80.52.52", "117.50.60.30", "52.80.60.30" ],
+            "outbound": "direct", "remarks": "绕过中国公共DNS IP"
+        },
+        { "domain": ["alidns.com", "doh.pub", "dot.pub", "360.cn", "onedns.net"], "outbound": "direct", "remarks": "绕过中国公共DNS域名" },
+        { "geoip": "cn", "outbound": "direct", "remarks": "绕过中国IP" },
+        { "geosite": "cn", "outbound": "direct", "remarks": "绕过中国域名" }
+    ];
+    // --- END: 新增的规则 ---
+
     const config = {
         "log": {
             "level": "info",
@@ -2764,10 +2797,12 @@ function generateSingboxConfig(nodeObjects) {
         ],
         "route": {
             "rules": [
-                { "geoip": "cn", "outbound": "direct" }
-                
+                ...customRules, // 在这里插入新规则
+                // 原始规则可以被 customRules 中的 `geoip:cn` 和 `geosite:cn` 覆盖，所以不再需要
+                // { "geoip": "cn", "outbound": "direct" }
             ],
-            "default_outbound": "manual-select"
+            "final": "manual-select", // 使用 final 替代 default_outbound
+            "auto_detect_interface": true
         }
     };
     
@@ -2775,7 +2810,7 @@ function generateSingboxConfig(nodeObjects) {
 }
 
 /**
- * 生成Loon配置
+ * 生成Loon配置 
  * @param {Array} nodeObjects - 节点对象数组
  * @returns {string} - .conf 格式的 Loon 配置
  */
@@ -2798,6 +2833,43 @@ function generateLoonConfig(nodeObjects) {
     const autoSelectGroupName = "🚀 Auto-Select";
     const manualSelectGroupName = "Manual-Select";
 
+    // --- START: 使用内置简单规则重写的规则集 ---
+    const customRules = `
+# 代理 Google 相关服务
+DOMAIN-SUFFIX, gstatic.com, ${manualSelectGroupName}
+DOMAIN-KEYWORD, googleapis, ${manualSelectGroupName}
+DOMAIN-KEYWORD, google, ${manualSelectGroupName}
+
+# 简单广告屏蔽规则 (无法替代完整的外部规则集)
+DOMAIN-SUFFIX, doubleclick.net, REJECT
+DOMAIN-SUFFIX, google-analytics.com, REJECT
+DOMAIN-SUFFIX, googletagservices.com, REJECT
+DOMAIN-SUFFIX, adservice.google.com, REJECT
+
+# 屏蔽 QUIC
+UDP, 443, REJECT
+
+# 局域网及私有地址直连
+IP-CIDR, 192.168.0.0/16, DIRECT
+IP-CIDR, 10.0.0.0/8, DIRECT
+IP-CIDR, 172.16.0.0/12, DIRECT
+IP-CIDR, 127.0.0.1/32, DIRECT
+DOMAIN-SUFFIX, lan, DIRECT
+DOMAIN-SUFFIX, local, DIRECT
+
+# 国内公共DNS直连
+DOMAIN-SUFFIX, alidns.com, DIRECT
+DOMAIN-SUFFIX, doh.pub, DIRECT
+DOMAIN-SUFFIX, 360.cn, DIRECT
+IP-CIDR, 223.5.5.5/32, DIRECT
+IP-CIDR, 119.29.29.29/32, DIRECT
+IP-CIDR, 180.76.76.76/32, DIRECT
+
+# 国内IP地址直连 (最核心的国内流量判断规则)
+GEOIP, CN, DIRECT
+`;
+    // --- END: 规则集 ---
+
     // [Proxy Group] 和 [Rule] 部分
     const config = `
 [General]
@@ -2808,11 +2880,11 @@ bypass-system = true
 ${proxiesConf}
 
 [Proxy Group]
-${manualSelectGroupName} = select, ${autoSelectGroupName}, DIRECT, ${proxyNames.join(', ')}
+${manualSelectGroupName} = select, ${autoSelectGroupName}, DIRECT, REJECT, ${proxyNames.join(', ')}
 ${autoSelectGroupName} = url-test, ${proxyNames.join(', ')}, url=http://www.gstatic.com/generate_204, interval=300, tolerance=100
 
 [Rule]
-GEOIP, CN, DIRECT
+${customRules.trim()}
 FINAL, ${manualSelectGroupName}
 `;
     return config.trim();
