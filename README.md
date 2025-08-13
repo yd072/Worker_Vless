@@ -3,6 +3,8 @@
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，优化响应快稳定连接。
 
 内置简单的 Clash/Sing-box/Loon 配置生成无需转换，如未配订阅转换将使用内置配置生成
+## ⚠️注意
+使用过旧版的，KV中存在多个配置，请移除多余的配置只保留 `settinggs.txt` ，以免增加KV的消耗。
 
 ## 邦定KV
 KV变量名：KV
