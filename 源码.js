@@ -2892,11 +2892,9 @@ FINAL, ${manualSelectGroupName}
 
 
 function 整理(内容) {
-    if (!内容) return [];
-    const 替换后的内容 = 内容.replace(/[	|"'\r\n]+/g, ',').replace(/,+/g, ',')
-        .replace(/^,|,$/g, '');
-
-    return 替换后的内容.split(',');
+    return (内容 || '')
+        .split(/[\s,|"'\r\n]+/)
+        .filter(Boolean);
 }
 
 async function sendMessage(type, ip, add_data = "") {
