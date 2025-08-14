@@ -3018,6 +3018,10 @@ async function handlePostRequest(request, env) {
     }
 }
 
+// #################################################################
+// ############## START OF TABBED UI REPLACEMENT ###################
+// #################################################################
+
 async function handleGetRequest(env) {
     let content = '';
     let hasKV = !!env.KV;
@@ -3097,9 +3101,10 @@ async function handleGetRequest(env) {
                     --border-color: #e0e0e0;
                     --text-color: #212529;
                     --background-color: #f5f5f5;
-					--section-bg: white;
-					--link-color: #1a0dab;
-					--visited-link-color: #6c00a2;
+                    --section-bg: white;
+                    --link-color: #1a0dab;
+                    --visited-link-color: #6c00a2;
+                    --tab-inactive-bg: #f1f1f1;
                 }
 
                 html.dark-mode {
@@ -3108,9 +3113,10 @@ async function handleGetRequest(env) {
                     --border-color: #3c3c3c;
                     --text-color: #e0e0e0;
                     --background-color: #1c1c1e;
-					--section-bg: #2a2a2a;
-					--link-color: #8ab4f8;
-					--visited-link-color: #c58af9;
+                    --section-bg: #2a2a2a;
+                    --link-color: #8ab4f8;
+                    --visited-link-color: #c58af9;
+                    --tab-inactive-bg: #3a3a3a;
                 }
 
                 body {
@@ -3121,31 +3127,14 @@ async function handleGetRequest(env) {
                     color: var(--text-color);
                     background-color: var(--background-color);
                 }
-				
-				a {
-					color: var(--link-color);
-					text-decoration: none;
-				}
-				
-				a:visited {
-					color: var(--visited-link-color);
-				}
-
-				a:hover {
-					text-decoration: underline;
-				}
-
+                
                 .container {
                     max-width: 1000px;
                     margin: 0 auto;
-                    background: var(--section-bg, white);
+                    background: var(--section-bg);
                     padding: 25px;
                     border-radius: 10px;
                     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }
-                
-                html.dark-mode .container {
-                    background: #242526;
                 }
 
                 .title {
@@ -3156,346 +3145,155 @@ async function handleGetRequest(env) {
                     border-bottom: 2px solid var(--border-color);
                 }
 
-                .editor-container {
-                    width: 100%;
-                    margin: 20px 0;
+                /* --- Tabbed Interface Styles --- */
+                .tab-container {
+                    overflow: hidden;
+                    border: 1px solid var(--border-color);
+                    border-bottom: none;
+                    border-radius: 8px 8px 0 0;
+                    background-color: var(--tab-inactive-bg);
                 }
 
-                .editor, .setting-editor {
-                    background-color: var(--section-bg, white);
+                .tab-container button {
+                    background-color: inherit;
+                    float: left;
+                    border: none;
+                    outline: none;
+                    cursor: pointer;
+                    padding: 14px 16px;
+                    font-size: 16px;
                     color: var(--text-color);
                 }
+
+                .tab-container button:hover {
+                    background-color: #ddd;
+                }
+                html.dark-mode .tab-container button:hover {
+                     background-color: #444;
+                }
+
+                .tab-container button.active {
+                    background-color: var(--section-bg);
+                    font-weight: bold;
+                    border-bottom: 2px solid var(--primary-color);
+                    padding-bottom: 12px;
+                }
+
+                .tab-content {
+                    display: none;
+                    padding: 20px;
+                    border: 1px solid var(--border-color);
+                    border-top: none;
+                    border-radius: 0 0 8px 8px;
+                    animation: fadeEffect 0.5s;
+                }
                 
-                html.dark-mode .editor, html.dark-mode .setting-editor {
-                    background-color: #2a2a2a;
+                @keyframes fadeEffect {
+                    from {opacity: 0;}
+                    to {opacity: 1;}
+                }
+                /* --- End Tabbed Styles --- */
+                
+                .editor {
+                    width: 100%;
+                    height: 520px;
+                    padding: 15px; box-sizing: border-box; border: 1px solid var(--border-color);
+                    border-radius: 8px; font-family: Monaco, Consolas, "Courier New", monospace;
+                    font-size: 14px; line-height: 1.5; resize: vertical;
+                    background-color: var(--section-bg); color: var(--text-color);
                 }
 
                 .editor:focus, .setting-editor:focus {
                     outline: none;
                     border-color: var(--primary-color);
-                    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
-                }
-				
-				html.dark-mode .editor:focus,
-				html.dark-mode .setting-editor:focus {
-					outline: none;
-					border-color: var(--primary-color);
-					box-shadow: 0 0 0 2px rgba(88, 155, 255, 0.25);
-				}
-
-                .editor {
-                    width: 100%;
-                    height: 520px;
-                    padding: 15px;
-                    box-sizing: border-box;
-                    border: 1px solid var(--border-color);
-                    border-radius: 8px;
-                    font-family: Monaco, Consolas, "Courier New", monospace;
-                    font-size: 14px;
-                    line-height: 1.5;
-                    resize: vertical;
-                }
-				
-                .button-group {
-                    display: flex;
-					align-items: center;
-                    gap: 12px;
-                    margin-top: 15px;
+                    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 25%, transparent);
                 }
 
-                .btn {
-                    padding: 8px 20px;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                }
+                .setting-item { margin-bottom: 20px; }
+                .setting-item p { margin: 0 0 8px 0; color: #666; }
+                html.dark-mode .setting-item p { color: #bbb; }
 
-                .btn:disabled {
-                    opacity: 0.6;
-                    cursor: not-allowed;
+                .setting-editor {
+                    width: 100%; min-height: 100px; padding: 10px; box-sizing: border-box;
+                    border: 1px solid var(--border-color); border-radius: 4px;
+                    font-family: Monaco, Consolas, "Courier New", monospace; font-size: 14px;
+                    resize: vertical; background-color: var(--section-bg); color: var(--text-color);
                 }
                 
-                .btn-sm {
-                    padding: 5px 10px;
-                    font-size: 12px;
-                }
+                .button-group { display: flex; align-items: center; gap: 12px; margin-top: 15px; }
+                .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+                .btn-primary { background: var(--primary-color); color: #fff; }
+                .btn-primary:hover:not(:disabled) { background: var(--secondary-color); }
+                .btn-secondary { background: #6c757d; color: #fff; }
+                .btn-secondary:hover:not(:disabled) { background: #5c636a; }
+                .save-status { font-size: 14px; color: var(--text-color); }
 
-                .btn-primary {
-                    background: var(--primary-color);
-                    color: #fff;
+                .test-group { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+                .btn-sm { padding: 5px 10px; font-size: 12px; }
+                .test-status { font-size: 14px; font-weight: 500; }
+                .test-status.success { color: #28a745; }
+                .test-status.error { color: #dc3545; }
+                .test-note { 
+                    font-size: 14px; 
+                    color: #6c757d;
+                    align-self: center;
+                    padding-left: 5px;
                 }
+                html.dark-mode .test-note { color: #aaa; }
 
-                .btn-primary:hover:not(:disabled) {
-                    background: var(--secondary-color);
-                }
+                .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-top: 10px; }
+                .checkbox-item { display: flex; align-items: center; gap: 5px; }
 
-                .btn-secondary {
-                    background: #6c757d;
-                    color: #fff;
-                }
-
-                .btn-secondary:hover:not(:disabled) {
-                    background: #5c636a;
-                }
-
-                .save-status {
-                    font-size: 14px;
-                    color: #666;
-                }
-				
-				html.dark-mode .save-status {
-                    color: var(--text-color);
-                }
-
+                /* --- Notice Styles --- */
                 .notice-toggle {
                     color: var(--primary-color);
                     cursor: pointer;
                     display: inline-block;
-                    margin: 10px 0;
+                    margin: 0 0 10px 0;
                     font-weight: 500;
                 }
-
                 .notice-content {
+                    display: none;
                     background: #f8f9fa;
                     border-left: 4px solid var(--primary-color);
                     padding: 15px;
-                    margin: 10px 0;
+                    margin-bottom: 15px;
                     border-radius: 0 8px 8px 0;
                     word-break: break-all;
                 }
-                
                 html.dark-mode .notice-content {
-						background: #3a3a3a;
-				}
+                    background: #3a3a3a;
+                }
+                a { color: var(--link-color); text-decoration: none; }
+                a:visited { color: var(--visited-link-color); }
+                a:hover { text-decoration: underline; }
 
-                .divider {
-                    height: 1px;
-                    background: var(--border-color);
-                    margin: 20px 0;
-                }
+                /* --- Switch Styles --- */
+                .switch-container { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+                .theme-switch-wrapper { display: flex; align-items: center; position: fixed; top: 15px; right: 15px; }
+                .theme-switch { display: inline-block; height: 20px; position: relative; width: 36px; }
+                .theme-switch input { display:none; }
+                .slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; }
+                .slider:before { background-color: #fff; bottom: 3px; content: ""; height: 14px; left: 3px; position: absolute; transition: .4s; width: 14px; }
+                input:checked + .slider { background-color: var(--primary-color); }
+                input:checked + .slider:before { transform: translateX(16px); }
+                .slider.round { border-radius: 20px; }
+                .slider.round:before { border-radius: 50%; }
 
-                .advanced-settings {
-                    margin: 20px 0;
-                    padding: 20px;
-                    background: #f8f9fa;
-                    border-radius: 8px;
-                    border: 1px solid var(--border-color);
-                }
-                
-                 html.dark-mode .advanced-settings {
-						background: #3a3a3a;
-				}
-
-                .advanced-settings-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 15px;
-                    cursor: pointer;
-                }
-
-                #advanced-settings-content {
-                    display: none;
-                }
-
-                .setting-item {
-                    margin-bottom: 10px;
-                    border: 1px solid var(--border-color);
-                    border-radius: 6px;
-                    overflow: hidden;
-                }
-
-                .setting-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding: 10px 15px;
-                    background-color: #f0f0f0;
-                    cursor: pointer;
-                    font-weight: 500;
-                }
-                
-                 html.dark-mode .setting-header {
-						background: #424242;
-				}
-
-                .setting-content {
-                    display: none; /* Initially hidden */
-                    padding: 15px;
-                    background-color: #fafafa;
-                }
-                
-                 html.dark-mode .setting-content {
-						background: #3a3a3a;
-				}
-				 
-				 .setting-content p {
-					 margin: 5px 0 10px 0;
-					 color: #666;
-				 }
-
-				 html.dark-mode .setting-content p {
-					 color: #bbb;
-				 }
-				 
-                .setting-editor {
-                    width: 100%;
-                    min-height: 80px;
-                    margin-top: 10px;
-                    padding: 10px;
-                    box-sizing: border-box;
-                    border: 1px solid var(--border-color);
-                    border-radius: 4px;
-                    font-family: Monaco, Consolas, "Courier New", monospace;
-                    font-size: 14px;
-                    resize: vertical;
-                }
-				
-				.setting-editor::placeholder {
-					color: #aaa;
-				}
-				
-				html.dark-mode .setting-editor::placeholder {
-					color: #666;
-				}
-
-                /* 新增：测试连接按钮和状态的样式 */
-                .setting-item-footer {
-                    display: flex;
-                    justify-content: flex-start;
-                    align-items: center;
-                    gap: 15px;
-                    padding: 0 15px 10px 15px;
-                    background-color: #fafafa;
-                }
-                html.dark-mode .setting-item-footer {
-                    background-color: #3a3a3a;
-                }
-                .test-status {
-                    font-size: 14px;
-                    font-weight: 500;
-                }
-                .test-status.success {
-                    color: #28a745;
-                }
-                .test-status.error {
-                    color: #dc3545;
-                }
-                .test-note {
-                    font-size: 12px;
+                /* --- Footer Styles --- */
+                .footer {
+                    margin-top: 20px;
+                    padding-top: 15px;
+                    border-top: 1px solid var(--border-color);
+                    text-align: left;
+                    font-size: 1em;
                     color: #6c757d;
-                    margin: 0;
+                    line-height: 1.6;
                 }
-                html.dark-mode .test-note {
+                html.dark-mode .footer {
                     color: #aaa;
                 }
 
-				.switch-container {
-					display: flex;
-					align-items: center;
-					gap: 10px;
-                    margin-bottom: 15px;
-				}
-                
-                .checkbox-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-                    gap: 10px;
-                    margin-top: 10px;
-                }
-
-                .checkbox-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 5px;
-                }
-
-                .checkbox-item input[type="checkbox"] {
-                    cursor: pointer;
-                }
-                
-                .checkbox-item label {
-                    cursor: pointer;
-                    user-select: none;
-                }
-
-                .theme-switch-wrapper {
-						display: flex;
-						align-items: center;
-						position: fixed;
-						top: 15px;
-						right: 15px;
-					}
-
-					.theme-switch {
-						display: inline-block;
-						height: 20px;
-						position: relative;
-						width: 36px;
-					}
-
-					.theme-switch input {
-						display:none;
-					}
-
-					.slider {
-						background-color: #ccc;
-						bottom: 0;
-						cursor: pointer;
-						left: 0;
-						position: absolute;
-						right: 0;
-						top: 0;
-						transition: .4s;
-					}
-
-					.slider:before {
-						background-color: #fff;
-						bottom: 3px;
-						content: "";
-						height: 14px;
-						left: 3px;
-						position: absolute;
-						transition: .4s;
-						width: 14px;
-					}
-
-					input:checked + .slider {
-						background-color: var(--primary-color);
-					}
-
-					input:checked + .slider:before {
-						transform: translateX(16px);
-					}
-
-					.slider.round {
-						border-radius: 20px;
-					}
-
-					.slider.round:before {
-						border-radius: 50%;
-					}
-
-                @media (max-width: 768px) {
-                    body {
-                        padding: 10px;
-                    }
-
-                    .container {
-                        padding: 15px;
-                    }
-
-                    .editor {
-                        height: 400px;
-                    }
-
-                    .checkbox-grid {
-                        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-                    }
-                }
             </style>
             <script>
                 (function() {
@@ -3510,225 +3308,166 @@ async function handleGetRequest(env) {
         </head>
         <body>
             <div class="theme-switch-wrapper">
-                <label class="theme-switch" for="checkbox">
-                    <input type="checkbox" id="checkbox" />
+                <label class="theme-switch" for="theme-checkbox">
+                    <input type="checkbox" id="theme-checkbox" />
                     <div class="slider round"></div>
                 </label>
             </div>
             <div class="container">
                 <div class="title">📝 ${FileName} 优选订阅列表</div>
 
-                <div class="advanced-settings">
-                    <div class="advanced-settings-header" onclick="toggleAdvancedSettings()">
-                        <h3 style="margin: 0;">⚙️ 高级设置</h3>
-                    </div>
-                    <div id="advanced-settings-content">
-                        <!-- PROXYIP设置 -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>PROXYIP</strong></span>
-                            </div>
-                            <div class="setting-content">
-                                <p>每行一个IP，格式：IP:端口(可不添加端口)</p>
-                                <textarea id="proxyip" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E4MApwcml2YXRlLmV4YW1wbGUuY29tJTNBMjA1Mg=='))}">${proxyIPContent}</textarea>
-                            </div>
-                            <div class="setting-item-footer">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'proxyip')">测试连接</button>
-                                <span id="proxyip-status" class="test-status"></span>
-                                <p class="test-note">（仅测试列表中的第一个地址）</p>
-                            </div>
-                        </div>
-
-                        <!-- SOCKS5设置 -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SOCKS5</strong></span>
-                            </div>
-                            <div class="setting-content">
-                                <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
-                                <textarea id="socks5" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${socks5Content}</textarea>
-                            </div>
-                            <div class="setting-item-footer">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'socks5')">测试连接</button>
-                                <span id="socks5-status" class="test-status"></span>
-                                <p class="test-note">（仅测试列表中的第一个地址）</p>
-                            </div>
-                        </div>
-
-                        <!-- HTTP Proxy 设置 -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>HTTP</strong></span>
-                            </div>
-                            <div class="setting-content">
-                                <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
-                                <textarea id="httpproxy" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXI6cGFzc0AxLjIuMy40OjgwODAKMS4yLjMuNDo4MDgw'))}">${httpProxyContent}</textarea>
-                            </div>
-                             <div class="setting-item-footer">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'http')">测试连接</button>
-                                <span id="http-status" class="test-status"></span>
-                                <p class="test-note">（仅测试列表中的第一个地址）</p>
-                            </div>
-                        </div>
-
-                        <!-- SUB设置 -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUB</strong> (优选订阅生成器)</span>
-                            </div>
-                            <div class="setting-content">
-                                <p>只支持单个优选订阅生成器地址</p>
-                                <textarea id="sub" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}">${subContent}</textarea>
-                            </div>
-                        </div>
-
-                        <!-- SUBAPI设置 -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUBAPI</strong> (订阅转换后端)</span>
-                            </div>
-                            <div class="setting-content">
-                                <p>订阅转换后端地址</p>
-                                <textarea id="subapi" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmFwaS52MS5tawpzdWIueGV0b24uZGV2'))}">${subAPIContent}</textarea>
-                            </div>
-                        </div>
-
-                        <!-- SUBCONFIG设置 -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>SUBCONFIG</strong> (订阅转换配置)</span>
-                            </div>
-                            <div class="setting-content">
-                                <p>订阅转换配置文件地址</p>
-                                <textarea id="subconfig" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRkFDTDRTU1IlMkZBQ0w0U1NSJTI1MkZtYXN0ZXIlMkZDbGFzaCUyRmNvbmZpZyUyRkFDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ=='))}">${subConfigContent}</textarea>
-                            </div>
-                        </div>
-
-                        <!-- NAT64/DNS64 设置 -->
-                        <div class="setting-item">
-                           <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>NAT64/DNS64</strong></span>
-                            </div>
-                             <div class="setting-content">
-                                <p>
-                                    <a id="nat64-link" target="_blank">自行查询</a>
-                                </p>
-                                <textarea id="nat64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBJTBBZG5zNjQuZXhhbXBsZS5jb20lMEEyYTAxJTNBNGY4JTNBYzJjJTNBMTIzZiUzQSUzQSUyRjk2'))}">${nat64Content}</textarea>
-                            </div>
-                            <div class="setting-item-footer">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'nat64')">测试连接</button>
-                                <span id="nat64-status" class="test-status"></span>
-                                <p class="test-note">（将尝试解析 www.cloudflare.com）</p>
-                            </div>
-                        </div>
-						<script>
-  							const encodedURL = 'aHR0cHM6Ly9uYXQ2NC54eXo=';
-  							const decodedURL = atob(encodedURL);
-  							document.getElementById('nat64-link').setAttribute('href', decodedURL);
-						</script>
-						
-						<!-- HTTPS Ports Setting -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>随机节点 TLS 端口</strong></span>
-                            </div>
-                            <div class="setting-content">
-                                <p>请选择用于随机生成 TLS 节点时使用的端口。</p>
-                                <div class="checkbox-grid" id="httpsports-grid">
-                                    ${httpsCheckboxesHTML}
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- HTTP Ports Setting -->
-                        <div class="setting-item">
-                            <div class="setting-header" onclick="toggleSetting(this)">
-                                <span><strong>随机节点 noTLS 端口</strong></span>
-                            </div>
-                            <div class="setting-content">
-                                <div class="switch-container">
-                                    <label class="theme-switch" for="notls-checkbox">
-                                        <input type="checkbox" id="notls-checkbox" ${noTLSContent === 'true' ? 'checked' : ''}>
-                                        <div class="slider round"></div>
-                                    </label>
-                                    <span>启用 noTLS (将不使用 TLS 加密)</span>
-                                </div>
-                                <p>请选择用于随机生成 noTLS 节点时使用的端口。</p>
-                                <div class="checkbox-grid" id="httpports-grid">
-                                    ${httpCheckboxesHTML}
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 统一的保存按钮 -->
-                        <div style="margin-top: 20px;">
-                            <button class="btn btn-primary" onclick="saveSettings()">保存</button>
-                            <span id="settings-save-status" class="save-status"></span>
-                        </div>
-                    </div>
+                <div class="tab-container">
+                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">优选列表 (ADD)</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-proxy')">代理设置</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-sub')">订阅设置</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-network')">网络设置</button>
                 </div>
 
-                <!-- 保持现有内容 -->
-                <a href="javascript:void(0);" id="noticeToggle" class="notice-toggle" onclick="toggleNotice()">
-                    ℹ️ 注意事项 ∨
-                </a>
-
-                <div id="noticeContent" class="notice-content" style="display: none">
-				    ${decodeURIComponent(atob('JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU1JUI4JUI4JUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUI3JUU2JThCJUFDJUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUE0JUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEExMjcuMC4wLjElM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5SVAlM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTNDYnIlM0UlMEElNUIyNjA2JTNBNDcwMCUzQSUzQSU1RCUzQTIwNTMlMjMlRTQlQkMlOTglRTklODAlODlJUHY2JTNDYnIlM0UlM0NiciUzRSUwQSUwQSUzQ3N0cm9uZyUzRTIuJTNDJTJGc3Ryb25nJTNFJTIwQUREQVBJJTIwJUU1JUE2JTgyJUU2JTlFJTlDJUU2JTk4JUFGJUU0JUJCJUEzJUU3JTkwJTg2SVAlRUYlQkMlOEMlRTUlOEYlQUYlRTQlQkQlOUMlRTQlQjglQkFQUk9YWUlQJUU3JTlBJTg0JUU4JUFGJTlEJUVGJUJDJThDJUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGcHJveHlpcCUzRHRydWUlMjIlRTUlOEYlODIlRTYlOTUlQjAlRTYlQjclQkIlRTUlOEElQTAlRTUlODglQjAlRTklOTMlQkUlRTYlOEUlQTUlRTYlOUMlQUIlRTUlQjAlQkUlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQlM0Zwcm94eWlwJTNEdHJ1ZSUzQ2JyJTNFJTNDYnIlM0UlMEElMEElM0NzdHJvbmclM0UzLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJ2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JyUzRUNsb3VkZmxhcmVTcGVlZFRlc3QlM0MlMkZhJTNFJTIwJUU3JTlBJTg0JTIwY3N2JTIwJUU3JUJCJTkzJUU2JTlFJTlDJUU2JTk2JTg3JUU0JUJCJUI2JUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
-                </div>
-
-                <div class="editor-container">
+                <div id="tab-main" class="tab-content" style="display: block;">
                     ${hasKV ? `
-                        <textarea class="editor"
-                            placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
-                            id="content">${content}</textarea>
+                        <a href="javascript:void(0);" id="noticeToggle" class="notice-toggle" onclick="toggleNotice()">
+                            ℹ️ 注意事项 ∨
+                        </a>
+                        <div id="noticeContent" class="notice-content">
+                            ${decodeURIComponent(atob('JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU1JUI4JUI4JUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUI3JUU2JThCJUFDJUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUE0JUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEExMjcuMC4wLjElM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5SVAlM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTNDYnIlM0UlMEElNUIyNjA2JTNBNDcwMCUzQSUzQSU1RCUzQTIwNTMlMjMlRTQlQkMlOTglRTklODAlODlJUHY2JTNDYnIlM0UlM0NiciUzRSUwQSUwQSUzQ3N0cm9uZyUzRTIuJTNDJTJGc3Ryb25nJTNFJTIwQUREQVBJJTIwJUU1JUE2JTgyJUU2JTlFJTlDJUU2JTk4JUFGJUU0JUJCJUEzJUU3JTkwJTg2SVAlRUYlQkMlOEMlRTUlOEYlQUYlRTQlQkQlOUMlRTQlQjglQkFQUk9YWUlQJUU3JTlBJTg0JUU4JUFGJTlEJUVGJUJDJThDJUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGcHJveHlpcCUzRHRydWUlMjIlRTUlOEYlODIlRTYlOTUlQjAlRTYlQjclQkIlRTUlOEElQTAlRTUlODglQjAlRTklOTMlQkUlRTYlOEUlQTUlRTYlOUMlQUIlRTUlQjAlQkUlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQlM0Zwcm94eWlwJTNEdHJ1ZSUzQ2JyJTNFJTNDYnIlM0UlMEElMEElM0NzdHJvbmclM0UzLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJ2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JyUzRUNsb3VkZmxhcmVTcGVlZFRlc3QlM0MlMkZhJTNFJTIwJUU3JTlBJTg0JTIwY3N2JTIwJUU3JUJCJTkzJUU2JTlFJTlDJUU2JTk2JTg3JUU0JUJCJUI2JUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
+                        </div>
+
+                        <textarea class="editor" id="content" placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}">${content}</textarea>
+
                         <div class="button-group">
                             <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
                             <button class="btn btn-primary" onclick="saveContent(this)">保存</button>
                             <span class="save-status" id="saveStatus"></span>
                         </div>
-                        <div class="divider"></div>
-                        ${cmad}
                     ` : '<p>未绑定KV空间</p>'}
+                </div>
+
+                <div id="tab-proxy" class="tab-content">
+                    <div class="setting-item">
+                        <h4>PROXYIP</h4>
+                        <p>每行一个IP，格式：IP:端口(可不添加端口)</p>
+                        <textarea id="proxyip" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCjEuMi4zLjQlM0E4MApwcml2YXRlLmV4YW1wbGUuY29tJTNBMjA1Mg=='))}">${proxyIPContent}</textarea>
+                        <div class="test-group">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'proxyip')">测试连接</button>
+                            <span id="proxyip-status" class="test-status"></span>
+                            <span class="test-note">（仅测试一个地址）</span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <h4>SOCKS5</h4>
+                        <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                        <textarea id="socks5" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${socks5Content}</textarea>
+                         <div class="test-group">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'socks5')">测试连接</button>
+                            <span id="socks5-status" class="test-status"></span>
+                            <span class="test-note">（仅测试一个地址）</span>
+                        </div>
+                    </div>
+                     <div class="setting-item">
+                        <h4>HTTP </h4>
+                        <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                        <textarea id="httpproxy" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXI6cGFzc0AxLjIuMy40OjgwODAKMS4yLjMuNDo4MDgw'))}">${httpProxyContent}</textarea>
+                         <div class="test-group">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'http')">测试连接</button>
+                            <span id="http-status" class="test-status"></span>
+                            <span class="test-note">（仅测试一个地址）</span>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                        <button class="btn btn-primary" onclick="saveAdvancedSettings()">保存</button>
+                        <span class="save-status" id="proxy-save-status"></span>
+                    </div>
+                </div>
+
+                <div id="tab-sub" class="tab-content">
+                     <div class="setting-item">
+                        <h4>SUB (优选订阅生成器)</h4>
+                        <p>只支持单个优选订阅生成器地址</p>
+                        <textarea id="sub" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}">${subContent}</textarea>
+                    </div>
+                    <div class="setting-item">
+                        <h4>SUBAPI (订阅转换后端)</h4>
+                        <p>订阅转换后端地址</p>
+                        <textarea id="subapi" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmFwaS52MS5tawpzdWIueGV0b24uZGV2'))}">${subAPIContent}</textarea>
+                    </div>
+                    <div class="setting-item">
+                        <h4>SUBCONFIG (订阅转换配置)</h4>
+                        <p>订阅转换配置文件地址</p>
+                        <textarea id="subconfig" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRkFDTDRTU1IlMkZBQ0w0U1NSJTI1MkZtYXN0ZXIlMkZDbGFzaCUyRmNvbmZpZyUyRkFDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ=='))}">${subConfigContent}</textarea>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                        <button class="btn btn-primary" onclick="saveAdvancedSettings()">保存</button>
+                        <span class="save-status" id="sub-save-status"></span>
+                    </div>
+                </div>
+
+                <div id="tab-network" class="tab-content">
+                    <div class="setting-item">
+                        <h4>NAT64/DNS64</h4>
+                        <p>
+                           <a id="nat64-link" target="_blank" style="margin-left: 10px;">自行查询</a>
+                        </p>
+                        <script>
+                            (function() {
+                                const encodedURL = 'aHR0cHM6Ly9uYXQ2NC54eXo=';
+                                const decodedURL = atob(encodedURL);
+                                const link = document.getElementById('nat64-link');
+                                if (link) {
+                                    link.setAttribute('href', decodedURL);
+                                }
+                            })();
+                        </script>
+                        <textarea id="nat64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBJTBBZG5zNjQuZXhhbXBsZS5jb20lMEEyYTAxJTNBNGY4JTNBYzJjJTNBMTIzZiUzQSUzQSUyRjk2'))}">${nat64Content}</textarea>
+                        <div class="test-group">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'nat64')">测试连接</button>
+                            <span id="nat64-status" class="test-status"></span>
+                            <span class="test-note">（将尝试解析 www.cloudflare.com）</span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <h4>随机节点端口设置</h4>
+                        <p>勾选以启用 noTLS (不加密)，并选择用于随机生成节点时的端口。</p>
+                        <div class="switch-container">
+                             <label class="theme-switch" for="notls-checkbox">
+                                <input type="checkbox" id="notls-checkbox" ${noTLSContent === 'true' ? 'checked' : ''}>
+                                <div class="slider round"></div>
+                            </label>
+                            <span>启用 noTLS</span>
+                        </div>
+                        
+                        <h5 style="margin-top: 15px; margin-bottom: 5px;">TLS 端口</h5>
+                        <div class="checkbox-grid" id="httpsports-grid">${httpsCheckboxesHTML}</div>
+                        
+                        <h5 style="margin-top: 15px; margin-bottom: 5px;">noTLS 端口</h5>
+                        <div class="checkbox-grid" id="httpports-grid">${httpCheckboxesHTML}</div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                        <button class="btn btn-primary" onclick="saveAdvancedSettings()">保存</button>
+                        <span class="save-status" id="network-save-status"></span>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    ${cmad}
                 </div>
             </div>
 
             <script>
-                function goBack() {
-                    const pathParts = window.location.pathname.split('/');
-                    pathParts.pop(); // 移除 "edit"
-                    const newPath = pathParts.join('/');
-                    window.location.href = newPath;
-                }
-
-                async function saveContent(button) {
-                    try {
-                        button.disabled = true;
-                        const content = document.getElementById('content').value;
-                        const saveStatus = document.getElementById('saveStatus');
-
-                        saveStatus.textContent = '保存中...';
-
-                        const response = await fetch(window.location.href, {
-                            method: 'POST',
-                            body: content
-                        });
-
-                        if (response.ok) {
-                            saveStatus.textContent = '保存成功';
-                            setTimeout(() => {
-                                saveStatus.textContent = '';
-                            }, 3000);
-                        } else {
-                            throw new Error('保存失败: ' + await response.text());
-                        }
-                    } catch (error) {
-                        const saveStatus = document.getElementById('saveStatus');
-                        saveStatus.textContent = '❌ ' + error.message;
-                        console.error('保存时发生错误:', error);
-                    } finally {
-                        button.disabled = false;
+                function openTab(evt, tabName) {
+                    let i, tabcontent, tablinks;
+                    tabcontent = document.getElementsByClassName("tab-content");
+                    for (i = 0; i < tabcontent.length; i++) {
+                        tabcontent[i].style.display = "none";
                     }
+                    tablinks = document.getElementsByClassName("tab-link");
+                    for (i = 0; i < tablinks.length; i++) {
+                        tablinks[i].className = tablinks[i].className.replace(" active", "");
+                    }
+                    document.getElementById(tabName).style.display = "block";
+                    evt.currentTarget.className += " active";
                 }
 
                 function toggleNotice() {
@@ -3743,114 +3482,31 @@ async function handleGetRequest(env) {
                     }
                 }
 
-                function toggleAdvancedSettings() {
-                    const content = document.getElementById('advanced-settings-content');
-                    const isOpening = content.style.display === 'none' || !content.style.display;
-
-                    if (isOpening) {
-                        content.style.display = 'block';
-                    } else {
-                        content.style.display = 'none';
-                        
-                        const allSettings = document.querySelectorAll('.setting-content');
-                        allSettings.forEach(setting => {
-                            setting.style.display = 'none';
-                        });
-                        const allFooters = document.querySelectorAll('.setting-item-footer');
-                        allFooters.forEach(footer => {
-                            footer.style.display = 'none';
-                        });
-                        const allHeaders = document.querySelectorAll('.setting-header');
-                        allHeaders.forEach(header => {
-                            header.classList.remove('open');
-                        });
-                    }
+                function goBack() {
+                    const pathParts = window.location.pathname.split('/');
+                    pathParts.pop(); // Remove "edit"
+                    const newPath = pathParts.join('/');
+                    window.location.href = newPath || '/';
                 }
 
-                function toggleSetting(headerElement) {
-                    const content = headerElement.nextElementSibling;
-                    const footer = content.nextElementSibling;
-                    headerElement.classList.toggle('open');
-                    if (content.style.display === 'none' || content.style.display === '') {
-                        content.style.display = 'block';
-                        if (footer && footer.classList.contains('setting-item-footer')) {
-                           footer.style.display = 'flex';
-                        }
-                    } else {
-                        content.style.display = 'none';
-                         if (footer && footer.classList.contains('setting-item-footer')) {
-                           footer.style.display = 'none';
-                        }
-                    }
+                async function saveContent(button) {
+                    const saveStatus = document.getElementById('saveStatus');
+                    await saveAdvancedSettings(button, saveStatus);
                 }
                 
-                // 新增：连接测试函数
-                async function testSetting(event, type) {
-                    // httpproxy is the id for http type
-                    const elementId = type === 'http' ? 'httpproxy' : type;
-                    const address = document.getElementById(elementId).value.trim();
-                    const statusEl = document.getElementById(type + '-status');
-                    const testButton = event.target;
-
-                    if (!address) {
-                        statusEl.textContent = '❌ 地址不能为空';
-                        statusEl.className = 'test-status error';
-                        return;
-                    }
-
-                    const firstAddress = address.split(/\\r?\\n/)[0].trim();
-                    if (!firstAddress) {
-                        statusEl.textContent = '❌ 地址不能为空';
-                        statusEl.className = 'test-status error';
-                        return;
-                    }
-
-                    statusEl.textContent = '测试中...';
-                    statusEl.className = 'test-status';
-                    testButton.disabled = true;
+                async function saveAdvancedSettings(triggeredButton, triggeredStatusEl) {
+                    const activeTab = document.querySelector('.tab-link.active').getAttribute('onclick').match(/'([^']*)'/)[1];
+                    const button = triggeredButton || document.querySelector(\`#\${activeTab} .btn-primary\`);
+                    const statusEl = triggeredStatusEl || document.querySelector(\`#\${activeTab} .save-status\`);
+                    
+                    if (!button || !statusEl) return;
 
                     try {
-                        const response = await fetch(window.location.href.split('?')[0] + '?action=test', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                type: type,
-                                address: firstAddress
-                            })
-                        });
+                        const selectedHttpsPorts = Array.from(document.querySelectorAll('input[name="httpsports"]:checked')).map(cb => cb.value).join(',');
+                        const selectedHttpPorts = Array.from(document.querySelectorAll('input[name="httpports"]:checked')).map(cb => cb.value).join(',');
 
-                        const result = await response.json();
-
-                        if (result.success) {
-                            statusEl.textContent = \`✅ \${result.message}\`;
-                            statusEl.className = 'test-status success';
-                        } else {
-                            statusEl.textContent = \`❌ \${result.message}\`;
-                            statusEl.className = 'test-status error';
-                        }
-
-                    } catch (error) {
-                        statusEl.textContent = '❌ 请求失败，请检查网络或Worker日志';
-                        statusEl.className = 'test-status error';
-                        console.error('Test connection error:', error);
-                    } finally {
-                        testButton.disabled = false;
-                        setTimeout(() => {
-                            statusEl.textContent = '';
-                        }, 8000);
-                    }
-                }
-
-
-                async function saveSettings() {
-                    const saveStatus = document.getElementById('settings-save-status');
-                    saveStatus.textContent = '保存中...';
-
-                    try {
-						const selectedHttpsPorts = Array.from(document.querySelectorAll('input[name="httpsports"]:checked')).map(cb => cb.value).join(',');
-						const selectedHttpPorts = Array.from(document.querySelectorAll('input[name="httpports"]:checked')).map(cb => cb.value).join(',');
-
-                        const advancedSettings = {
+                        const settingsToSave = {
+                            ADD: document.getElementById('content').value,
                             proxyip: document.getElementById('proxyip').value,
                             socks5: document.getElementById('socks5').value,
                             httpproxy: document.getElementById('httpproxy').value,
@@ -3858,46 +3514,79 @@ async function handleGetRequest(env) {
                             subapi: document.getElementById('subapi').value,
                             subconfig: document.getElementById('subconfig').value,
                             nat64: document.getElementById('nat64').value,
-							notls: document.getElementById('notls-checkbox').checked.toString(),
-							httpsports: selectedHttpsPorts,
+                            notls: document.getElementById('notls-checkbox').checked.toString(),
+                            httpsports: selectedHttpsPorts,
                             httpports: selectedHttpPorts
                         };
-
-                        const response = await fetch(window.location.href + '?type=advanced', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify(advancedSettings)
-                        });
-
-                        if (response.ok) {
-                            saveStatus.textContent = '保存成功';
-                            setTimeout(() => {
-                                saveStatus.textContent = '';
-                            }, 3000);
-                        } else {
-                            throw new Error('保存失败: ' + await response.text());
-                        }
-                    } catch (error) {
-                        saveStatus.textContent = '❌ ' + error.message;
+                        await saveData(button, statusEl, JSON.stringify(settingsToSave), '?type=advanced');
+                    } catch(error) {
+                        statusEl.textContent = '❌ ' + error.message;
                         console.error('保存设置时发生错误:', error);
                     }
                 }
-                const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
+
+                async function saveData(button, statusEl, body, queryParams) {
+                    if (!button || !statusEl) return;
+                    button.disabled = true;
+                    statusEl.textContent = '保存中...';
+                    try {
+                        const response = await fetch(window.location.href + queryParams, {
+                            method: 'POST',
+                            headers: { 'Content-Type': queryParams.includes('advanced') ? 'application/json' : 'text/plain' },
+                            body: body
+                        });
+                        if (!response.ok) throw new Error('保存失败: ' + await response.text());
+                        
+                        statusEl.textContent = '保存成功';
+                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+                    } catch (error) {
+                        statusEl.textContent = '❌ ' + error.message;
+                        console.error('保存时发生错误:', error);
+                    } finally {
+                        button.disabled = false;
+                    }
+                }
                 
+                async function testSetting(event, type) {
+                    const elementId = type === 'http' ? 'httpproxy' : type;
+                    const address = document.getElementById(elementId).value.trim();
+                    const statusEl = document.getElementById(type + '-status');
+                    const testButton = event.target;
+                    if (!address) {
+                        statusEl.textContent = '❌ 地址不能为空'; statusEl.className = 'test-status error'; return;
+                    }
+                    const firstAddress = address.split(/\\r?\\n/)[0].trim();
+                    if (!firstAddress) {
+                        statusEl.textContent = '❌ 地址不能为空'; statusEl.className = 'test-status error'; return;
+                    }
+                    statusEl.textContent = '测试中...'; statusEl.className = 'test-status'; testButton.disabled = true;
+                    try {
+                        const response = await fetch(window.location.href.split('?')[0] + '?action=test', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ type: type, address: firstAddress })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            statusEl.textContent = \`✅ \${result.message}\`; statusEl.className = 'test-status success';
+                        } else {
+                            statusEl.textContent = \`❌ \${result.message}\`; statusEl.className = 'test-status error';
+                        }
+                    } catch (error) {
+                        statusEl.textContent = '❌ 请求失败，请检查网络或Worker日志'; statusEl.className = 'test-status error';
+                    } finally {
+                        testButton.disabled = false;
+                        setTimeout(() => { statusEl.textContent = ''; }, 8000);
+                    }
+                }
+
+                const themeToggleSwitch = document.querySelector('#theme-checkbox');
                 (function() {
                     const currentTheme = localStorage.getItem('theme');
                     if (currentTheme === 'dark-mode') {
-                        toggleSwitch.checked = true;
+                        themeToggleSwitch.checked = true;
                     }
-                    
-                    // Hide all setting-item-footers initially
-                    document.querySelectorAll('.setting-item-footer').forEach(footer => {
-                        footer.style.display = 'none';
-                    });
                 })();
-
                 function switchTheme(e) {
                     if (e.target.checked) {
                         document.documentElement.classList.add('dark-mode');
@@ -3907,7 +3596,7 @@ async function handleGetRequest(env) {
                         localStorage.setItem('theme', 'light-mode');
                     }    
                 }
-                toggleSwitch.addEventListener('change', switchTheme, false);
+                themeToggleSwitch.addEventListener('change', switchTheme, false);
             </script>
         </body>
         </html>
@@ -3917,6 +3606,10 @@ async function handleGetRequest(env) {
         headers: { "Content-Type": "text/html;charset=utf-8" }
     });
 }
+
+// #################################################################
+// ############### END OF TABBED UI REPLACEMENT ####################
+// #################################################################
 
 /**
  * 新增：处理连接测试的后端函数 (使用 HTTP 路由探针)
