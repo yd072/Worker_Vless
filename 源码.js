@@ -259,7 +259,7 @@ function createWebSocketStream(webSocket, earlyDataHeader, log) {
 
 			// 监听 WebSocket 事件
 			webSocket.addEventListener('message', event => {
-				// TransformStream 自动处理背压，我们只需将数据写入即可
+				// TransformStream 自动处理背压，只需将数据写入即可
 				if (streamCancelled) return;
 				try {
 					controller.enqueue(event.data);
@@ -1066,25 +1066,25 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         }
     }
 
-    // --- 组装策略列表 ---
+    // --- 组装策略列表 (新顺序) ---
     const connectionStrategies = [];
     const shouldUseSocks = enableSocks && go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
 
     // 1. 主要连接策略
-    if (enableHttpProxy) {
-        connectionStrategies.push({
-            name: 'HTTP Proxy',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
-        });
-    } else if (shouldUseSocks) {
+    connectionStrategies.push({
+        name: 'Direct Connection',
+        execute: () => createConnection(addressRemote, portRemote, null)
+    });
+    if (shouldUseSocks) {
         connectionStrategies.push({
             name: 'SOCKS5 Proxy (go2Socks5s)',
             execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
         });
-    } else {
+    }
+    if (enableHttpProxy) {
         connectionStrategies.push({
-            name: 'Direct Connection',
-            execute: () => createConnection(addressRemote, portRemote, null)
+            name: 'HTTP Proxy',
+            execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
         });
     }
 
@@ -1290,8 +1290,8 @@ function stringify(arr, offset = 0) {
     return uuid;
 }
 
-async function socks5Connect(addressType, addressRemote, portRemote, log, signal = null) {
-    const { username, password, hostname, port } = parsedSocks5Address;
+async function socks5Connect(addressType, addressRemote, portRemote, log, signal = null, customProxyAddress = null) {
+    const { username, password, hostname, port } = customProxyAddress || parsedSocks5Address;
     const socket = await connect({ hostname, port, signal });
 
     const socksGreeting = new Uint8Array([5, 2, 0, 2]);
@@ -1436,8 +1436,8 @@ function httpProxyAddressParser(address) {
     }
 }
 
-async function httpConnect(addressRemote, portRemote, log, signal = null) {
-	const { username, password, hostname, port } = parsedHttpProxyAddress;
+async function httpConnect(addressRemote, portRemote, log, signal = null, customProxyAddress = null) {
+	const { username, password, hostname, port } = customProxyAddress || parsedHttpProxyAddress;
 	const sock = await connect({
 		hostname: hostname,
 		port: port,
@@ -1507,7 +1507,7 @@ async function httpConnect(addressRemote, portRemote, log, signal = null) {
 				if (headers.startsWith('HTTP/1.1 200') || headers.startsWith('HTTP/1.0 200')) {
 					connected = true;
 
-					// 如果响应头之后还有数据，我们需要保存这些数据以便后续处理
+					// 如果响应头之后还有数据，需要保存这些数据以便后续处理
 					if (headersEndPos < responseBuffer.length) {
 						const remainingData = responseBuffer.slice(headersEndPos);
 						// 创建一个缓冲区来存储这些数据，以便稍后使用
@@ -3185,6 +3185,27 @@ async function handleGetRequest(env) {
                     padding-left: 5px;
                 }
                 html.dark-mode .test-note { color: #aaa; }
+                
+                .test-results-container {
+                    margin-top: 10px;
+                    padding: 10px;
+                    border: 1px solid var(--border-color);
+                    border-radius: 6px;
+                    max-height: 200px;
+                    overflow-y: auto;
+                    font-family: Monaco, Consolas, "Courier New", monospace;
+                    font-size: 13px;
+                    display: none; /* 默认隐藏 */
+                }
+                .test-result-item {
+                    padding: 4px 0;
+                    border-bottom: 1px dashed var(--border-color);
+                }
+                .test-result-item:last-child {
+                    border-bottom: none;
+                }
+                .test-result-item .success { color: #28a745; font-weight: bold; }
+                .test-result-item .error { color: #dc3545; font-weight: bold; }
 
                 .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-top: 10px; }
                 .checkbox-item { display: flex; align-items: center; gap: 5px; }
@@ -3295,8 +3316,9 @@ async function handleGetRequest(env) {
                         <div class="test-group">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'proxyip')">测试连接</button>
                             <span id="proxyip-status" class="test-status"></span>
-                            <span class="test-note">（仅测试一个地址）</span>
+                            <span class="test-note">（批量测试并自动移除失败地址）</span>
                         </div>
+                        <div id="proxyip-results" class="test-results-container"></div>
                     </div>
                     <div class="setting-item">
                         <h4>SOCKS5</h4>
@@ -3305,8 +3327,9 @@ async function handleGetRequest(env) {
                          <div class="test-group">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'socks5')">测试连接</button>
                             <span id="socks5-status" class="test-status"></span>
-                            <span class="test-note">（仅测试一个地址）</span>
+                            <span class="test-note">（批量测试并自动移除失败地址）</span>
                         </div>
+                        <div id="socks5-results" class="test-results-container"></div>
                     </div>
                      <div class="setting-item">
                         <h4>HTTP </h4>
@@ -3315,8 +3338,9 @@ async function handleGetRequest(env) {
                          <div class="test-group">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'http')">测试连接</button>
                             <span id="http-status" class="test-status"></span>
-                            <span class="test-note">（仅测试一个地址）</span>
+                            <span class="test-note">（批量测试并自动移除失败地址）</span>
                         </div>
+                        <div id="http-results" class="test-results-container"></div>
                     </div>
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
@@ -3370,6 +3394,7 @@ async function handleGetRequest(env) {
                             <span id="nat64-status" class="test-status"></span>
                             <span class="test-note">（将尝试解析 www.cloudflare.com）</span>
                         </div>
+                        <div id="nat64-results" class="test-results-container"></div>
                     </div>
                     <div class="setting-item">
                         <h4>随机节点端口设置</h4>
@@ -3494,35 +3519,88 @@ async function handleGetRequest(env) {
                 
                 async function testSetting(event, type) {
                     const elementId = type === 'http' ? 'httpproxy' : type;
-                    const address = document.getElementById(elementId).value.trim();
+                    const textarea = document.getElementById(elementId);
                     const statusEl = document.getElementById(type + '-status');
+                    const resultsContainer = document.getElementById(type + '-results');
                     const testButton = event.target;
-                    if (!address) {
-                        statusEl.textContent = '❌ 地址不能为空'; statusEl.className = 'test-status error'; return;
+
+                    statusEl.textContent = '';
+                    resultsContainer.innerHTML = '';
+                    resultsContainer.style.display = 'none';
+
+                    const originalAddresses = textarea.value.trim().split(/\\r?\\n/).map(addr => addr.trim()).filter(Boolean);
+                    const total = originalAddresses.length;
+
+                    if (total === 0) {
+                        statusEl.textContent = '❌ 地址不能为空';
+                        statusEl.className = 'test-status error';
+                        return;
                     }
-                    const firstAddress = address.split(/\\r?\\n/)[0].trim();
-                    if (!firstAddress) {
-                        statusEl.textContent = '❌ 地址不能为空'; statusEl.className = 'test-status error'; return;
-                    }
-                    statusEl.textContent = '测试中...'; statusEl.className = 'test-status'; testButton.disabled = true;
-                    try {
-                        const response = await fetch(window.location.href.split('?')[0] + '?action=test', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ type: type, address: firstAddress })
-                        });
-                        const result = await response.json();
-                        if (result.success) {
-                            statusEl.textContent = \`✅ \${result.message}\`; statusEl.className = 'test-status success';
-                        } else {
-                            statusEl.textContent = \`❌ \${result.message}\`; statusEl.className = 'test-status error';
+
+                    testButton.disabled = true;
+                    statusEl.className = 'test-status';
+                    resultsContainer.style.display = 'block';
+                    
+                    let completedCount = 0;
+                    let successCount = 0;
+                    const successfulAddresses = [];
+
+                    statusEl.textContent = \`测试中 (\${completedCount}/\${total})...\`;
+
+                    const testPromises = originalAddresses.map(async (address) => {
+                        let result;
+                        try {
+                            const response = await fetch(window.location.href.split('?')[0] + '?action=test', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ type: type, address: address })
+                            });
+                            result = await response.json();
+                            
+                            if (!response.ok) {
+                                throw new Error(result.message || \`服务器错误 \${response.status}\`);
+                            }
+
+                        } catch (error) {
+                            result = { success: false, message: \`请求失败: \${error.message}\` };
+                        } finally {
+                            completedCount++;
+                            statusEl.textContent = \`测试中 (\${completedCount}/\${total})...\`;
+                            
+                            const resultItem = document.createElement('div');
+                            resultItem.className = 'test-result-item';
+                            let statusSpan;
+
+                            if (result.success) {
+                                successCount++;
+                                successfulAddresses.push(address);
+                                statusSpan = \`<span class="success">✅ 成功:</span>\`;
+                            } else {
+                                statusSpan = \`<span class="error">❌ 失败:</span>\`;
+                            }
+                            
+                            resultItem.innerHTML = \`\${statusSpan} \${address} - \${result.message}\`;
+                            resultsContainer.appendChild(resultItem);
                         }
-                    } catch (error) {
-                        statusEl.textContent = '❌ 请求失败，请检查网络或Worker日志'; statusEl.className = 'test-status error';
-                    } finally {
-                        testButton.disabled = false;
-                        setTimeout(() => { statusEl.textContent = ''; }, 8000);
+                    });
+
+                    await Promise.allSettled(testPromises);
+
+                    textarea.value = successfulAddresses.sort().join('\\n');
+                    
+                    const failedCount = total - successCount;
+                    let finalStatusMessage = \`测试完成: \${successCount} / \${total} 成功。\`;
+                    if (failedCount > 0) {
+                        finalStatusMessage += \` 已自动移除 \${failedCount} 个失败地址。\`;
                     }
+
+                    statusEl.textContent = finalStatusMessage;
+                    statusEl.className = successCount > 0 ? 'test-status success' : 'test-status error';
+                    testButton.disabled = false;
+
+                    setTimeout(() => { 
+                        statusEl.textContent = ''; 
+                    }, 15000);
                 }
 
                 const themeToggleSwitch = document.querySelector('#theme-checkbox');
@@ -3581,19 +3659,19 @@ async function handleTestConnection(request) {
 
         switch (type) {
             case 'http': {
-                parsedHttpProxyAddress = httpProxyAddressParser(address);
-                const testSocket = await httpConnect('www.cloudflare.com', 443, log, controller.signal);
+                const parsed = httpProxyAddressParser(address);
+                const testSocket = await httpConnect('www.cloudflare.com', 443, log, controller.signal, parsed); // www.gstatic.com, 443
                 await testSocket.close();
                 break;
             }
             case 'socks5': {
-                parsedSocks5Address = socks5AddressParser(address);
-                const testSocket = await socks5Connect(2, 'www.cloudflare.com', 443, log, controller.signal);
+                const parsed = socks5AddressParser(address);
+                const testSocket = await socks5Connect(2, 'www.cloudflare.com', 443, log, controller.signal, parsed);
                 await testSocket.close();
                 break;
             }
             case 'proxyip': {
-                // 对于 PROXYIP，我们默认测试其作为 HTTP 反向代理的能力，所以使用 443 端口
+                // 对于 PROXYIP，默认测试其作为 HTTP 反向代理的能力，所以使用 443 端口
                 const { address: ip, port } = parseProxyIP(address, 443);
                 log(`PROXYIP Test: 步骤 1/2 - 正在连接到 ${ip}:${port}`);
                 const testSocket = await connect({ hostname: ip, port: port, signal: controller.signal });
@@ -3604,12 +3682,11 @@ async function handleTestConnection(request) {
                     const writer = testSocket.writable.getWriter();
                     const workerHostname = new URL(request.url).hostname;
                     
-                    // 构造一个简单的 HTTP GET 请求作为探针
                     const httpProbeRequest = [
                         `GET / HTTP/1.1`,
                         `Host: ${workerHostname}`,
                         'User-Agent: Cloudflare-Connectivity-Test',
-                        'Connection: close', // 确保服务器在响应后关闭连接
+                        'Connection: close',
                         '\r\n'
                     ].join('\r\n');
 
@@ -3620,14 +3697,13 @@ async function handleTestConnection(request) {
                     const reader = testSocket.readable.getReader();
                     const { value, done } = await reader.read();
                     
-                    if (done) {
+                    if (done || !value) {
                         throw new Error("连接已关闭，未收到任何响应。");
                     }
 
                     const responseText = new TextDecoder().decode(value);
                     log(`PROXYIP Test: 收到响应:\n${responseText.substring(0, 200)}...`);
 
-                    // 成功的关键标志：响应头中包含 "Server: cloudflare"
                     if (responseText.toLowerCase().includes('server: cloudflare')) {
                         log(`PROXYIP Test: 响应头包含 "Server: cloudflare"。测试通过。`);
                         successMessage = '连接成功';
@@ -3635,14 +3711,12 @@ async function handleTestConnection(request) {
                         throw new Error("该IP可能无效。");
                     }
                     
-                    // 确保最终关闭 socket
                     await testSocket.close();
                     reader.releaseLock();
 
                 } catch(err) {
-                    // 确保在内部块出错时也能关闭socket
                     if (testSocket) await testSocket.close();
-                    throw err; // 将错误重新抛出到外部catch块
+                    throw err;
                 }
                 break;
             }
@@ -3674,7 +3748,7 @@ async function handleTestConnection(request) {
                     const reader = testSocket.readable.getReader();
                     const { value, done } = await reader.read();
 
-                    if (done) {
+                    if (done || !value) {
                         throw new Error("连接已关闭，未收到任何响应。");
                     }
                     
