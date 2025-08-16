@@ -15,7 +15,7 @@ let subEmoji = 'true';
 let socks5Address = '';
 let parsedSocks5Address = {};
 let enableSocks = false;
-
+// --- HTTP 代理相关变量 ---
 let httpProxyAddress = '';
 let parsedHttpProxyAddress = {};
 let enableHttpProxy = false;
@@ -80,8 +80,10 @@ const utils = {
 	},
 };
 
-  //生成一个8位的随机路径
-
+/**
+ * 生成一个8位的随机路径
+ * @returns {string} 例如 /aK7b2CDE
+ */
 function generateRandomPath() {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '/';
@@ -91,10 +93,10 @@ function generateRandomPath() {
     return result;
 }
 
-
-// 随机获取指纹
- 
- 
+/**
+ * 随机获取一个 TLS 指纹
+ * @returns {string} 例如 'chrome', 'random', 'randomized'
+ */
 function getRandomFingerprint() {
     return validFingerprints[Math.floor(Math.random() * validFingerprints.length)];
 }
@@ -288,6 +290,7 @@ function createWebSocketStream(webSocket, earlyDataHeader, log) {
 		},
 
 		cancel(reason) {
+			// 当流的消费者取消时（例如，pipeTo的另一端出错）
 			if (streamCancelled) return;
 			streamCancelled = true;
 			log(`流被消费者取消，原因: ${reason}`);
@@ -551,8 +554,8 @@ async function resolveToIPv6(target) {
         }
         view.setUint8(offset++, 0);
 		// 查询类型和类
-        view.setUint16(offset, 28); offset += 2; 
-        view.setUint16(offset, 1); offset += 2; 
+        view.setUint16(offset, 28); offset += 2; // AAAA记录
+        view.setUint16(offset, 1); offset += 2; // IN类
 
         return new Uint8Array(buffer, 0, offset);
     }
@@ -645,7 +648,7 @@ export default {
             // 1. 统一加载所有配置 (此函数现在使用内存缓存)
             await loadConfigurations(env);
 
-            // 2. 处理动态 userID
+            // 2. 处理动态 UUID
 			const UA = request.headers.get('User-Agent') || 'null';
 			const userAgent = UA.toLowerCase();
 			if (env.KEY || env.TOKEN || (userID && !utils.isValidUUID(userID))) {
@@ -658,7 +661,7 @@ export default {
 				userIDTime = userIDs[2];
 			}
 
-            // 3. 检查 userID是否有效，若无效则显示新的伪装页面
+            // 3. 检查 UUID 是否有效，若无效则显示新的伪装页面
 			if (!userID) {
 				return await statusPage();
 			}
@@ -699,7 +702,7 @@ export default {
 			if (!upgradeHeader || upgradeHeader !== 'websocket') {
 				// HTTP 请求处理
                 let sub = env.SUB || '';
-                let path = ''; 
+                let path = ''; // path 变量在此处作用域内定义
 				if (url.searchParams.has('sub') && url.searchParams.get('sub') !== '') sub = url.searchParams.get('sub').toLowerCase();
 				if (url.searchParams.has('notls')) noTLS = 'true';
 
@@ -754,7 +757,7 @@ export default {
 							}
 						});
 					} else {
-                        // 对于 Base64直接返回文本
+                        // 对于 Base64 的请求，直接返回文本，而不是作为文件下载
 						return new Response(secureProtoConfig, {
 							status: 200,
 							headers: {
@@ -875,16 +878,19 @@ async function secureProtoOverWSHandler(request) {
             const rawClientData = chunk.slice(rawDataIndex);
 
             if (isUDP) {
+                // UDP-specific handling
                 if (portRemote === 53) {
                     const udpHandler = await handleUDPOutBound(webSocket, secureProtoResponseHeader, log);
                     udpHandler.write(rawClientData);
                     udpStreamProcessed = true;
                 } else {
+                    // All other UDP traffic is blocked
                     throw new Error('UDP proxying is only enabled for DNS on port 53');
                 }
                 return;
             }
 
+            // TCP-specific handling
             if (banHosts.includes(addressRemote)) {
                 throw new Error('Domain is blocked');
             }
@@ -907,7 +913,12 @@ async function secureProtoOverWSHandler(request) {
     });
 }
 
-//处理出站 
+/**
+ * 处理出站 
+ * @param {import("@cloudflare/workers-types").WebSocket} webSocket 
+ * @param {ArrayBuffer} secureProtoResponseHeader 
+ * @param {(string)=> void} log 
+ */
 async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
 
     const DOH_URL = 'https://dns.google/dns-query'; //https://cloudflare-dns.com/dns-query
@@ -935,6 +946,7 @@ async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
 
     transformStream.readable.pipeTo(new WritableStream({
         async write(chunk) {
+            // 将DNS查询发送到指定的DoH服务器
             const resp = await fetch(DOH_URL, {
                 method: 'POST',
                 headers: {
@@ -1037,13 +1049,13 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             const tcpSocket = await currentStrategy.execute();
             log(`Strategy '${currentStrategy.name}' connected successfully. Piping data.`);
 
-            //如果本次连接失败，重试函数将用剩余的策略继续尝试
+            // 如果本次连接失败，重试函数将用剩余的策略继续尝试
             const retryNext = () => tryConnectionStrategies(nextStrategies);
             remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryNext, log);
 
         } catch (error) {
             log(`Strategy '${currentStrategy.name}' failed: ${error.message}. Trying next strategy...`);
-            await tryConnectionStrategies(nextStrategies); 
+            await tryConnectionStrategies(nextStrategies); // 立即尝试下一个策略
         }
     }
 
@@ -1069,7 +1081,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         });
     }
 
-    // 2. 备用 策略
+    // 2. 备用 (Fallback) 策略
     if (enableSocks && !shouldUseSocks) {
         connectionStrategies.push({
             name: 'SOCKS5 Proxy (Fallback)',
@@ -1220,6 +1232,7 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                 close() {
                     log(`远程连接的数据流已正常关闭, 是否接收到数据: ${hasIncomingData}`);
                 },
+                // abort 方法在数据流被异常中止时调用。
                 abort(reason) {
                     console.error(`远程连接的数据流被中断:`, reason);
                 },
@@ -1424,11 +1437,11 @@ async function httpConnect(addressRemote, portRemote, log, signal = null, custom
 		signal: signal
 	});
 
-	// 构建请求
+	// 构建HTTP CONNECT请求
 	let connectRequest = `CONNECT ${addressRemote}:${portRemote} HTTP/1.1\r\n`;
 	connectRequest += `Host: ${addressRemote}:${portRemote}\r\n`;
 
-	// 添加认证（如果需要）
+	// 添加代理认证（如果需要）
 	if (username && password) {
 		const authString = `${username}:${password}`;
 		const base64Auth = btoa(authString);
@@ -1437,7 +1450,7 @@ async function httpConnect(addressRemote, portRemote, log, signal = null, custom
 
 	connectRequest += `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n`;
 	connectRequest += `Proxy-Connection: Keep-Alive\r\n`;
-	connectRequest += `Connection: Keep-Alive\r\n`; 
+	connectRequest += `Connection: Keep-Alive\r\n`; // 添加标准 Connection 头
 	connectRequest += `\r\n`;
 
 	log(`正在连接到 ${addressRemote}:${portRemote} 通过代理 ${hostname}:${port}`);
@@ -1452,7 +1465,7 @@ async function httpConnect(addressRemote, portRemote, log, signal = null, custom
 		throw new Error(`发送HTTP CONNECT请求失败: ${err.message}`);
 	}
 
-	// 读取响应
+	// 读取HTTP响应
 	const reader = sock.readable.getReader();
 	let respText = '';
 	let connected = false;
@@ -1501,6 +1514,8 @@ async function httpConnect(addressRemote, portRemote, log, signal = null, custom
 						const { readable, writable } = new TransformStream();
 						dataStream.pipeTo(writable).catch(err => console.error('处理剩余数据错误:', err));
 
+						// 替换原始readable流
+						// @ts-ignore
 						sock.readable = readable;
 					}
 				} else {
@@ -1582,8 +1597,8 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
 
         const 响应 = await fetch(目标URL.toString(), {
             method: request.method, 
-            headers: newHeaders,    
-            body: request.body,     
+            headers: newHeaders, 
+            body: request.body,  
             redirect: 'manual' 
         });
 
@@ -2230,7 +2245,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
                 contentType = 'text/plain;charset=utf-8';
                 finalFileName = 'loon.conf';
             } else {
-                // Base64 格式，直接返回内容
+                // Base64 格式，直接返回内容，不触发下载
                 const base64Config = 生成本地订阅(nodeObjects);
                 const restoredConfig = 恢复伪装信息(base64Config, userID, hostName, fakeUserID, fakeHostName, true);
                 return new Response(restoredConfig);
@@ -2245,7 +2260,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
                 }
             });
         }
-        // ---生成逻辑 ---
+        // ---配置生成逻辑 ---
         
 		if (typeof fetch != 'function') {
 			return 'Error: fetch is not available in this environment.';
@@ -2326,7 +2341,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		try {
 			let content;
 			if ((!sub || sub == "") && isBase64 == true) {
-                // This old path is now handled by the new built-in generator logic
+                
                 const nodeObjects = await prepareNodeList(fakeHostName, fakeUserID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv);
 				content = 生成本地订阅(nodeObjects);
 			} else {
@@ -2394,7 +2409,6 @@ async function 整理优选列表(api) {
 					}
 				} else {
 					if (api[index].includes('proxyip=true')) {
-
 						proxyIPPool = proxyIPPool.concat((整理(content)).map(item => {
 							const baseItem = item.split('#')[0] || item;
 							if (baseItem.includes(':')) {
@@ -2462,7 +2476,6 @@ async function 整理测速结果(tls) {
 			for (let i = 1; i < lines.length; i++) {
 				const columns = lines[i].split(',');
 				const speedIndex = columns.length - 1;
-				// 检查TLS是否为"TRUE"且速度大于DLS
 				if (columns[tlsIndex].toUpperCase() === tls && parseFloat(columns[speedIndex]) > DLS) {
 					const ipAddress = columns[ipAddressIndex];
 					const port = columns[portIndex];
@@ -2484,8 +2497,7 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
-// 从各种来源收集和解析节点信息
-
+ //收集和解析节点信息
 async function prepareNodeList(host, UUID, noTLS) {
 	let allAddresses = [];
 	
@@ -2563,7 +2575,7 @@ async function prepareNodeList(host, UUID, noTLS) {
 
 		return {
             name: name,
-            type: 'secureProto',
+            type: atob(protocolEncodedFlag),
             server: server,
             port: parseInt(port, 10),
             uuid: UUID,
@@ -2580,10 +2592,10 @@ async function prepareNodeList(host, UUID, noTLS) {
         };
 	});
 
-	return nodeObjects.filter(Boolean); // 过滤掉可能解析失败的 null 值
+	return nodeObjects.filter(Boolean); 
 }
 
-  // Base64 编码的订阅内容
+//根据节点对象数组生成 Base64 编码的订阅内容
 function 生成本地订阅(nodeObjects) {
 	const 协议类型 = atob(protocolEncodedFlag);
     const secureProtoLinks = nodeObjects.map(node => {
@@ -2606,7 +2618,7 @@ function 生成本地订阅(nodeObjects) {
 	return btoa(finalLinks);
 }
 
-//猫猫
+//生成Clash配置
 function generateClashConfig(nodeObjects) {
     const proxiesYaml = nodeObjects.map(p => {
         let proxyString = `  - name: ${JSON.stringify(p.name)}\n`;
@@ -2636,9 +2648,11 @@ function generateClashConfig(nodeObjects) {
 
     const proxyNames = nodeObjects.map(p => p.name);
     
+    // 定义规范化的代理组名称
     const autoSelectGroupName = "🚀 自动选择";
     const manualSelectGroupName = "手动选择";
 
+    // --- START: 将规则定义为数组以确保正确格式化 ---
     const customRulesArray = [
         `DOMAIN-SUFFIX,googleapis.cn,${manualSelectGroupName}`,
         `DOMAIN-SUFFIX,gstatic.com,${manualSelectGroupName}`,
@@ -2650,8 +2664,10 @@ function generateClashConfig(nodeObjects) {
         'GEOIP,CN,DIRECT',
         `MATCH,${manualSelectGroupName}`
     ];
-
+    // 将规则数组转换为格式正确的YAML字符串
     const rulesYaml = customRulesArray.map(rule => `  - ${rule}`).join('\n');
+
+    // 拼接完整的 YAML 配置
     const config = `
 port: 7890
 socks-port: 7891
@@ -2689,7 +2705,8 @@ ${rulesYaml}
 `;
     return config.trim();
 }
-//三星
+
+//Sing-box配置
 function generateSingboxConfig(nodeObjects) {
     const outbounds = nodeObjects.map(p => {
         let outbound = {
@@ -2754,7 +2771,7 @@ function generateSingboxConfig(nodeObjects) {
                 { "geoip": "cn", "outbound": "direct" }
                 
             ],
-            "final": "manual-select", // 使用 final 替代 default_outbound
+            "final": "manual-select", 
             "auto_detect_interface": true
         }
     };
@@ -2762,7 +2779,7 @@ function generateSingboxConfig(nodeObjects) {
     return JSON.stringify(config, null, 2);
 }
 
-//Loon 
+//Loon配置 
 function generateLoonConfig(nodeObjects) {
     const proxiesConf = nodeObjects.map(p => {
         let proxyLine = `${JSON.stringify(p.name)} = ${p.type}, ${p.server}, ${p.port}, uuid=${p.uuid}, ws=true`;
@@ -2776,9 +2793,12 @@ function generateLoonConfig(nodeObjects) {
     }).join('\n');
 
     const proxyNames = nodeObjects.map(p => JSON.stringify(p.name));
+
+    // 定义策略组名称
     const autoSelectGroupName = "🚀 自动选择";
     const manualSelectGroupName = "手机选择";
 
+    // [Proxy Group] 和 [Rule] 部分
     const config = `
 [General]
 dns-server = 223.5.5.5, 8.8.8.8
@@ -2888,6 +2908,7 @@ async function handlePostRequest(request, env) {
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
 
+    // 根据 'action' 参数进行路由
     if (action === 'test') {
         return handleTestConnection(request);
     }
@@ -2909,8 +2930,11 @@ async function handlePostRequest(request, env) {
             // 更新主列表内容 (ADD)
             settings.ADD = await request.text();
         }
+
+        // 将合并后的 settings 对象写回 KV
         await env.KV.put('settinggs.txt', JSON.stringify(settings, null, 2));
 
+        // --- 清除内存缓存以实现即时生效 ---
 		cachedSettings = null;
 		console.log("配置已更新，内存缓存已清除。");
 		
@@ -2944,7 +2968,7 @@ async function handleGetRequest(env) {
             const advancedSettingsJSON = await env.KV.get('settinggs.txt');
             if (advancedSettingsJSON) {
                 const settings = JSON.parse(advancedSettingsJSON);
-                content = settings.ADD || ''; // 从 'ADD' 字段加载主内容
+                content = settings.ADD || ''; 
                 proxyIPContent = settings.proxyip || '';
                 socks5Content = settings.socks5 || '';
                 httpProxyContent = settings.httpproxy || '';
@@ -2965,7 +2989,7 @@ async function handleGetRequest(env) {
         }
     }
 	
-	// 端口选择
+	// 为端口选择框生成HTML
     const defaultHttpsPorts = ["443", "2053", "2083", "2087", "2096", "8443"];
     const defaultHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086", "2095"];
 
@@ -3592,7 +3616,11 @@ async function handleGetRequest(env) {
 // ############### END OF TABBED UI REPLACEMENT ####################
 // #################################################################
 
-// 连接测试
+/**
+ * 新增：处理连接测试的后端函数 (使用 HTTP 路由探针)
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
 async function handleTestConnection(request) {
     if (request.method !== 'POST') {
         return new Response('Method Not Allowed', { status: 405 });
