@@ -2211,7 +2211,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
             let configContent = '';
             let contentType = 'text/plain;charset=utf-8';
             let isBase64 = false;
-            let finalFileName = "Config";
+            let finalFileName = '';
             
             const wantsClash = (userAgent.includes('clash') && !userAgent.includes('nekobox')) || _url.searchParams.has('clash');
             const wantsSingbox = userAgent.includes('sing-box') || userAgent.includes('singbox') || _url.searchParams.has('singbox') || _url.searchParams.has('sb');
@@ -2220,15 +2220,15 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
             if (wantsClash) {
                 configContent = generateClashConfig(nodeObjects);
                 contentType = 'application/x-yaml;charset=utf-8';
-                finalFileName += '.yaml';
+                finalFileName  = 'clash.yaml';
             } else if (wantsSingbox) {
                 configContent = generateSingboxConfig(nodeObjects);
                 contentType = 'application/json;charset=utf-8';
-                finalFileName += '.json';
+                finalFileName = 'singbox.json';
             } else if (wantsLoon) {
                 configContent = generateLoonConfig(nodeObjects);
                 contentType = 'text/plain;charset=utf-8';
-                finalFileName += '.conf';
+                finalFileName = 'loon.conf';
             } else {
                 // Base64 格式，直接返回内容
                 const base64Config = 生成本地订阅(nodeObjects);
