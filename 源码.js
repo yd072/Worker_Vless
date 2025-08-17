@@ -2802,7 +2802,10 @@ function generateLoonConfig(nodeObjects) {
     const config = `
 [General]
 dns-server = 223.5.5.5, 8.8.8.8
+doh-server=https://doh.pub/dns-query, https://dns.google/dns-query
 bypass-system = true
+ipv6 = false
+skip-proxy = 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, localhost, *.local, captive.apple.com
 
 [Proxy]
 ${proxiesConf}
@@ -2836,7 +2839,7 @@ DOMAIN-SUFFIX, alidns.com, DIRECT
 DOMAIN-SUFFIX, doh.pub, DIRECT
 DOMAIN-SUFFIX, dot.pub, DIRECT
 DOMAIN-SUFFIX, onedns.net, DIRECT
-DOMAIN-SUFFIX, domain:360.cn, DIRECT
+DOMAIN-SUFFIX, 360.cn, DIRECT
 IP-CIDR, 223.5.5.5/32, DIRECT
 IP-CIDR, 119.29.29.29/32, DIRECT
 IP-CIDR, 180.76.76.76/32, DIRECT
