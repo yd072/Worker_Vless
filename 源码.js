@@ -2812,7 +2812,39 @@ ${manualSelectGroupName} = select, ${autoSelectGroupName}, DIRECT, ${proxyNames.
 ${autoSelectGroupName} = url-test, ${proxyNames.join(', ')}, url=http://www.gstatic.com/generate_204, interval=300, tolerance=100
 
 [Rule]
+# > 代理 Google 相关服务
+DOMAIN-SUFFIX, gstatic.com, ${manualSelectGroupName}
+DOMAIN-KEYWORD, googleapis, ${manualSelectGroupName}
+DOMAIN-KEYWORD, google, ${manualSelectGroupName}
+
+# > 简单广告屏蔽规则
+DOMAIN-SUFFIX, doubleclick.net, REJECT
+DOMAIN-SUFFIX, google-analytics.com, REJECT
+DOMAIN-SUFFIX, googletagservices.com, REJECT
+DOMAIN-SUFFIX, adservice.google.com, REJECT
+
+# > 局域网及私有地址直连
+IP-CIDR, 192.168.0.0/16, DIRECT
+IP-CIDR, 10.0.0.0/8, DIRECT
+IP-CIDR, 172.16.0.0/12, DIRECT
+IP-CIDR, 127.0.0.1/32, DIRECT
+DOMAIN-SUFFIX, lan, DIRECT
+DOMAIN-SUFFIX, local, DIRECT
+
+# > 国内公共DNS直连
+DOMAIN-SUFFIX, alidns.com, DIRECT
+DOMAIN-SUFFIX, doh.pub, DIRECT
+DOMAIN-SUFFIX, dot.pub, DIRECT
+DOMAIN-SUFFIX, onedns.net, DIRECT
+DOMAIN-SUFFIX, domain:360.cn, DIRECT
+IP-CIDR, 223.5.5.5/32, DIRECT
+IP-CIDR, 119.29.29.29/32, DIRECT
+IP-CIDR, 180.76.76.76/32, DIRECT
+
+# > 国内IP地址直连
 GEOIP, CN, DIRECT
+
+# > 兜底规则
 FINAL, ${manualSelectGroupName}
 `;
     return config.trim();
