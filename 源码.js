@@ -103,7 +103,6 @@ function getRandomFingerprint() {
     return validFingerprints[Math.floor(Math.random() * validFingerprints.length)];
 }
 
-
 /**
  * 集中加载所有配置，严格执行 KV > 环境变量 > 默认值的优先级
  * @param {any} env
@@ -1682,7 +1681,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		sub = subs.length > 1 ? subs[0] : sub;
 	}
 
-    // 修正后的判断条件，加入了 addsapi.length
 	if ((adds.length + addsapi.length + addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
 	    		let cfips = [
 		            '104.16.0.0/14',
@@ -2782,7 +2780,7 @@ function generateSingboxConfig(nodeObjects) {
         }
         return outbound;
     });
-
+    
     const proxyNames = outbounds.map(o => o.tag);
 
     // 定义标准的策略组名称
@@ -2847,16 +2845,16 @@ function generateSingboxConfig(nodeObjects) {
                 "tag": manualSelectTag,
                 "outbounds": [autoSelectTag, "direct", ...proxyNames] 
             },
-            {
-              "type": "urltest",
+            { 
+              "type": "urltest", 
               "tag": autoSelectTag,
               "outbounds": proxyNames,
-              "url": "http://www.gstatic.com/generate_204",
-              "interval": "5m"
+              "url": "http://www.gstatic.com/generate_204", 
+              "interval": "5m" 
             },
             ...outbounds,
-            { "type": "direct", "tag": "direct" }, 
-            { "type": "block", "tag": "block" } 
+            { "type": "direct", "tag": "direct" },
+            { "type": "block", "tag": "block" }
         ],
         "route": {
             "default_domain_resolver": "dns-foreign",
@@ -2911,7 +2909,7 @@ function generateSingboxConfig(nodeObjects) {
             }
         }
     };
-
+    
     return JSON.stringify(config, null, 2);
 }
 
@@ -3089,20 +3087,14 @@ async function handlePostRequest(request, env) {
         return new Response("未绑定KV空间", { status: 400 });
     }
     try {
-        const type = url.searchParams.get('type');
         const settingsJSON = await env.KV.get('settinggs.txt');
         let settings = settingsJSON ? JSON.parse(settingsJSON) : {};
 
-        if (type === 'advanced') {
-            // 更新高级设置
-            const advancedSettingsUpdate = await request.json();
-            settings = { ...settings, ...advancedSettingsUpdate };
-        } else {
-            // 更新主列表内容 (ADD)
-            settings.ADD = await request.text();
-        }
+        const updates = await request.json();
+        
+        // 合并更新
+        settings = { ...settings, ...updates };
 
-        // 将合并后的 settings 对象写回 KV
         await env.KV.put('settinggs.txt', JSON.stringify(settings, null, 2));
 
         // --- 清除内存缓存以实现即时生效 ---
@@ -3458,7 +3450,7 @@ async function handleGetRequest(env) {
 
                         <div class="button-group">
                             <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                            <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
+                            <button class="btn btn-primary" onclick="saveAddTab(this)">保存</button>
                             <span class="save-status" id="saveStatus"></span>
                         </div>
                     ` : '<p>未绑定KV空间</p>'}
@@ -3488,7 +3480,7 @@ async function handleGetRequest(env) {
                         
                         <div class="button-group">
                             <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                            <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
+                            <button class="btn btn-primary" onclick="saveAddsTab(this)">保存</button>
                             <span class="save-status" id="adds-save-status"></span>
                         </div>
                     ` : '<p>未绑定KV空间</p>'}
@@ -3530,7 +3522,7 @@ async function handleGetRequest(env) {
                     </div>
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                        <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
+                        <button class="btn btn-primary" onclick="saveProxyTab(this)">保存</button>
                         <span class="save-status" id="proxy-save-status"></span>
                             </div>
                         </div>
@@ -3553,7 +3545,7 @@ async function handleGetRequest(env) {
                             </div>
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                        <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
+                        <button class="btn btn-primary" onclick="saveSubTab(this)">保存</button>
                         <span class="save-status" id="sub-save-status"></span>
                     </div>
                         </div>
@@ -3584,7 +3576,7 @@ async function handleGetRequest(env) {
                                 </div>
                         <div class="button-group">
                             <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                        <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
+                        <button class="btn btn-primary" onclick="saveNetworkTab(this)">保存</button>
                         <span class="save-status" id="network-save-status"></span>
                         </div>
                 </div>
@@ -3628,43 +3620,65 @@ async function handleGetRequest(env) {
                     window.location.href = newPath || '/';
                 }
                 
-                async function saveAdvancedSettings(button) {
+                // --- Reverted and granular save functions ---
+
+                async function saveAddTab(button) {
                     const statusEl = button.parentElement.querySelector('.save-status');
-                    if (!button || !statusEl) return;
-
-                    try {
-                        const selectedHttpsPorts = Array.from(document.querySelectorAll('input[name="httpsports"]:checked')).map(cb => cb.value).join(',');
-                        const selectedHttpPorts = Array.from(document.querySelectorAll('input[name="httpports"]:checked')).map(cb => cb.value).join(',');
-
-                        const settingsToSave = {
-                            ADD: document.getElementById('content').value,
-                            ADDS: document.getElementById('adds_content').value,
-                            proxyip: document.getElementById('proxyip').value,
-                            socks5: document.getElementById('socks5').value,
-                            httpproxy: document.getElementById('httpproxy').value,
-                            sub: document.getElementById('sub').value,
-                            subapi: document.getElementById('subapi').value,
-                            subconfig: document.getElementById('subconfig').value,
-                            nat64: document.getElementById('nat64').value,
-                            notls: document.getElementById('notls-checkbox').checked.toString(),
-                            httpsports: selectedHttpsPorts,
-                            httpports: selectedHttpPorts
-                        };
-                        await saveData(button, statusEl, JSON.stringify(settingsToSave), '?type=advanced');
-                    } catch(error) {
-                        statusEl.textContent = '❌ ' + error.message;
-                        console.error('保存设置时发生错误:', error);
-                    }
+                    const payload = {
+                        ADD: document.getElementById('content').value
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
                 }
 
-                async function saveData(button, statusEl, body, queryParams) {
+                async function saveAddsTab(button) {
+                    const statusEl = button.parentElement.querySelector('.save-status');
+                    const selectedHttpsPorts = Array.from(document.querySelectorAll('input[name="httpsports"]:checked')).map(cb => cb.value).join(',');
+                    const selectedHttpPorts = Array.from(document.querySelectorAll('input[name="httpports"]:checked')).map(cb => cb.value).join(',');
+                    const payload = {
+                        ADDS: document.getElementById('adds_content').value,
+                        notls: document.getElementById('notls-checkbox').checked.toString(),
+                        httpsports: selectedHttpsPorts,
+                        httpports: selectedHttpPorts
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
+                }
+
+                async function saveProxyTab(button) {
+                    const statusEl = button.parentElement.querySelector('.save-status');
+                    const payload = {
+                        proxyip: document.getElementById('proxyip').value,
+                        socks5: document.getElementById('socks5').value,
+                        httpproxy: document.getElementById('httpproxy').value
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
+                }
+
+                async function saveSubTab(button) {
+                    const statusEl = button.parentElement.querySelector('.save-status');
+                    const payload = {
+                        sub: document.getElementById('sub').value,
+                        subapi: document.getElementById('subapi').value,
+                        subconfig: document.getElementById('subconfig').value
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
+                }
+
+                async function saveNetworkTab(button) {
+                    const statusEl = button.parentElement.querySelector('.save-status');
+                    const payload = {
+                        nat64: document.getElementById('nat64').value
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
+                }
+
+                async function saveData(button, statusEl, body) {
                     if (!button || !statusEl) return;
                     button.disabled = true;
                     statusEl.textContent = '保存中...';
                     try {
-                        const response = await fetch(window.location.href + queryParams, {
+                        const response = await fetch(window.location.href + '?type=advanced', {
                             method: 'POST',
-                            headers: { 'Content-Type': queryParams.includes('advanced') ? 'application/json' : 'text/plain' },
+                            headers: { 'Content-Type': 'application/json' },
                             body: body
                         });
                         if (!response.ok) throw new Error('保存失败: ' + await response.text());
