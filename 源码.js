@@ -31,7 +31,9 @@ let go2Socks5s = [
 	'*.loadshare.org',
 ];
 let addresses = [];
+let adds = [];
 let addressesapi = [];
+let addsapi = [];
 let addressesnotls = [];
 let addressesnotlsapi = [];
 let addressescsv = [];
@@ -123,6 +125,7 @@ async function loadConfigurations(env) {
     if (env.DNS64 || env.NAT64) DNS64Server = env.DNS64 || env.NAT64;
 
     if (env.ADD) addresses = 整理(env.ADD);
+    if (env.ADDS) adds = 整理(env.ADDS);
     if (env.ADDAPI) addressesapi = 整理(env.ADDAPI);
     if (env.ADDNOTLS) addressesnotls = 整理(env.ADDNOTLS);
     if (env.ADDNOTLSAPI) addressesnotlsapi = 整理(env.ADDNOTLSAPI);
@@ -164,6 +167,7 @@ async function loadConfigurations(env) {
 				if (settings.notls) {
                     noTLS = settings.notls;
                 }
+
                 if (settings.ADD) {
                     const 优选地址数组 = 整理(settings.ADD);
                     const 分类地址 = { 接口地址: new Set(), 链接地址: new Set(), 优选地址: new Set() };
@@ -175,6 +179,20 @@ async function loadConfigurations(env) {
                     addressesapi = [...分类地址.接口地址];
                     link = [...分类地址.链接地址];
                     addresses = [...分类地址.优选地址];
+                }
+
+                if (settings.ADDS) {
+                    const 官方优选数组 = 整理(settings.ADDS);
+                    const 官方分类地址 = { 接口地址: new Set(), 优选地址: new Set() };
+                     for (const 元素 of 官方优选数组) {
+                        if (元素.startsWith('https://')) {
+                            官方分类地址.接口地址.add(元素);
+                        } else {
+                            官方分类地址.优选地址.add(元素);
+                        }
+                    }
+                    addsapi = [...官方分类地址.接口地址];
+                    adds = [...官方分类地址.优选地址];
                 }
             }
         } catch (e) {
@@ -1664,7 +1682,8 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		sub = subs.length > 1 ? subs[0] : sub;
 	}
 
-	if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
+    // 修正后的判断条件，加入了 addsapi.length
+	if ((adds.length + addsapi.length + addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
 	    		let cfips = [
 		            '104.16.0.0/14',
 		            '104.21.0.0/16',
@@ -1777,11 +1796,10 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
 			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
 			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
-			订阅器 += `<br>您的订阅内容由 内置 addresses/ADD* 参数变量提供${判断是否绑定KV空间}<br>`;
-			if (addresses.length > 0) 订阅器 += `ADD（TLS优选域名&IP）: <br>&nbsp;&nbsp;${addresses.join('<br>&nbsp;&nbsp;')}<br>`;
-			if (addressesnotls.length > 0) 订阅器 += `ADDNOTLS（noTLS优选域名&IP）: <br>&nbsp;&nbsp;${addressesnotls.join('<br>&nbsp;&nbsp;')}<br>`;
-			if (addressesapi.length > 0) 订阅器 += `ADDAPI（TLS优选域名&IP 的 API）: <br>&nbsp;&nbsp;${addressesapi.join('<br>&nbsp;&nbsp;')}<br>`;
-			if (addressesnotlsapi.length > 0) 订阅器 += `ADDNOTLSAPI（noTLS优选域名&IP 的 API）: <br>&nbsp;&nbsp;${addressesnotlsapi.join('<br>&nbsp;&nbsp;')}<br>`;
+			订阅器 += `<br>您的订阅内容由 内置 adds/ADD* 参数变量提供${判断是否绑定KV空间}<br>`;
+			if (adds.length > 0 || addsapi.length > 0) 订阅器 += `ADDS (官方优选): <br>&nbsp;&nbsp;${[...adds, ...addsapi].join('<br>&nbsp;&nbsp;')}<br>`;
+			if (addresses.length > 0 || addressesapi.length > 0) 订阅器 += `ADD (TLS优选域名&IP): <br>&nbsp;&nbsp;${[...addresses, ...addressesapi].join('<br>&nbsp;&nbsp;')}<br>`;
+			if (addressesnotls.length > 0 || addressesnotlsapi.length > 0) 订阅器 += `ADDNOTLS (noTLS优选域名&IP): <br>&nbsp;&nbsp;${[...addressesnotls, ...addressesnotlsapi].join('<br>&nbsp;&nbsp;')}<br>`;
 			if (addressescsv.length > 0) 订阅器 += `ADDCSV（IPTest测速csv文件 限速 ${DLS} ）: <br>&nbsp;&nbsp;${addressescsv.join('<br>&nbsp;&nbsp;')}<br>`;
 		}
 
@@ -2365,77 +2383,90 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 }
 
 async function 整理优选列表(api) {
-	if (!api || api.length === 0) return [];
+    if (!api || api.length === 0) return [];
 
-	let newapi = "";
+    let newapi = "";
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
 
-	const controller = new AbortController();
+    try {
+        const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
+            method: 'get',
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;',
+                'User-Agent': atob('Q0YtV29ya2Vycy1lZGdldHVubmVsL2NtbGl1')
+            },
+            signal: controller.signal
+        }).then(response => response.ok ? response.text() : Promise.reject())));
 
-	const timeout = setTimeout(() => {
-		controller.abort();
-	}, 2000);
+        for (const [index, response] of responses.entries()) {
+            if (response.status === 'fulfilled') {
+                const content = response.value;
+                const currentApiUrl = api[index];
+                const lines = content.split(/\r?\n/);
 
-	try {
-		const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
-			method: 'get',
-			headers: {
-				'Accept': 'text/html,application/xhtml+xml,application/xml;',
-				'User-Agent': atob('Q0YtV29ya2Vycy1lZGdldHVubmVsL2NtbGl1')
-			},
-			signal: controller.signal
-		}).then(response => response.ok ? response.text() : Promise.reject())));
+                const portMatchInUrl = currentApiUrl.match(/port=([^&]*)/);
+                const 链接指定端口 = portMatchInUrl ? portMatchInUrl[1] : null;
 
-		for (const [index, response] of responses.entries()) {
-			if (response.status === 'fulfilled') {
-				const content = await response.value;
+                const idMatchInUrl = currentApiUrl.match(/id=([^&]*)/);
+                const 链接指定备注 = idMatchInUrl ? idMatchInUrl[1] : '';
 
-				const lines = content.split(/\r?\n/);
-				let 节点备注 = '';
-				let 测速端口 = '443';
+                if (lines.length > 0 && lines[0].split(',').length > 3) {
+                    // CSV 格式处理
+                    const 测速端口 = 链接指定端口 || '443';
+                    const 节点备注 = 链接指定备注;
+                    for (let i = 1; i < lines.length; i++) {
+                        const columns = lines[i].split(',');
+                        if (columns[0]) {
+                            const addressWithPort = `${columns[0]}:${测速端口}`;
+                            newapi += `${addressWithPort}${节点备注 ? `#${节点备注}` : ''}\n`;
+                            if (currentApiUrl.includes('proxyip=true') && !httpsPorts.includes(测速端口)) {
+                                proxyIPPool.push(addressWithPort);
+                            }
+                        }
+                    }
+                } else {
+                    // 纯文本格式处理
+                    const linesFromApi = content.split(/\r?\n/).filter(Boolean);
+                    linesFromApi.forEach(line => {
+                        const baseItem = line.trim().split('#')[0];
+                        const originalRemark = line.trim().includes('#') ? line.trim().split('#')[1] : '';
+                        
+                        const finalRemark = 链接指定备注 || originalRemark;
+                        
+                        let finalBaseItem = baseItem;
+                        if (baseItem && !baseItem.includes(':') && 链接指定端口) {
+                            finalBaseItem = `${baseItem}:${链接指定端口}`;
+                        }
+                        
+                        if (finalBaseItem) {
+                            const processedLine = `${finalBaseItem}${finalRemark ? `#${finalRemark}` : ''}`;
+                            newapi += processedLine + '\n';
+                            
+                            if (currentApiUrl.includes('proxyip=true')) {
+                                if (finalBaseItem.includes(':')) {
+                                    const port = finalBaseItem.split(':')[1];
+                                    if (!httpsPorts.includes(port)) {
+                                        proxyIPPool.push(finalBaseItem);
+                                    }
+                                } else {
+                                    proxyIPPool.push(`${finalBaseItem}:443`);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.error(error);
+    } finally {
+        clearTimeout(timeout);
+    }
 
-				if (lines[0].split(',').length > 3) {
-					const idMatch = api[index].match(/id=([^&]*)/);
-					if (idMatch) 节点备注 = idMatch[1];
-
-					const portMatch = api[index].match(/port=([^&]*)/);
-					if (portMatch) 测速端口 = portMatch[1];
-
-					for (let i = 1; i < lines.length; i++) {
-						const columns = lines[i].split(',')[0];
-						if (columns) {
-							newapi += `${columns}:${测速端口}${节点备注 ? `#${节点备注}` : ''}\n`;
-							if (api[index].includes('proxyip=true')) proxyIPPool.push(`${columns}:${测速端口}`);
-						}
-					}
-				} else {
-					if (api[index].includes('proxyip=true')) {
-						proxyIPPool = proxyIPPool.concat((整理(content)).map(item => {
-							const baseItem = item.split('#')[0] || item;
-							if (baseItem.includes(':')) {
-								const port = baseItem.split(':')[1];
-								if (!httpsPorts.includes(port)) {
-									return baseItem;
-								}
-							} else {
-								return `${baseItem}:443`;
-							}
-							return null;
-						}).filter(Boolean));
-					}
-					newapi += content + '\n';
-				}
-			}
-		}
-	} catch (error) {
-		console.error(error);
-	} finally {
-		clearTimeout(timeout);
-	}
-
-	const newAddressesapi = 整理(newapi);
-
-	return newAddressesapi;
+    return 整理(newapi);
 }
+
 
 async function 整理测速结果(tls) {
 	if (!addressescsv || addressescsv.length === 0) {
@@ -2497,103 +2528,118 @@ async function 整理测速结果(tls) {
 	return newAddressescsv;
 }
 
- //收集和解析节点信息
 async function prepareNodeList(host, UUID, noTLS) {
-	let allAddresses = [];
-	
-    // 1. 获取所有地址源
-    let newAddressesapi = await 整理优选列表(addressesapi);
-    let newAddressescsv = await 整理测速结果('TRUE');
+    let nodeCounter = 1;
+    const allSources = [];
+
+    // 1. 统一收集所有地址源，并标记来源
+    // 官方优选 (直连地址)
+    [...new Set(adds)].forEach(addr => allSources.push({ address: addr, source: 'adds' }));
     
-    let currentAddresses = [...new Set(addresses.concat(newAddressesapi).concat(newAddressescsv))];
-    
+    // 官方优选 (API地址)
+    const newAddsApi = await 整理优选列表(addsapi);
+    [...new Set(newAddsApi)].forEach(addr => allSources.push({ address: addr, source: 'adds' }));
+
+    // 用户优选 (TLS)
+    const newAddressesapi = await 整理优选列表(addressesapi);
+    const newAddressescsv = await 整理测速结果('TRUE');
+    [...new Set(addresses.concat(newAddressesapi).concat(newAddressescsv))]
+        .forEach(addr => allSources.push({ address: addr, source: 'add', tls: true }));
+
+    // 用户优选 (noTLS)
     if (noTLS === 'true') {
-        let newAddressesnotlsapi = await 整理优选列表(addressesnotlsapi);
-        let newAddressesnotlscsv = await 整理测速结果('FALSE');
-        let currentAddressesnotls = [...new Set(addressesnotls.concat(newAddressesnotlsapi).concat(newAddressesnotlscsv))];
-        allAddresses.push(...currentAddressesnotls.map(addr => ({ address: addr, tls: false })));
+        const newAddressesnotlsapi = await 整理优选列表(addressesnotlsapi);
+        const newAddressesnotlscsv = await 整理测速结果('FALSE');
+        [...new Set(addressesnotls.concat(newAddressesnotlsapi).concat(newAddressesnotlscsv))]
+            .forEach(addr => allSources.push({ address: addr, source: 'add', tls: false }));
     }
-    
-    allAddresses.push(...currentAddresses.map(addr => ({ address: addr, tls: true })));
 
-    // 2. 将地址字符串解析为节点对象
-	const nodeObjects = allAddresses.map(({ address: addressString, tls }) => {
-		const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
-        let server, port = "-1", name = addressString;
+    // 2. 统一处理和生成节点
+    const finalNodeObjects = allSources.flatMap(sourceItem => {
+        const { address: addressString, source } = sourceItem;
+        const tls = source === 'adds' ? noTLS !== 'true' : sourceItem.tls;
+        
+        let server, initialPort = "-1", name = addressString;
 
-        const match = addressString.match(regex);
-        if (!match) {
-            if (addressString.includes(':') && addressString.includes('#')) {
-                const parts = addressString.split(':');
-                server = parts[0];
-                const subParts = parts[1].split('#');
-                port = subParts[0];
-                name = subParts[1];
-            } else if (addressString.includes(':')) {
-                const parts = addressString.split(':');
-                server = parts[0];
-                port = parts[1];
-            } else if (addressString.includes('#')) {
-                const parts = addressString.split('#');
-                server = parts[0];
-                name = parts[1];
-            } else {
-                server = addressString;
-            }
-
-            if (name.includes(':')) {
-                name = name.split(':')[0];
-            }
-        } else {
-            server = match[1];
-            port = match[2] || port;
+        // 解析地址、端口和备注
+        const match = addressString.match(/^(.*?)(?::(\d+))?(?:#(.*))?$/);
+        if (match) {
+            server = match[1] || addressString;
+            initialPort = match[2] || "-1";
             name = match[3] || server;
         }
 
-        if (port === "-1") {
-            const portList = tls ? (httpsPorts.length > 0 ? httpsPorts : ["443", "2053", "2083", "2087", "2096", "8443"]) 
-                                 : (httpPorts.length > 0 ? httpPorts : ["80", "8080", "8880", "2052", "2082", "2086", "2095"]);
-            if (!isValidIPv4(server)) {
-                 for (let p of portList) {
-                    if (server.includes(p)) {
-                        port = p;
-                        break;
+        let portsToUse = [];
+
+        if (source === 'adds') {
+            // 官方列表逻辑：如果无端口，则为每个勾选的端口生成节点
+            if (initialPort !== "-1") {
+                portsToUse.push(initialPort);
+            } else {
+                const selectedPorts = tls 
+                    ? (httpsPorts.length > 0 ? httpsPorts : ["443"]) 
+                    : (httpPorts.length > 0 ? httpPorts : ["80"]);
+                portsToUse.push(...selectedPorts);
+            }
+        } else { // source === 'add'
+            // 用户列表逻辑：如果无端口，则按旧规则选择一个端口
+            if (initialPort !== "-1") {
+                portsToUse.push(initialPort);
+            } else {
+                let port = tls ? "443" : "80"; // 默认值
+                const portList = tls 
+                    ? ["443", "2053", "2083", "2087", "2096", "8443"] 
+                    : ["80", "8080", "8880", "2052", "2082", "2086", "2095"];
+                if (!isValidIPv4(server)) {
+                    for (let p of portList) {
+                        if (server.includes(p)) {
+                            port = p;
+                            break;
+                        }
                     }
                 }
+                portsToUse.push(port);
             }
-            if (port === "-1") port = tls ? "443" : "80";
-        }
-		
-        let servername = host;
-        let finalPath = generateRandomPath();
-		
-        if (proxyhosts.length > 0 && servername.includes('.workers.dev')) {
-            finalPath = `/${servername}${finalPath}`;
-            servername = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
-            name += ` (via ${servername.substring(0,10)}...)`;
         }
 
-		return {
-            name: name,
-            type: atob(protocolEncodedFlag),
-            server: server,
-            port: parseInt(port, 10),
-            uuid: UUID,
-            network: 'ws',
-            tls: tls,
-            servername: servername,
-            'client-fingerprint': tls ? getRandomFingerprint() : '',
-            'ws-opts': {
-                path: finalPath,
-                headers: {
-                    Host: servername
+        // 为每个确定的端口创建节点对象
+        return portsToUse.map(port => {
+            let finalName = name;
+            let servername = host;
+            let finalPath = generateRandomPath();
+            
+            if (proxyhosts.length > 0 && servername.includes('.workers.dev')) {
+                finalPath = `/${servername}${finalPath}`;
+                servername = proxyhosts[Math.floor(Math.random() * proxyhosts.length)];
+                finalName += ` (via ${servername.substring(0,10)}...)`;
+            }
+
+            // 附加全局唯一的编号
+            finalName = `${finalName} #${nodeCounter++}`;
+
+            return {
+                name: finalName,
+                type: atob(protocolEncodedFlag),
+                server: server,
+                port: parseInt(port, 10),
+                uuid: UUID,
+                network: 'ws',
+                tls: tls,
+                servername: servername,
+                'client-fingerprint': tls ? getRandomFingerprint() : '',
+                'ws-opts': {
+                    path: finalPath,
+                    headers: {
+                        Host: servername
+                    }
                 }
-            }
-        };
-	});
+            };
+        });
+    });
 
-	return nodeObjects.filter(Boolean); 
+    return finalNodeObjects.filter(Boolean);
 }
+
 
 //根据节点对象数组生成 Base64 编码的订阅内容
 function 生成本地订阅(nodeObjects) {
@@ -2986,6 +3032,7 @@ async function handlePostRequest(request, env) {
 
 async function handleGetRequest(env) {
     let content = '';
+    let addsContent = '';
     let hasKV = !!env.KV;
     let proxyIPContent = '';
     let socks5Content = '';
@@ -3004,6 +3051,7 @@ async function handleGetRequest(env) {
             if (advancedSettingsJSON) {
                 const settings = JSON.parse(advancedSettingsJSON);
                 content = settings.ADD || ''; 
+                addsContent = settings.ADDS || '';
                 proxyIPContent = settings.proxyip || '';
                 socks5Content = settings.socks5 || '';
                 httpProxyContent = settings.httpproxy || '';
@@ -3300,11 +3348,12 @@ async function handleGetRequest(env) {
                 <div class="title">📝 ${FileName} 优选订阅列表</div>
 
                 <div class="tab-container">
-                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">优选列表 (ADD)</button>
+                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">优选列表</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-adds')">官方优选</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-proxy')">代理设置</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-sub')">订阅设置</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-network')">网络设置</button>
-                    </div>
+                </div>
 
                 <div id="tab-main" class="tab-content" style="display: block;">
                     ${hasKV ? `
@@ -3312,15 +3361,45 @@ async function handleGetRequest(env) {
                             ℹ️ 注意事项 ∨
                         </a>
                         <div id="noticeContent" class="notice-content">
-                            ${decodeURIComponent(atob('JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU1JUI4JUI4JUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUI3JUU2JThCJUFDJUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUE0JUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEExMjcuMC4wLjElM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5SVAlM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTNDYnIlM0UlMEElNUIyNjA2JTNBNDcwMCUzQSUzQSU1RCUzQTIwNTMlMjMlRTQlQkMlOTglRTklODAlODlJUHY2JTNDYnIlM0UlM0NiciUzRSUwQSUwQSUzQ3N0cm9uZyUzRTIuJTNDJTJGc3Ryb25nJTNFJTIwQUREQVBJJTIwJUU1JUE2JTgyJUU2JTlFJTlDJUU2JTk4JUFGJUU0JUJCJUEzJUU3JTkwJTg2SVAlRUYlQkMlOEMlRTUlOEYlQUYlRTQlQkQlOUMlRTQlQjglQkFQUk9YWUlQJUU3JTlBJTg0JUU4JUFGJTlEJUVGJUJDJThDJUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGcHJveHlpcCUzRHRydWUlMjIlRTUlOEYlODIlRTYlOTUlQjAlRTYlQjclQkIlRTUlOEElQTAlRTUlODglQjAlRTklOTMlQkUlRTYlOEUlQTUlRTYlOUMlQUIlRTUlQjAlQkUlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQlM0Zwcm94eWlwJTNEdHJ1ZSUzQ2JyJTNFJTNDYnIlM0UlMEElMEElM0NzdHJvbmclM0UzLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJ2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JyUzRUNsb3VkZmxhcmVTcGVlZFRlc3QlM0MlMkZhJTNFJTIwJUU3JTlBJTg0JTIwY3N2JTIwJUU3JUJCJTkzJUU2JTlFJTlDJUU2JTk2JTg3JUU0JUJCJUI2JUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
+                            ${decodeURIComponent(atob('JTNDc3Ryb25nJTNFMS4lM0MlMkZzdHJvbmclM0UlMjBBREQlRTYlQTAlQkMlRTUlQkMlOEYlRTglQUYlQjclRTYlQUMlQTElRTclQUMlQUMlRTQlQjglODAlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTglRUYlQkMlOENJUHY2JUU1JTlDJUIwJUU1JTlEJTgwJUU5JTgwJTlBJUU1JUI4JUI4JUU4JUE2JTgxJUU3JTk0JUE4JUU0JUI4JUFEJUU2JThCJUFDJUU1JThGJUI3JUU2JThCJUFDJUU4JUI1JUI3JUU1JUI5JUI2JUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUVGJUJDJThDJUU0JUI4JThEJUU1JThBJUEwJUU3JUFCJUFGJUU1JThGJUEzJUU5JUJCJTk4JUU4JUFFJUE0JUU0JUI4JUJBJTIyNDQzJTIyJUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEExMjcuMC4wLjElM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5SVAlM0NiciUzRSUwQXZpc2EuY24lM0EyMDUzJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThEJTNDYnIlM0UlMEElNUIyNjA2JTNBNDcwMCUzQSUzQSU1RCUzQTIwNTMlMjMlRTQlQkMlOTglRTklODAlODlJUHY2JTNDYnIlM0UlM0NiciUzRSUwQSUwQSUzQ3N0cm9uZyUzRTIuJTNDJTJGc3Ryb25nJTNFJTIwQUREQVBJJTIwJUU1JUE2JTgyJUU2JTlFJTlDJUU2JTk4JUFGJUU0JUJCJUEzJUU3JTkwJTg2SVAlRUYlQkMlOEMlRTUlOEYlQUYlRTQlQkQlOUMlRTQlQjglQkFQUk9YWUlQJUU3JTlBJTg0JUU4JUFGJTlEJUVGJUJDJThDJUU1JThGJUFGJUU1JUIwJTg2JTIyJTNGcHJveHlpcCUzRHRydWUlMjIlRTUlOEYlODIlRTYlOTUlQjAlRTYlQjclQkIlRTUlOEElQTAlRTUlODglQjAlRTklOTMlQkUlRTYlOEUlQTUlRTYlOUMlQUIlRTUlQjAlQkUlRUYlQkMlOEMlRTQlQkUlOEIlRTUlQTYlODIlRUYlQkMlOUElM0NiciUzRSUwQWh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQlM0Zwcm94eWlwJTNEdHJ1ZSUzQ2JyJTNFJTNDYnIlM0UlMEElMEElM0NzdHJvbmclM0EzLiUzQyUyRnN0cm9uZyUzRSUyMEFEREFQSSUyMCVFNSVBNiU4MiVFNiU5RSU5QyVFNiU5OCVBRiUyMCUzQ2ElMjBocmVmJTNEJ2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRlhJVTIlMkZDbG91ZGZsYXJlU3BlZWRUZXN0JyUzRUNsb3VkZmxhcmVTcGVlZFRlc3QlM0MlMkZhJTNFJTIwJUU3JTlBJTg0JTIwY3N2JTIwJUU3JUJCJTkzJUU2JTlFJTlDJUU2JTk2JTg3JUU0JUJCJUI2JUUzJTgwJTgyJUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTNDYnIlM0UlMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRm1haW4lMkZDbG91ZGZsYXJlU3BlZWRUZXN0LmNzdiUzQ2JyJTNF'))}
                         </div>
 
                         <textarea class="editor" id="content" placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}">${content}</textarea>
 
                         <div class="button-group">
                             <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                            <button class="btn btn-primary" onclick="saveContent(this)">保存</button>
+                            <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
                             <span class="save-status" id="saveStatus"></span>
+                        </div>
+                    ` : '<p>未绑定KV空间</p>'}
+                </div>
+
+                <div id="tab-adds" class="tab-content">
+                    ${hasKV ? `
+                        <div class="setting-item" style="border-bottom: 1px solid var(--border-color); padding-bottom: 20px; margin-bottom: 20px;">
+                            <h4>端口设置</h4>
+                            <p>启用 noTLS (将不使用 TLS 加密)</p>
+                            <div class="switch-container">
+                                <label class="theme-switch" for="notls-checkbox">
+                                    <input type="checkbox" id="notls-checkbox" ${noTLSContent === 'true' ? 'checked' : ''}>
+                                    <div class="slider round"></div>
+                                </label>
+                                <span>启用 noTLS</span>
+                            </div>
+
+                            <h5 style="margin-top: 15px; margin-bottom: 5px;">TLS 端口</h5>
+                            <div class="checkbox-grid" id="httpsports-grid">${httpsCheckboxesHTML}</div>
+                            
+                            <h5 style="margin-top: 15px; margin-bottom: 5px;">noTLS 端口</h5>
+                            <div class="checkbox-grid" id="httpports-grid">${httpCheckboxesHTML}</div>
+                        </div>
+
+                        <textarea class="editor" id="adds_content" placeholder="${decodeURIComponent(atob('JTBBQUREUyVFNyVBNCVCQSVFNCVCRSU4QiVFRiVCQyU5QSUwQXZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQlMEExMjcuMC4wLjElMjNDRm5hdCUwQSU1QjI2ODYlM0E0NzY2JTNBJTNBJTVEJTIzSVB2NiUwQSUwQSUwQUFERFNBUEklRTclQTQlQkElRTQlQkUlOEIlRUYlQkMlOUElMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRnJlZnMlMkZoZWFkcyUyRm1haW4lMkZhZGRyZXNzZXNhcGkudHh0'))}">${addsContent}</textarea>
+                        
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                            <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
+                            <span class="save-status" id="adds-save-status"></span>
                         </div>
                     ` : '<p>未绑定KV空间</p>'}
                 </div>
@@ -3361,7 +3440,7 @@ async function handleGetRequest(env) {
                     </div>
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                        <button class="btn btn-primary" onclick="saveAdvancedSettings()">保存</button>
+                        <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
                         <span class="save-status" id="proxy-save-status"></span>
                             </div>
                         </div>
@@ -3384,7 +3463,7 @@ async function handleGetRequest(env) {
                             </div>
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                        <button class="btn btn-primary" onclick="saveAdvancedSettings()">保存</button>
+                        <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
                         <span class="save-status" id="sub-save-status"></span>
                     </div>
                         </div>
@@ -3413,26 +3492,9 @@ async function handleGetRequest(env) {
                             </div>
                         <div id="nat64-results" class="test-results-container"></div>
                                 </div>
-                        <div class="setting-item">
-                        <h4>随机节点端口设置</h4>
-                        <p>启用 noTLS (将不使用 TLS 加密)</p>
-                                <div class="switch-container">
-                                    <label class="theme-switch" for="notls-checkbox">
-                                        <input type="checkbox" id="notls-checkbox" ${noTLSContent === 'true' ? 'checked' : ''}>
-                                        <div class="slider round"></div>
-                                    </label>
-                            <span>启用 noTLS</span>
-                        </div>
-
-                        <h5 style="margin-top: 15px; margin-bottom: 5px;">TLS 端口</h5>
-                        <div class="checkbox-grid" id="httpsports-grid">${httpsCheckboxesHTML}</div>
-                        
-                        <h5 style="margin-top: 15px; margin-bottom: 5px;">noTLS 端口</h5>
-                        <div class="checkbox-grid" id="httpports-grid">${httpCheckboxesHTML}</div>
-                </div>
                         <div class="button-group">
                             <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
-                        <button class="btn btn-primary" onclick="saveAdvancedSettings()">保存</button>
+                        <button class="btn btn-primary" onclick="saveAdvancedSettings(this)">保存</button>
                         <span class="save-status" id="network-save-status"></span>
                         </div>
                 </div>
@@ -3475,17 +3537,9 @@ async function handleGetRequest(env) {
                     const newPath = pathParts.join('/');
                     window.location.href = newPath || '/';
                 }
-
-                async function saveContent(button) {
-                    const saveStatus = document.getElementById('saveStatus');
-                    await saveAdvancedSettings(button, saveStatus);
-                }
                 
-                async function saveAdvancedSettings(triggeredButton, triggeredStatusEl) {
-                    const activeTab = document.querySelector('.tab-link.active').getAttribute('onclick').match(/'([^']*)'/)[1];
-                    const button = triggeredButton || document.querySelector(\`#\${activeTab} .btn-primary\`);
-                    const statusEl = triggeredStatusEl || document.querySelector(\`#\${activeTab} .save-status\`);
-                    
+                async function saveAdvancedSettings(button) {
+                    const statusEl = button.parentElement.querySelector('.save-status');
                     if (!button || !statusEl) return;
 
                     try {
@@ -3494,6 +3548,7 @@ async function handleGetRequest(env) {
 
                         const settingsToSave = {
                             ADD: document.getElementById('content').value,
+                            ADDS: document.getElementById('adds_content').value,
                             proxyip: document.getElementById('proxyip').value,
                             socks5: document.getElementById('socks5').value,
                             httpproxy: document.getElementById('httpproxy').value,
