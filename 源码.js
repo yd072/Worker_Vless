@@ -2826,7 +2826,7 @@ function generateSingboxConfig(nodeObjects) {
                 "type": "mixed",
                 "tag": "mixed-in",
                 "listen": "0.0.0.0",
-                "listen_port": 2345
+                "listen_port": 7890
             },
         ],
         "outbounds": [
@@ -2843,8 +2843,7 @@ function generateSingboxConfig(nodeObjects) {
               "interval": "5m" 
             },
             ...outbounds,
-            { "type": "direct", "tag": "direct" },
-            { "type": "block", "tag": "block" }
+            { "type": "direct", "tag": "direct" }
         ],
         "route": {
             "default_domain_resolver": "dns-foreign",
@@ -2886,16 +2885,13 @@ function generateSingboxConfig(nodeObjects) {
                     "outbound": manualSelectTag
                 }
             ],
-            "final": manualSelectTag,
+            "final": autoSelectTag,
             "auto_detect_interface": true
         },
         "experimental": {
             "cache_file": {
                 "enabled": true,
                 "store_rdrc": true
-            },
-            "clash_api": {
-                "default_mode": "enhanced" 
             }
         }
     };
