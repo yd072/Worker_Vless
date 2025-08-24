@@ -2773,7 +2773,7 @@ function generateSingboxConfig(nodeObjects) {
                 type: p.network,
                 path: p['ws-opts'].path,
                 headers: {
-                    host: p.servername 
+                    Host: p.servername // 保持首字母大写
                 }
             }
         };
@@ -2790,122 +2790,162 @@ function generateSingboxConfig(nodeObjects) {
         }
         return outbound;
     });
-    
-    const proxyNames = outbounds.map(o => o.tag);
 
-    // 定义标准的策略组名称
-    const manualSelectTag = "手动选择";
-    const autoSelectTag = "自动选择";
+    const proxyNames = outbounds.map(o => o.tag);
 
     const config = {
         "log": {
-            "level": "info",
+            "level": "error",
             "timestamp": true
         },
         "dns": {
-            "servers": [
-                {
-                    "type": "https",
-                    "tag": "dns-domestic",
-                    "server": "223.5.5.5",
-                    "server_port": 443,
-                    "path": "/dns-query"
-                },
-                {
-                    "type": "https",
-                    "tag": "dns-foreign",
-                    "server": "8.8.8.8",
-                    "server_port": 443,
-                    "path": "/dns-query",
-                    "detour": manualSelectTag
-                }
-            ],
-            "rules": [
-                {
-                    "rule_set": "geosite-cn",
-                    "server": "dns-domestic"
-                },
-                {
-                    "server": "dns-foreign"
-                }
-            ],
-            "strategy": "prefer_ipv4"
+            "servers": [{
+                "tag": "proxy-dns",
+                "server": "223.5.5.5",
+                "detour": "proxy",
+                "type": "tcp"
+            }, {
+                "tag": "local-dns",
+                "type": "local",
+                "detour": "direct"
+            }, {
+                "tag": "direct-dns",
+                "server": "8.8.8.8",
+                "type": "tcp"
+            }],
+            "rules": [{
+                "rule_set": "geosite-cn", 
+            }, {
+                "server": "proxy-dns",
+                "source_ip_cidr": [
+                    "172.19.0.1/30",
+                    "fdfe:dcba:9876::1/126"
+                ]
+            }, {
+                "clash_mode": "直连模式",
+                "server": "direct-dns"
+            }, {
+                "clash_mode": "全局模式",
+                "server": "proxy-dns"
+            }],
+            "strategy": "prefer_ipv4",
+            "final": "proxy-dns",
+            "independent_cache": true
         },
-        "inbounds": [
-            {
-                "type": "mixed",
-                "tag": "mixed-in",
-                "listen": "0.0.0.0",
-                "listen_port": 7890
-            },
-        ],
-        "outbounds": [
-            {
+        "inbounds": [{
+            "type": "tun",
+            "tag": "tun-in",
+            "stack": "mixed",
+            "mtu": 9000,
+            "auto_route": true,
+            "address": [
+                "172.19.0.1/30",
+                "fdfe:dcba:9876::1/126"
+            ],
+            "platform": {
+                "http_proxy": {
+                    "enabled": true,
+                    "server": "127.0.0.1",
+                    "server_port": 2080
+                }
+            }
+        }, {
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": 2080
+        }],
+        "outbounds": [{
                 "type": "selector",
-                "tag": manualSelectTag,
-                "outbounds": [autoSelectTag, "direct", ...proxyNames] 
+                "tag": "proxy",
+                "outbounds": [
+                    "auto",
+                    ...proxyNames
+                ],
+                "default": "auto"
             },
-            { 
-              "type": "urltest", 
-              "tag": autoSelectTag,
-              "outbounds": proxyNames,
-              "url": "http://www.gstatic.com/generate_204", 
-              "interval": "5m" 
+            {
+                "type": "urltest",
+                "tag": "auto",
+                "outbounds": proxyNames,
+                "url": "https://www.gstatic.com/generate_204",
+                "interval": "5m0s",
+                "tolerance": 50,
+                "interrupt_exist_connections": false
             },
-            ...outbounds,
-            { "type": "direct", "tag": "direct" }
+            ...outbounds, 
+            {
+                "type": "direct",
+                "tag": "direct",
+                "domain_resolver": {
+                    "server": "local-dns",
+                    "strategy": "prefer_ipv4"
+                }
+            },
+            {
+                "type": "block",
+                "tag": "block"
+            }
         ],
         "route": {
-            "default_domain_resolver": "dns-foreign",
-            "rule_set": [
-              {
-                "tag": "geosite-cn",
-                "type": "remote",
-                "format": "binary",
-                "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
-                "download_detour": "direct" 
-              },
-              {
-                "tag": "geoip-cn",
-                "type": "remote",
-                "format": "binary",
-                "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
-                "download_detour": "direct" 
-
-              },
-              {
-                "tag": "geosite-non-cn",
-                "type": "remote",
-                "format": "binary",
-                "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-geolocation-!cn.srs",
-                "download_detour": "direct" 
-
-              }
-            ],
-            "rules": [
-                {
-                    "protocol": "dns",
-                    "outbound": "dns-out"
+            "auto_detect_interface": true,
+            "default_domain_resolver": "direct-dns",
+            "final": "proxy",
+            "override_android_vpn": true,
+            "rule_set": [{
+                    "tag": "geosite-ads",
+                    "type": "remote",
+                    "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/category-ads-all.srs",
+                    "download_detour": "direct"
                 },
-                { "ip_is_private": true, "outbound": "direct" }, 
-                { "rule_set": "geosite-cn", "outbound": "direct" }, 
-                { "rule_set": "geoip-cn", "outbound": "direct" }, 
                 {
-                    "rule_set": "geosite-non-cn",
-                    "outbound": manualSelectTag
+                    "tag": "geosite-cn",
+                    "type": "remote",
+                    "format": "binary",
+                    "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
+                    "download_detour": "direct"
+                },
+                {
+                    "tag": "geoip-cn",
+                    "type": "remote",
+                    "format": "binary",
+                    "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
+                    "download_detour": "direct"
                 }
             ],
-            "final": autoSelectTag,
-            "auto_detect_interface": true
+            "rules": [{
+                "action": "sniff",
+                "timeout": "1s"
+            }, {
+                "action": "hijack-dns",
+                "protocol": "dns"
+            }, {
+                "ip_is_private": true, 
+                "outbound": "direct"
+            }, {
+                "clash_mode": "直连模式",
+                "outbound": "direct"
+            }, {
+                "outbound": "direct",
+                "rule_set": [
+                    "geosite-cn",
+                    "geoip-cn"
+                ]
+            }, {
+                "outbound": "block",
+                "rule_set": "geosite-ads"
+            }, {
+                "clash_mode": "全局模式",
+                "outbound": "proxy"
+            }]
         },
         "experimental": {
             "cache_file": {
-                "enabled": true,
-                "store_rdrc": true
+                "enabled": true
             }
         }
     };
-    
+
     return JSON.stringify(config, null, 2);
 }
 
