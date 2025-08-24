@@ -2732,9 +2732,9 @@ external-controller: 127.0.0.1:9090
 dns:
   enable: true
   listen: 0.0.0.0:53
-  default-nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]
-  nameserver: ['https://dns.alidns.com/dns-query', 'https://doh.pub/dns-query']
-  fallback: ['https://dns.google/dns-query', 'https://cloudflare-dns.com/dns-query']
+  default-nameserver: [223.5.5.5, 8.8.8.8]
+  nameserver: ['https://dns.alidns.com/dns-query']
+  fallback: ['https://dns.google/dns-query']
   
 proxies:
 ${proxiesYaml}
@@ -2801,7 +2801,7 @@ function generateSingboxConfig(nodeObjects) {
         "dns": {
             "servers": [{
                 "tag": "proxy-dns",
-                "server": "1.1.1.1",
+                "server": "8.8.8.8",
                 "detour": "proxy",
                 "type": "https"
             }, {
