@@ -2773,7 +2773,7 @@ function generateSingboxConfig(nodeObjects) {
                 type: p.network,
                 path: p['ws-opts'].path,
                 headers: {
-                    Host: p.servername // 保持首字母大写
+                    Host: p.servername 
                 }
             }
         };
@@ -2815,6 +2815,7 @@ function generateSingboxConfig(nodeObjects) {
             }],
             "rules": [{
                 "rule_set": "geosite-cn", 
+                "server": "direct-dns"
             }, {
                 "server": "proxy-dns",
                 "source_ip_cidr": [
