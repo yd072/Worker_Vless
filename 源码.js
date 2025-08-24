@@ -2732,10 +2732,9 @@ external-controller: 127.0.0.1:9090
 dns:
   enable: true
   listen: 0.0.0.0:53
-  default-nameserver: [223.5.5.5, 8.8.8.8]
-  nameserver: ['https://dns.alidns.com/dns-query']
-  fallback: ['https://dns.google/dns-query']
-  
+  default-nameserver: [223.5.5.5]
+  nameserver: ['https://dns.google/dns-query']
+    
 proxies:
 ${proxiesYaml}
 proxy-groups:
