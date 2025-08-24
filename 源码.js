@@ -2971,8 +2971,8 @@ function generateLoonConfig(nodeObjects) {
     // [Proxy Group] 和 [Rule] 部分
     const config = `
 [General]
-dns-server = 223.5.5.5, 8.8.8.8
-doh-server=https://doh.pub/dns-query, https://dns.google/dns-query
+dns-server = 223.5.5.5
+doh-server= https://dns.google/dns-query
 bypass-system = true
 ipv6 = false
 skip-proxy = 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, localhost, *.local, captive.apple.com
