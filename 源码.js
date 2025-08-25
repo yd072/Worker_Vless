@@ -2702,38 +2702,62 @@ function generateClashConfig(nodeObjects) {
 
     const proxyNames = nodeObjects.map(p => p.name);
     
-    // 定义规范化的代理组名称
+    // 定义代理组和规则的名称
     const autoSelectGroupName = "🚀 自动选择";
     const manualSelectGroupName = "手动选择";
 
-    // --- START: 将规则定义为数组以确保正确格式化 ---
+    // 定义分流规则数组
     const customRulesArray = [
-        `DOMAIN-SUFFIX,googleapis.cn,${manualSelectGroupName}`,
-        `DOMAIN-SUFFIX,gstatic.com,${manualSelectGroupName}`,
-        `DOMAIN-KEYWORD,google,${manualSelectGroupName}`,
-        'GEOSITE,category-ads-all,REJECT',
-        'GEOSITE,private,DIRECT',
-        'GEOIP,private,DIRECT,no-resolve',
-        'GEOSITE,cn,DIRECT',
-        'GEOIP,CN,DIRECT',
-        `MATCH,${manualSelectGroupName}`
+        'GEOSITE,category-ads-all,REJECT', 
+        'GEOSITE,private,DIRECT',          
+        'GEOIP,private,DIRECT,no-resolve', 
+        'GEOSITE,cn,DIRECT',               
+        'GEOIP,CN,DIRECT',                 
+        `MATCH,${manualSelectGroupName}`   
     ];
     // 将规则数组转换为格式正确的YAML字符串
     const rulesYaml = customRulesArray.map(rule => `  - ${rule}`).join('\n');
 
-    // 拼接完整的 YAML 配置
+    // 拼接完整的YAML配置
     const config = `
-port: 7890
-socks-port: 7891
+
+mixed-port: 7890
 allow-lan: true
 mode: rule
-log-level: info
+log-level: warning
 external-controller: 127.0.0.1:9090
+keep-alive-idle: 30
+keep-alive-interval: 30
+disable-keep-alive: false
+profile:
+  store-selected: true
 dns:
   enable: true
-  listen: 0.0.0.0:53
-  default-nameserver: [223.5.5.5]
-  nameserver: ['https://dns.google/dns-query']
+  listen: 0.0.0.0:1053
+  ipv6: true
+  enhanced-mode: redir-host
+  nameserver:
+    - 223.5.5.5
+    - https://dns.google/dns-query
+  nameserver-policy:
+    'geosite:cn': '223.5.5.5'
+tun:
+  enable: true
+  stack: mixed
+  auto-route: true
+  strict-route: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  sniff:
+    HTTP:
+      ports: [80, 8080, 8880, 2052, 2082, 2086, 2095]
+    TLS:
+      ports: [443, 8443, 2053, 2083, 2087, 2096]
     
 proxies:
 ${proxiesYaml}
