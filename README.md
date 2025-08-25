@@ -4,7 +4,7 @@
 
 内置简易的 Clash/Sing-box/Loon 配置生成无需转换，如（let subConverter = '';）未配订阅转换将使用内置配置生成。
 
-** 内置或手动配置订阅转换才能使用 `SUBCONFIG` **
+内置或手动配置订阅转换才能使用 `SUBCONFIG` 
 ## ⚠️注意
 使用过旧版的，KV中存在多个配置，请移除多余的配置只保留 `settinggs.txt` ，以免增加KV的消耗。
 
