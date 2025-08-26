@@ -8,8 +8,8 @@ let cachedSettings = null;       // 用于存储从KV读取的配置对象
 let userID = '';
 let proxyIP = '';
 //let sub = '';
-let subConverter = atob('U1VCQVBJLkNNTGl1c3Nzcy5uZXQ=');
-let subConfig = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvY29uZmlnL0FDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ==');
+let subConverter = '';
+let subConfig = '';
 let subProtocol = 'https';
 let subEmoji = 'true';
 let socks5Address = '';
@@ -2234,7 +2234,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		return 节点配置页;
 	} else {
         // --- START逻辑 ---
-        if (!subConverter || subConverter.trim() === '') {
+        if ((!sub || sub.trim() === '') && (!subConverter || subConverter.trim() === ''))  {
             if (hostName.includes(".workers.dev") || noTLS === 'true') {
                 noTLS = 'true';
                 fakeHostName = `${fakeHostName}.workers.dev`;
@@ -2277,7 +2277,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
                 return new Response(restoredConfig);
             }
             
-            const finalContent = 恢复伪装信息(configContent, userID, hostName, fakeUserID, fakeHostName, false); // 注意 isBase64 为 false
+            const finalContent = 恢复伪装信息(configContent, userID, hostName, fakeUserID, fakeHostName, false); 
 
             return new Response(finalContent, {
                 headers: {
@@ -2314,7 +2314,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		}
 		console.log(`虚假HOST: ${fakeHostName}`);
         
-		let url = `${subProtocol}://${sub}/sub?host=${fakeHostName}&uuid=${fakeUserID + atob('JmVkZ2V0dW5uZWw9Y21saXUmcHJveHlpcD0=') + RproxyIP}&path=${encodeURIComponent('/')}`; // Path is now dynamic inside the node
+		let url = `${subProtocol}://${sub}/sub?host=${fakeHostName}&uuid=${fakeUserID + atob('JmVkZ2V0dW5uZWw9Y21saXUmcHJveHlpcD0=') + RproxyIP}&path=${encodeURIComponent('/')}`; 
 		let isBase64 = true;
 
 		if (!sub || sub == "") {
