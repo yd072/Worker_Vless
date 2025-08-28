@@ -225,7 +225,6 @@ async function loadConfigurations(env) {
     }
 }
 
-
 /**
  * 解析 PROXYIP 字符串，提取地址和端口
  * @param {string} proxyString
@@ -257,7 +256,6 @@ function parseProxyIP(proxyString, defaultPort) {
 
     return { address: address.toLowerCase(), port: Number(port) };
 }
-
 
 // TransformStream
 function createWebSocketStream(webSocket, earlyDataHeader, log) {
@@ -486,6 +484,101 @@ async function statusPage() {
     });
 }
 
+// #################################################################
+// ############## START OF SMART RETRY MECHANISM ###################
+// #################################################################
+
+/**
+ * @param {string} domain
+ * @returns {Promise<string>}
+ */
+async function fetchIPv4(domain) {
+    const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=A`;
+    const response = await fetch(url, {
+        headers: { 'Accept': 'application/dns-json' }
+    });
+
+    if (!response.ok) throw new Error('DNS查询失败');
+
+    const data = await response.json();
+    const ipv4s = (data.Answer || [])
+        .filter(record => record.type === 1)
+        .map(record => record.data);
+
+    if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
+    return ipv4s[Math.floor(Math.random() * ipv4s.length)];
+}
+
+/**
+ * @param {string} address 
+ * @returns {Promise<boolean>}
+ */
+async function isCloudflareDestination(address) {
+    const cloudflareCIDRs = [
+        // IPv4 Ranges
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+        '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+        '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        // IPv6 Ranges
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+        '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32'
+    ];
+
+    const isIp = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^((([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])))$/.test(address);
+
+    let targetIp = address;
+    if (!isIp) {
+        try {
+            targetIp = await fetchIPv4(address);
+        } catch (error) {
+            console.error(`Failed to resolve domain ${address}:`, error.message);
+            return false;
+        }
+    }
+
+    const ipToBigInt = (ip) => {
+        if (ip.includes(':')) { // IPv6
+            const parts = ip.split('::');
+            let part1 = parts[0] ? parts[0].split(':') : [];
+            let part2 = parts[1] ? parts[1].split(':') : [];
+            const missingParts = 8 - (part1.length + part2.length);
+            const zeros = Array(missingParts).fill('0');
+            const fullIp = [...part1, ...zeros, ...part2].map(p => p.padStart(4, '0')).join('');
+            return BigInt(`0x${fullIp}`);
+        } else { // IPv4
+            return ip.split('.').reduce((acc, octet) => (acc << 8n) + BigInt(octet), 0n);
+        }
+    };
+
+    const targetBigInt = ipToBigInt(targetIp);
+
+    for (const cidr of cloudflareCIDRs) {
+        const [range, bitsStr] = cidr.split('/');
+        const isIpv6Cidr = range.includes(':');
+        
+        if (targetIp.includes(':') !== isIpv6Cidr) {
+            continue;
+        }
+
+        const rangeBigInt = ipToBigInt(range);
+        const bits = BigInt(bitsStr);
+        const totalBits = isIpv6Cidr ? 128n : 32n;
+        
+        const mask = ((1n << bits) - 1n) << (totalBits - bits);
+        
+        if ((targetBigInt & mask) === (rangeBigInt & mask)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// #################################################################
+// ############### END OF SMART RETRY MECHANISM ####################
+// #################################################################
+
 async function resolveToIPv6(target) {
     // 检查是否为IPv4
     function isIPv4(str) {
@@ -499,24 +592,6 @@ async function resolveToIPv6(target) {
     // 检查是否为IPv6
     function isIPv6(str) {
         return str.includes(':') && /^[0-9a-fA-F:]+$/.test(str);
-    }
-
-    // 获取域名的IPv4地址
-    async function fetchIPv4(domain) {
-        const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=A`;
-        const response = await fetch(url, {
-            headers: { 'Accept': 'application/dns-json' }
-        });
-
-        if (!response.ok) throw new Error('DNS查询失败');
-
-        const data = await response.json();
-        const ipv4s = (data.Answer || [])
-            .filter(record => record.type === 1)
-            .map(record => record.data);
-
-        if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
-        return ipv4s[Math.floor(Math.random() * ipv4s.length)];
     }
 
     // 查询NAT64 IPv6地址
@@ -795,13 +870,22 @@ export default {
 			} else {
                 // WebSocket 请求处理
 				socks5Address = url.searchParams.get('socks5') || socks5Address;
-				if (new RegExp('/socks5=', 'i').test(url.pathname)) socks5Address = url.pathname.split('5=')[1];
+				if (new RegExp('/socks5=', 'i').test(url.pathname)) {
+                    socks5Address = url.pathname.split('5=')[1];
+                }
 				else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
 					socks5Address = url.pathname.split('://')[1].split('#')[0];
 					if (socks5Address.includes('@')) {
 						let userPassword = socks5Address.split('@')[0];
 						const base64Regex = /^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i;
-						if (base64Regex.test(userPassword) && !userPassword.includes(':')) userPassword = atob(userPassword);
+						if (base64Regex.test(userPassword) && !userPassword.includes(':')) {
+							
+							try {
+								userPassword = atob(userPassword);
+							} catch (e) {
+								console.error(`SOCKS5 auth: Failed to decode Base64 string "${userPassword}". Using it as-is. Error: ${e.message}`);
+							}
+						}
 						socks5Address = `${userPassword}@${socks5Address.split('@')[1]}`;
 					}
 				}
@@ -1065,11 +1149,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     async function tryConnectionStrategies(strategies) {
         if (!strategies || strategies.length === 0) {
             log('All connection strategies failed. Closing WebSocket.');
-            
-            // 自愈机制
-            log('Invalidating configuration cache due to connection failures.');
             cachedSettings = null;
-            
             safeCloseWebSocket(webSocket);
             return;
         }
@@ -1080,88 +1160,92 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         try {
             const tcpSocket = await currentStrategy.execute();
             log(`Strategy '${currentStrategy.name}' connected successfully. Piping data.`);
-
-            // 如果本次连接失败，重试函数将用剩余的策略继续尝试
             const retryNext = () => tryConnectionStrategies(nextStrategies);
-            remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryNext, log);
-
+            await remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryNext, log, addressRemote);
         } catch (error) {
             log(`Strategy '${currentStrategy.name}' failed: ${error.message}. Trying next strategy...`);
-            await tryConnectionStrategies(nextStrategies); // 立即尝试下一个策略
+            await tryConnectionStrategies(nextStrategies);
         }
     }
 
     // --- 组装策略列表 ---
     const connectionStrategies = [];
-    const shouldUseSocks = enableSocks && go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+    if (await isCloudflareDestination(addressRemote)) {
+        log(`目标 [${addressRemote}] 是CF相关网站，启用代理优先策略链。`);
 
-    // 1. 主要连接策略
+        // 1. HTTP 代理
+        if (enableHttpProxy) {
+            connectionStrategies.push({
+                name: 'HTTP Proxy',
+                execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
+            });
+        }
+        // 2. SOCKS5 代理
+        if (enableSocks) {
+            // 根据 go2Socks5s 规则决定 SOCKS5 优先级
+            const shouldUseSocksEarly = go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+            if (shouldUseSocksEarly) {
+                connectionStrategies.unshift({ 
+                    name: 'SOCKS5 Proxy (go2Socks5s)',
+                    execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
+                });
+            } else {
+                 connectionStrategies.push({
+                    name: 'SOCKS5 Proxy (Fallback)',
+                    execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
+                });
+            }
+        }
+        // 3. 用户配置的 PROXYIP
+        if (proxyIP && proxyIP.trim() !== '') {
+            connectionStrategies.push({
+                name: '用户配置的 PROXYIP',
+                execute: () => {
+                    const { address, port } = parseProxyIP(proxyIP, portRemote);
+                    return createConnection(address, port);
+                }
+            });
+        }
+        // 4. 用户配置的 NAT64
+        const userNat64Server = DNS64Server && DNS64Server.trim() !== '' && DNS64Server !== atob("ZG5zNjQuY21saXVzc3NzLm5ldA==");
+        if (userNat64Server) {
+            connectionStrategies.push({
+                name: '用户配置的 NAT64',
+                execute: async () => {
+                    const nat64Address = await resolveToIPv6(addressRemote);
+                    return createConnection(`[${nat64Address}]`, 443);
+                }
+            });
+        }
+        // 5. 内置的默认 PROXYIP
         connectionStrategies.push({
-        name: 'Direct Connection',
-        execute: () => createConnection(addressRemote, portRemote, null)
-        });
-    if (shouldUseSocks) {
-        connectionStrategies.push({
-            name: 'SOCKS5 Proxy (go2Socks5s)',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-        });
-    }
-    if (enableHttpProxy) {
-        connectionStrategies.push({
-            name: 'HTTP Proxy',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
-        });
-    }
-
-    // 2. 备用 (Fallback) 策略
-    if (enableSocks && !shouldUseSocks) {
-        connectionStrategies.push({
-            name: 'SOCKS5 Proxy (Fallback)',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-        });
-    }
-
-    if (proxyIP && proxyIP.trim() !== '') {
-        connectionStrategies.push({
-            name: '用户配置的 PROXYIP',
+            name: '内置的默认 PROXYIP',
             execute: () => {
-                const { address, port } = parseProxyIP(proxyIP, portRemote);
+                const defaultProxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
+                const { address, port } = parseProxyIP(defaultProxyIP, portRemote);
                 return createConnection(address, port);
             }
         });
-    }
-
-    const userNat64Server = DNS64Server && DNS64Server.trim() !== '' && DNS64Server !== atob("ZG5zNjQuY21saXVzc3NzLm5ldA==");
-    if (userNat64Server) {
+        // 6. 内置的默认 NAT64
         connectionStrategies.push({
-            name: '用户配置的 NAT64',
+            name: '内置的默认 NAT64',
             execute: async () => {
+                if (!DNS64Server || DNS64Server.trim() === '') {
+                    DNS64Server = atob("ZG5zNjQuY21pLnp0dmkub3Jn");
+                }
                 const nat64Address = await resolveToIPv6(addressRemote);
                 return createConnection(`[${nat64Address}]`, 443);
             }
         });
+
+    } else {
+        // ---直连 ---
+        log(`目标 [${addressRemote}] ，仅尝试直连。`);
+        connectionStrategies.push({
+            name: 'Direct Connection',
+            execute: () => createConnection(addressRemote, portRemote, null)
+        });
     }
-
-    connectionStrategies.push({
-        name: '内置的默认 PROXYIP',
-        execute: () => {
-            const defaultProxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
-            const { address, port } = parseProxyIP(defaultProxyIP, portRemote);
-            return createConnection(address, port);
-        }
-    });
-
-    connectionStrategies.push({
-        name: '内置的默认 NAT64',
-        execute: async () => {
-            if (!DNS64Server || DNS64Server.trim() === '') {
-                DNS64Server = atob("ZG5zNjQuY21pLnp0dmkub3Jn");
-            }
-            const nat64Address = await resolveToIPv6(addressRemote);
-            return createConnection(`[${nat64Address}]`, 443);
-        }
-    });
-
     // --- 启动策略链 ---
     await tryConnectionStrategies(connectionStrategies);
 }
@@ -1238,7 +1322,7 @@ function processsecureProtoHeader(secureProtoBuffer, userID) {
     };
 }
 
-async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
+async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log, addressRemote) {
     let hasIncomingData = false;
     let header = responseHeader;
     try {
@@ -1249,15 +1333,15 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                     if (webSocket.readyState !== WS_READY_STATE_OPEN) {
                         return;
                     }
-                    if (header) {
-                        const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
-                        combinedData.set(new Uint8Array(header), 0);
-                        combinedData.set(new Uint8Array(chunk), header.byteLength);
-                        webSocket.send(combinedData);
-                        header = null;
-                    } else {
-                        webSocket.send(chunk);
-                    }
+                        if (header) {
+                            const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
+                            combinedData.set(new Uint8Array(header), 0);
+                            combinedData.set(new Uint8Array(chunk), header.byteLength);
+                            webSocket.send(combinedData);
+                            header = null;
+                        } else {
+                            webSocket.send(chunk);
+                        }
                 },
                 close() {
                     log(`远程服务器的数据流已正常关闭。`);
@@ -1271,10 +1355,13 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         console.error(`从远程到客户端的数据流传输发生错误:`, error.stack || error);
         safeCloseWebSocket(webSocket, 1011, `remoteSocketToWS pipe error: ${error.message}`);
     }
-
-    if (!hasIncomingData && retry) {
-        log(`连接成功但未收到任何数据，触发重试机制...`);
+        
+    // --- 智能重试逻辑 ---
+    if (!hasIncomingData && retry && (await isCloudflareDestination(addressRemote))) {
+        log(`目标 [${addressRemote}] 自动检测未收到数据，触发重试机制...`);
         retry();
+    } else if (!hasIncomingData) {
+        log(`目标 [${addressRemote}] 检测失败，即使无初始数据也视为连接成功。`);
     }
 }
 
