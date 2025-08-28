@@ -795,13 +795,22 @@ export default {
 			} else {
                 // WebSocket 请求处理
 				socks5Address = url.searchParams.get('socks5') || socks5Address;
-				if (new RegExp('/socks5=', 'i').test(url.pathname)) socks5Address = url.pathname.split('5=')[1];
+				if (new RegExp('/socks5=', 'i').test(url.pathname)) {
+                    socks5Address = url.pathname.split('5=')[1];
+                }
 				else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
 					socks5Address = url.pathname.split('://')[1].split('#')[0];
 					if (socks5Address.includes('@')) {
 						let userPassword = socks5Address.split('@')[0];
 						const base64Regex = /^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i;
-						if (base64Regex.test(userPassword) && !userPassword.includes(':')) userPassword = atob(userPassword);
+						if (base64Regex.test(userPassword) && !userPassword.includes(':')) {
+							
+							try {
+								userPassword = atob(userPassword);
+							} catch (e) {
+								console.error(`SOCKS5 auth: Failed to decode Base64 string "${userPassword}". Using it as-is. Error: ${e.message}`);
+							}
+						}
 						socks5Address = `${userPassword}@${socks5Address.split('@')[1]}`;
 					}
 				}
@@ -1249,15 +1258,15 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
                     if (webSocket.readyState !== WS_READY_STATE_OPEN) {
                         return;
                     }
-                    if (header) {
-                        const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
-                        combinedData.set(new Uint8Array(header), 0);
-                        combinedData.set(new Uint8Array(chunk), header.byteLength);
-                        webSocket.send(combinedData);
-                        header = null;
-                    } else {
-                        webSocket.send(chunk);
-                    }
+                        if (header) {
+                            const combinedData = new Uint8Array(header.byteLength + chunk.byteLength);
+                            combinedData.set(new Uint8Array(header), 0);
+                            combinedData.set(new Uint8Array(chunk), header.byteLength);
+                            webSocket.send(combinedData);
+                            header = null;
+                        } else {
+                            webSocket.send(chunk);
+                        }
                 },
                 close() {
                     log(`远程服务器的数据流已正常关闭。`);
@@ -1271,10 +1280,10 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         console.error(`从远程到客户端的数据流传输发生错误:`, error.stack || error);
         safeCloseWebSocket(webSocket, 1011, `remoteSocketToWS pipe error: ${error.message}`);
     }
-
+        
     if (!hasIncomingData && retry) {
         log(`连接成功但未收到任何数据，触发重试机制...`);
-        retry();
+            retry();
     }
 }
 
