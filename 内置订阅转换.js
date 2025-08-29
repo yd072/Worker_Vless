@@ -1149,7 +1149,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     async function tryConnectionStrategies(strategies) {
         if (!strategies || strategies.length === 0) {
             log('All connection strategies failed. Closing WebSocket.');
-            cachedSettings = null;
             safeCloseWebSocket(webSocket);
             return;
         }
