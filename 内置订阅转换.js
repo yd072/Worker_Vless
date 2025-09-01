@@ -1240,10 +1240,13 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     } else {
         // ---直连 ---
         log(`目标 [${addressRemote}] ，仅尝试直连。`);
-        connectionStrategies.push({
-            name: 'Direct Connection',
-            execute: () => createConnection(addressRemote, portRemote, null)
-        });
+        const retryCount = 3;
+        for (let i = 0; i < retryCount; i++) {
+            connectionStrategies.push({
+                name: `Direct Connection (Attempt ${i + 1}/${retryCount})`,
+                execute: () => createConnection(addressRemote, portRemote, null)
+            });
+        }
     }
     // --- 启动策略链 ---
     await tryConnectionStrategies(connectionStrategies);
@@ -1356,8 +1359,8 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
     }
         
     // --- 智能重试逻辑 ---
-    if (!hasIncomingData && retry && (await isCloudflareDestination(addressRemote))) {
-        log(`目标 [${addressRemote}] 自动检测未收到数据，触发重试机制...`);
+    if (!hasIncomingData && retry) {
+        log(`目标 [${addressRemote}] 连接成功但未收到数据，触发重试机制...`);
         retry();
     } else if (!hasIncomingData) {
         log(`目标 [${addressRemote}] 检测失败，即使无初始数据也视为连接成功。`);
