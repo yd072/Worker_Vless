@@ -1145,7 +1145,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		}
 	};
 
-    // 新的递归函数，用于按顺序尝试所有连接策略
+    // 连接策略
     async function tryConnectionStrategies(strategies) {
         if (!strategies || strategies.length === 0) {
             log('All connection strategies failed. Closing WebSocket.');
@@ -1170,34 +1170,39 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     // --- 组装策略列表 ---
     const connectionStrategies = [];
     if (await isCloudflareDestination(addressRemote)) {
-        log(`目标 [${addressRemote}] 是CF相关网站，启用代理优先策略链。`);
+        log(`目标 [${addressRemote}] 是CF相关网站，启用代理优先策略链（每种策略带重试）。`);
 
-        // 1. HTTP 代理
+        // 定义每种策略的内部重试次数
+        const strategyRetryCount = 3;
+        
+        // 1. 决定启用的策略及其顺序
+        const baseStrategies = [];
+
+        // HTTP 代理
         if (enableHttpProxy) {
-            connectionStrategies.push({
+            baseStrategies.push({
                 name: 'HTTP Proxy',
                 execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
             });
         }
-        // 2. SOCKS5 代理
+        
+        // SOCKS5 代理 
         if (enableSocks) {
-            // 根据 go2Socks5s 规则决定 SOCKS5 优先级
             const shouldUseSocksEarly = go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+            const socksStrategy = {
+                name: 'SOCKS5 Proxy',
+                execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
+            };
             if (shouldUseSocksEarly) {
-                connectionStrategies.unshift({ 
-                    name: 'SOCKS5 Proxy (go2Socks5s)',
-                    execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-                });
+                baseStrategies.unshift(socksStrategy); 
             } else {
-                 connectionStrategies.push({
-                    name: 'SOCKS5 Proxy (Fallback)',
-                    execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-                });
+                baseStrategies.push(socksStrategy);
             }
         }
-        // 3. 用户配置的 PROXYIP
+        
+        // 用户配置的 PROXYIP
         if (proxyIP && proxyIP.trim() !== '') {
-            connectionStrategies.push({
+            baseStrategies.push({
                 name: '用户配置的 PROXYIP',
                 execute: () => {
                     const { address, port } = parseProxyIP(proxyIP, portRemote);
@@ -1205,10 +1210,11 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 }
             });
         }
-        // 4. 用户配置的 NAT64
+        
+        // 用户配置的 NAT64
         const userNat64Server = DNS64Server && DNS64Server.trim() !== '' && DNS64Server !== atob("ZG5zNjQuY21saXVzc3NzLm5ldA==");
         if (userNat64Server) {
-            connectionStrategies.push({
+            baseStrategies.push({
                 name: '用户配置的 NAT64',
                 execute: async () => {
                     const nat64Address = await resolveToIPv6(addressRemote);
@@ -1216,8 +1222,9 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 }
             });
         }
-        // 5. 内置的默认 PROXYIP
-        connectionStrategies.push({
+        
+        // 内置的默认 PROXYIP
+        baseStrategies.push({
             name: '内置的默认 PROXYIP',
             execute: () => {
                 const defaultProxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
@@ -1225,8 +1232,9 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 return createConnection(address, port);
             }
         });
-        // 6. 内置的默认 NAT64
-        connectionStrategies.push({
+        
+        // 内置的默认 NAT64
+        baseStrategies.push({
             name: '内置的默认 NAT64',
             execute: async () => {
                 if (!DNS64Server || DNS64Server.trim() === '') {
@@ -1236,6 +1244,16 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
                 return createConnection(`[${nat64Address}]`, 443);
             }
         });
+
+        // 2. 重试次数的最终策略
+        for (const baseStrategy of baseStrategies) {
+            for (let i = 0; i < strategyRetryCount; i++) {
+                connectionStrategies.push({
+                    name: `${baseStrategy.name} (Attempt ${i + 1}/${strategyRetryCount})`,
+                    execute: baseStrategy.execute
+                });
+            }
+        }
 
     } else {
         // ---直连 ---
