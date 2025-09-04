@@ -802,10 +802,10 @@ export default {
 					ctx.waitUntil(sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${UA}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
 
 					const uuid_to_use = (动态UUID && url.pathname === `/${动态UUID}`) ? 动态UUID : userID;
-					const secureProtoConfig = await 生成配置信息(uuid_to_use, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+					const PhantomConfig = await 生成配置信息(uuid_to_use, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
 
-                    if (secureProtoConfig instanceof Response) {
-                        return secureProtoConfig;
+                    if (PhantomConfig instanceof Response) {
+                        return PhantomConfig;
                     }
                     
 					const now = Date.now();
@@ -817,7 +817,7 @@ export default {
 					let total = 24 * 1099511627776;
 
 					if (userAgent && userAgent.includes('mozilla') && !subParams.some(p => url.searchParams.has(p))) {
-						return new Response(secureProtoConfig, {
+						return new Response(PhantomConfig, {
 							status: 200,
 							headers: {
 								"Content-Type": "text/html;charset=utf-8",
@@ -828,7 +828,7 @@ export default {
 						});
 					} else {
                         // 对于 Base64 的请求，直接返回文本，而不是作为文件下载
-						return new Response(secureProtoConfig, {
+						return new Response(PhantomConfig, {
 							status: 200,
 							headers: {
 								"Content-Type": "text/plain;charset=utf-8",
@@ -894,7 +894,7 @@ export default {
 					enableSocks = false;
 				}
 
-				return await secureProtoOverWSHandler(request);
+				return await PhantomOverWSHandler(request);
 			}
 		} catch (err) {
 			return new Response(err.toString());
@@ -902,7 +902,7 @@ export default {
 	},
 };
 
-async function secureProtoOverWSHandler(request) {
+async function PhantomOverWSHandler(request) {
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
@@ -922,7 +922,7 @@ async function secureProtoOverWSHandler(request) {
         value: null
     };
     let udpStreamProcessed = false;
-    let secureProtoResponseHeader = null;
+    let PhantomResponseHeader = null;
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
@@ -948,9 +948,9 @@ async function secureProtoOverWSHandler(request) {
                 portRemote = 443,
                 addressRemote = '',
                 rawDataIndex,
-                secureProtoVersion = new Uint8Array([0, 0]),
+                PhantomVersion = new Uint8Array([0, 0]),
                 isUDP,
-            } = processsecureProtoHeader(chunk, userID);
+            } = processPhantomHeader(chunk, userID);
 
             address = addressRemote;
             portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
@@ -958,12 +958,12 @@ async function secureProtoOverWSHandler(request) {
                 throw new Error(message);
             }
 
-            secureProtoResponseHeader = new Uint8Array([secureProtoVersion[0], 0]);
+            PhantomResponseHeader = new Uint8Array([PhantomVersion[0], 0]);
             const rawClientData = chunk.slice(rawDataIndex);
 
             if (isUDP) {
                 if (portRemote === 53) {
-                    const udpHandler = await handleUDPOutBound(webSocket, secureProtoResponseHeader, log);
+                    const udpHandler = await handleUDPOutBound(webSocket, PhantomResponseHeader, log);
                     udpHandler.write(rawClientData);
                     udpStreamProcessed = true;
                 } else {
@@ -976,7 +976,7 @@ async function secureProtoOverWSHandler(request) {
                 throw new Error('Domain is blocked');
             }
             log(`Handling TCP outbound for ${addressRemote}:${portRemote}`);
-            handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log);
+            handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, PhantomResponseHeader, log);
         },
         close() {
             log(`客户端 WebSocket 的可读流已关闭 (正常关闭)。`);
@@ -1011,14 +1011,14 @@ async function secureProtoOverWSHandler(request) {
 /**
  * 处理出站 
  * @param {import("@cloudflare/workers-types").WebSocket} webSocket 
- * @param {ArrayBuffer} secureProtoResponseHeader 
+ * @param {ArrayBuffer} PhantomResponseHeader 
  * @param {(string)=> void} log 
  */
-async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
+async function handleUDPOutBound(webSocket, PhantomResponseHeader, log) {
 
     const DOH_URL = 'https://dns.google/dns-query'; //https://cloudflare-dns.com/dns-query
 
-    let issecureProtoHeaderSent = false;
+    let isPhantomHeaderSent = false;
     let buffer = new Uint8Array(0);
     const transformStream = new TransformStream({
         transform(chunk, controller) {
@@ -1056,11 +1056,11 @@ async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
 
             if (webSocket.readyState === WS_READY_STATE_OPEN) {
                 log(`DoH查询成功，DNS消息长度为: ${udpSize}`);
-                if (issecureProtoHeaderSent) {
+                if (isPhantomHeaderSent) {
                     webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
                 } else {
-                    webSocket.send(await new Blob([secureProtoResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-                    issecureProtoHeaderSent = true;
+                    webSocket.send(await new Blob([PhantomResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                    isPhantomHeaderSent = true;
                 }
             }
         }
@@ -1077,7 +1077,7 @@ async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
     };
 }
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
+async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, PhantomResponseHeader, log) {
 
 	const createConnection = async (address, port, proxyOptions = null) => {
 		const proxyType = proxyOptions ? proxyOptions.type : 'direct';
@@ -1141,7 +1141,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 
             // 如果本次连接失败，重试函数将用剩余的策略继续尝试
             const retryNext = () => tryConnectionStrategies(nextStrategies);
-            remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryNext, log);
+            remoteSocketToWS(tcpSocket, webSocket, PhantomResponseHeader, retryNext, log);
 
         } catch (error) {
             log(`Strategy '${currentStrategy.name}' failed: ${error.message}. Trying next strategy...`);
@@ -1224,13 +1224,13 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     await tryConnectionStrategies(connectionStrategies);
 }
 
-function processsecureProtoHeader(secureProtoBuffer, userID) {
-    if (secureProtoBuffer.byteLength < 24) {
+function processPhantomHeader(PhantomBuffer, userID) {
+    if (PhantomBuffer.byteLength < 24) {
         return { hasError: true, message: 'Invalid data' };
     }
 
-    const version = new Uint8Array(secureProtoBuffer.slice(0, 1));
-    const userIDArray = new Uint8Array(secureProtoBuffer.slice(1, 17));
+    const version = new Uint8Array(PhantomBuffer.slice(0, 1));
+    const userIDArray = new Uint8Array(PhantomBuffer.slice(1, 17));
     const userIDString = stringify(userIDArray);
     const isValidUser = userIDString === userID || userIDString === userIDLow;
 
@@ -1238,8 +1238,8 @@ function processsecureProtoHeader(secureProtoBuffer, userID) {
         return { hasError: true, message: 'Invalid user' };
     }
 
-    const optLength = new Uint8Array(secureProtoBuffer.slice(17, 18))[0];
-    const command = new Uint8Array(secureProtoBuffer.slice(18 + optLength, 18 + optLength + 1))[0];
+    const optLength = new Uint8Array(PhantomBuffer.slice(17, 18))[0];
+    const command = new Uint8Array(PhantomBuffer.slice(18 + optLength, 18 + optLength + 1))[0];
     let isUDP = false;
 
     switch (command) {
@@ -1250,10 +1250,10 @@ function processsecureProtoHeader(secureProtoBuffer, userID) {
     }
 
     const portIndex = 18 + optLength + 1;
-    const portRemote = new DataView(secureProtoBuffer).getUint16(portIndex);
+    const portRemote = new DataView(PhantomBuffer).getUint16(portIndex);
 
     const addressIndex = portIndex + 2;
-    const addressType = new Uint8Array(secureProtoBuffer.slice(addressIndex, addressIndex + 1))[0];
+    const addressType = new Uint8Array(PhantomBuffer.slice(addressIndex, addressIndex + 1))[0];
     let addressValue = '';
     let addressLength = 0;
     let addressValueIndex = addressIndex + 1;
@@ -1261,16 +1261,16 @@ function processsecureProtoHeader(secureProtoBuffer, userID) {
     switch (addressType) {
         case 1:
             addressLength = 4;
-            addressValue = new Uint8Array(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
+            addressValue = new Uint8Array(PhantomBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
             break;
         case 2:
-            addressLength = new Uint8Array(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
+            addressLength = new Uint8Array(PhantomBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
             addressValueIndex += 1;
-            addressValue = new TextDecoder().decode(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+            addressValue = new TextDecoder().decode(PhantomBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
             break;
         case 3:
             addressLength = 16;
-            const dataView = new DataView(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+            const dataView = new DataView(PhantomBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
             const ipv6 = [];
             for (let i = 0; i < 8; i++) {
                 ipv6.push(dataView.getUint16(i * 2).toString(16));
@@ -1291,7 +1291,7 @@ function processsecureProtoHeader(secureProtoBuffer, userID) {
         addressType,
         portRemote,
         rawDataIndex: addressValueIndex + addressLength,
-        secureProtoVersion: version,
+        PhantomVersion: version,
         isUDP,
     };
 }
@@ -2713,21 +2713,32 @@ async function prepareNodeList(host, UUID, noTLS) {
 //根据节点对象数组生成 Base64 编码的订阅内容
 function 生成本地订阅(nodeObjects) {
 	const 协议类型 = atob(protocolEncodedFlag);
-    const secureProtoLinks = nodeObjects.map(node => {
-        const link = `${协议类型}://${node.uuid}@${node.server}:${node.port}?` +
-            `encryption=none&` +
-            `security=${node.tls ? 'tls' : 'none'}&` +
-            `${node.tls ? `sni=${node.servername}&` : ''}` +
-            `${node.tls ? `fp=${node['client-fingerprint']}&` : ''}` +
-            `type=${node.network}&` +
-            `host=${node.servername}&` +
-            `path=${encodeURIComponent(node['ws-opts'].path)}` +
-            `#${encodeURIComponent(node.name)}`;
-        return link;
+    const subscriptionLinks = nodeObjects.map(node => {
+        const UUID = node.uuid;
+        const address = node.server;
+        const port = node.port;
+        const 伪装域名 = node.servername; 
+        const 最终路径 = node['ws-opts'].path;
+        const 节点备注 = node.name; 
+
+        let cxw; 
+        if (node.tls) {
+            cxw = `${协议类型}://${UUID}@${address}:${port}` +
+                   `?encryption=none&security=tls&sni=${伪装域名}` +
+                   `&fp=random&type=ws&host=${伪装域名}` +
+                   `&path=${encodeURIComponent(最终路径)}` +
+                   `#${encodeURIComponent(节点备注)}`;
+        } else {
+            cxw = `${协议类型}://${UUID}@${address}:${port}` +
+                   `?encryption=none&security=none&type=ws&host=${伪装域名}` +
+                   `&path=${encodeURIComponent(最终路径)}` +
+                   `#${encodeURIComponent(节点备注)}`;
+        }        
+        return cxw; 
     }).join('\n');
     
-    let finalLinks = secureProtoLinks;
-    if (link.length > 0) {
+    let finalLinks = subscriptionLinks;
+    if (typeof link !== 'undefined' && Array.isArray(link) && link.length > 0) {
         finalLinks += '\n' + link.join('\n');
     }
 	return btoa(finalLinks);
@@ -3691,7 +3702,7 @@ async function handleGetRequest(env) {
                         <div class="test-group">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'nat64')">测试连接</button>
                             <span id="nat64-status" class="test-status"></span>
-                            <span class="test-note">（将尝试解析 www.cloudflare.com）</span>
+                            <span class="test-note">（将尝试解析）</span>
                             </div>
                         <div id="nat64-results" class="test-results-container"></div>
                                 </div>
@@ -3932,7 +3943,6 @@ async function handleGetRequest(env) {
 // #################################################################
 
 /**
- * 新增：处理连接测试的后端函数 (使用 HTTP 路由探针)
  * @param {Request} request
  * @returns {Promise<Response>}
  */
@@ -3957,13 +3967,13 @@ async function handleTestConnection(request) {
         switch (type) {
             case 'http': {
                 const parsed = httpProxyAddressParser(address);
-                const testSocket = await httpConnect('www.cloudflare.com', 443, log, controller.signal, parsed); // www.gstatic.com, 443
+                const testSocket = await httpConnect('one.one.one.one', 443, log, controller.signal, parsed);
                 await testSocket.close();
                 break;
             }
             case 'socks5': {
                 const parsed = socks5AddressParser(address);
-                const testSocket = await socks5Connect(2, 'www.cloudflare.com', 443, log, controller.signal, parsed);
+                const testSocket = await socks5Connect(2, 'one.one.one.one', 443, log, controller.signal, parsed);
                 await testSocket.close();
                 break;
             }
@@ -4022,8 +4032,8 @@ async function handleTestConnection(request) {
                 if (!DNS64Server || DNS64Server.trim() === '') {
                     throw new Error("NAT64/DNS64 服务器地址不能为空");
                 }
-                log(`NAT64 Test: 步骤 1/2 - 正在使用 ${DNS64Server} 解析 www.cloudflare.com...`);
-                const ipv6Address = await resolveToIPv6('www.cloudflare.com');
+                log(`NAT64 Test: 步骤 1/2 - 正在使用 ${DNS64Server} 解析 speed.cloudflare.com...`);
+                const ipv6Address = await resolveToIPv6('speed.cloudflare.com');
                 log(`NAT64 Test: 解析成功，获得 IPv6 地址: ${ipv6Address}`);
 
                 log(`NAT64 Test: 步骤 2/2 - 正在通过 Socket 连接到 [${ipv6Address}]:80 并请求 /cdn-cgi/trace...`);
@@ -4033,7 +4043,7 @@ async function handleTestConnection(request) {
                     const writer = testSocket.writable.getWriter();
                     const httpProbeRequest = [
                         `GET /cdn-cgi/trace HTTP/1.1`,
-                        `Host: www.cloudflare.com`,
+                        `Host: speed.cloudflare.com`,
                         'User-Agent: Cloudflare-NAT64-Test',
                         'Connection: close',
                         '\r\n'
@@ -4050,7 +4060,7 @@ async function handleTestConnection(request) {
                     }
                     
                     const responseText = new TextDecoder().decode(value);
-                    if (responseText.includes('h=www.cloudflare.com') && responseText.includes('colo=')) {
+                    if (responseText.includes('h=speed.cloudflare.com') && responseText.includes('colo=')) {
                         log(`NAT64 Test: /cdn-cgi/trace 响应有效。测试通过。`);
                         successMessage = `可用！解析到 ${ipv6Address}`;
                     } else {
