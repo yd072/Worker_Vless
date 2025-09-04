@@ -258,117 +258,64 @@ function parseProxyIP(proxyString, defaultPort) {
     return { address: address.toLowerCase(), port: Number(port) };
 }
 
-// ReadableStream
-function createWebSocketStreamWithManualBackpressure(webSocket, log) {
-    let readableStreamCancel = false;
-    let backpressure = false;
-    let messageQueue = [];
-    let isProcessing = false;
 
-    const processMessage = async (data, controller) => {
-        if (isProcessing) {
-            messageQueue.push(data);
-            return;
-        }
-        isProcessing = true;
-        try {
-            controller.enqueue(data);
-            while (messageQueue.length > 0 && !backpressure) {
-                const queuedData = messageQueue.shift();
-                controller.enqueue(queuedData);
-            }
-        } catch (error) {
-            log(`Message processing error: ${error.message}`);
-        } finally {
-            isProcessing = false;
-        }
-    };
-
-    const handleEarlyData = async (earlyDataHeader, controller) => {
+// TransformStream
+function createWebSocketStream(webSocket, earlyDataHeader, log) {
+	let streamCancelled = false;
+	const stream = new TransformStream({
+		start(controller) {
+			// 处理早期数据
 			const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
 			if (error) {
+				log(`处理早期数据时出错: ${error.message}`);
 				controller.error(error);
 			} else if (earlyData) {
+				log('成功注入早期数据到流中。');
 				controller.enqueue(earlyData);
 			}
-    };
-    
-    const cleanup = () => {
-        if (readableStreamCancel) return;
-        readableStreamCancel = true;
-        messageQueue = [];
-        isProcessing = false;
-        backpressure = false;
-        safeCloseWebSocket(webSocket);
-    };
 
-    const handleStreamStart = async (controller, earlyDataHeader) => {
-        try {
-            webSocket.addEventListener('message', (event) => {
-                if (readableStreamCancel) return;
-                if (!backpressure) {
-                    processMessage(event.data, controller);
-                } else {
-                    messageQueue.push(event.data);
-                    log('Backpressure detected, message queued');
+			// 监听 WebSocket 事件
+			webSocket.addEventListener('message', event => {
+				// TransformStream 自动处理背压，只需将数据写入即可
+				if (streamCancelled) return;
+				try {
+					controller.enqueue(event.data);
+				} catch (error) {
+					log(`向流控制器添加数据时出错: ${error.message}`);
 				}
 			});
 
 			webSocket.addEventListener('close', () => {
-                 if (!readableStreamCancel) {
+				log('WebSocket 已关闭，终止流。');
+				if (!streamCancelled) {
+					streamCancelled = true;
 					try {
-                        controller.close();
+						controller.terminate();
 					} catch (error) {
 						log(`关闭流时出错: ${error.message}`);
 					}
 				}
-                cleanup();
 			});
 
-            webSocket.addEventListener('error', (err) => {
-                log(`WebSocket error: ${err.message}`);
-                if (!readableStreamCancel) {
-                    try {
+			webSocket.addEventListener('error', err => {
+				log(`WebSocket 遇到错误: ${err.message}`);
+				if (!streamCancelled) {
+					streamCancelled = true;
 					controller.error(err);
-                    } catch (error) {
-                        log(`向流报告错误时出错: ${error.message}`);
-                    }
-                }
-                cleanup();
-            });
+				}
+			});
+		},
 
-            await handleEarlyData(earlyDataHeader, controller);
-        } catch (error) {
-            log(`Stream start error: ${error.message}`);
-            controller.error(error);
-        }
-    };
+		cancel(reason) {
+			// 当流的消费者取消时（例如，pipeTo的另一端出错）
+			if (streamCancelled) return;
+			streamCancelled = true;
+			log(`流被消费者取消，原因: ${reason}`);
+			safeCloseWebSocket(webSocket);
+		}
+	});
 
-    const handleStreamPull = (controller) => {
-        if (controller.desiredSize > 0) {
-            backpressure = false;
-            while (messageQueue.length > 0 && controller.desiredSize > 0) {
-                const data = messageQueue.shift();
-                processMessage(data, controller);
-            }
-        } else {
-            backpressure = true;
-        }
-    };
-
-    const handleStreamCancel = (reason) => {
-        if (readableStreamCancel) return;
-        log(`Readable stream canceled, reason: ${reason}`);
-        cleanup();
-    };
-
-    return (earlyDataHeader) => {
-        return new ReadableStream({
-            start: (controller) => handleStreamStart(controller, earlyDataHeader),
-            pull: (controller) => handleStreamPull(controller),
-            cancel: (reason) => handleStreamCancel(reason),
-        });
-    }
+	return stream.readable;
 }
 
 // =================================================================
@@ -915,8 +862,7 @@ async function PhantomOverWSHandler(request) {
         console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
     };
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
-    const createStream = createWebSocketStreamWithManualBackpressure(webSocket, log);
-    const readableWebSocketStream = createStream(earlyDataHeader);
+    const readableWebSocketStream = createWebSocketStream(webSocket, earlyDataHeader, log);
 
     let remoteSocketWrapper = {
         value: null
@@ -1016,7 +962,7 @@ async function PhantomOverWSHandler(request) {
  */
 async function handleUDPOutBound(webSocket, PhantomResponseHeader, log) {
 
-    const DOH_URL = 'https://dns.google/dns-query'; //https://cloudflare-dns.com/dns-query
+    const DOH_URL = 'https://dns.google/dns-query'; 
 
     let isPhantomHeaderSent = false;
     let buffer = new Uint8Array(0);
