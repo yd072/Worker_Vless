@@ -225,7 +225,6 @@ async function loadConfigurations(env) {
     }
 }
 
-
 /**
  * 解析 PROXYIP 字符串，提取地址和端口
  * @param {string} proxyString
@@ -285,12 +284,12 @@ function createWebSocketStreamWithManualBackpressure(webSocket, log) {
     };
 
     const handleEarlyData = async (earlyDataHeader, controller) => {
-			const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
-			if (error) {
-				controller.error(error);
-			} else if (earlyData) {
-				controller.enqueue(earlyData);
-			}
+        const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
+        if (error) {
+            controller.error(error);
+        } else if (earlyData) {
+            controller.enqueue(earlyData);
+        }
     };
     
     const cleanup = () => {
@@ -311,25 +310,25 @@ function createWebSocketStreamWithManualBackpressure(webSocket, log) {
                 } else {
                     messageQueue.push(event.data);
                     log('Backpressure detected, message queued');
-				}
-			});
+                }
+            });
 
-			webSocket.addEventListener('close', () => {
+            webSocket.addEventListener('close', () => {
                  if (!readableStreamCancel) {
-					try {
+                    try {
                         controller.close();
-					} catch (error) {
-						log(`关闭流时出错: ${error.message}`);
-					}
-				}
+                    } catch (error) {
+                        log(`关闭流时出错: ${error.message}`);
+                    }
+                }
                 cleanup();
-			});
+            });
 
             webSocket.addEventListener('error', (err) => {
                 log(`WebSocket error: ${err.message}`);
                 if (!readableStreamCancel) {
                     try {
-					controller.error(err);
+                        controller.error(err);
                     } catch (error) {
                         log(`向流报告错误时出错: ${error.message}`);
                     }
@@ -539,6 +538,101 @@ async function statusPage() {
     });
 }
 
+// #################################################################
+// ############## START OF SMART RETRY MECHANISM ###################
+// #################################################################
+
+/**
+ * @param {string} domain
+ * @returns {Promise<string>}
+ */
+async function fetchIPv4(domain) {
+    const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=A`;
+    const response = await fetch(url, {
+        headers: { 'Accept': 'application/dns-json' }
+    });
+
+    if (!response.ok) throw new Error('DNS查询失败');
+
+    const data = await response.json();
+    const ipv4s = (data.Answer || [])
+        .filter(record => record.type === 1)
+        .map(record => record.data);
+
+    if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
+    return ipv4s[Math.floor(Math.random() * ipv4s.length)];
+}
+
+/**
+ * @param {string} address 
+ * @returns {Promise<boolean>}
+ */
+async function isCloudflareDestination(address) {
+    const cloudflareCIDRs = [
+        // IPv4 Ranges
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+        '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+        '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        // IPv6 Ranges
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+        '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32'
+    ];
+
+    const isIp = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^((([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])))$/.test(address);
+
+    let targetIp = address;
+    if (!isIp) {
+        try {
+            targetIp = await fetchIPv4(address);
+        } catch (error) {
+            console.error(`Failed to resolve domain ${address}:`, error.message);
+            return false;
+        }
+    }
+
+    const ipToBigInt = (ip) => {
+        if (ip.includes(':')) { // IPv6
+            const parts = ip.split('::');
+            let part1 = parts[0] ? parts[0].split(':') : [];
+            let part2 = parts[1] ? parts[1].split(':') : [];
+            const missingParts = 8 - (part1.length + part2.length);
+            const zeros = Array(missingParts).fill('0');
+            const fullIp = [...part1, ...zeros, ...part2].map(p => p.padStart(4, '0')).join('');
+            return BigInt(`0x${fullIp}`);
+        } else { // IPv4
+            return ip.split('.').reduce((acc, octet) => (acc << 8n) + BigInt(octet), 0n);
+        }
+    };
+
+    const targetBigInt = ipToBigInt(targetIp);
+
+    for (const cidr of cloudflareCIDRs) {
+        const [range, bitsStr] = cidr.split('/');
+        const isIpv6Cidr = range.includes(':');
+        
+        if (targetIp.includes(':') !== isIpv6Cidr) {
+            continue;
+        }
+
+        const rangeBigInt = ipToBigInt(range);
+        const bits = BigInt(bitsStr);
+        const totalBits = isIpv6Cidr ? 128n : 32n;
+        
+        const mask = ((1n << bits) - 1n) << (totalBits - bits);
+        
+        if ((targetBigInt & mask) === (rangeBigInt & mask)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// #################################################################
+// ############### END OF SMART RETRY MECHANISM ####################
+// #################################################################
+
 async function resolveToIPv6(target) {
     // 检查是否为IPv4
     function isIPv4(str) {
@@ -552,24 +646,6 @@ async function resolveToIPv6(target) {
     // 检查是否为IPv6
     function isIPv6(str) {
         return str.includes(':') && /^[0-9a-fA-F:]+$/.test(str);
-    }
-
-    // 获取域名的IPv4地址
-    async function fetchIPv4(domain) {
-        const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=A`;
-        const response = await fetch(url, {
-            headers: { 'Accept': 'application/dns-json' }
-        });
-
-        if (!response.ok) throw new Error('DNS查询失败');
-
-        const data = await response.json();
-        const ipv4s = (data.Answer || [])
-            .filter(record => record.type === 1)
-            .map(record => record.data);
-
-        if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
-        return ipv4s[Math.floor(Math.random() * ipv4s.length)];
     }
 
     // 查询NAT64 IPv6地址
@@ -802,10 +878,10 @@ export default {
 					ctx.waitUntil(sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${UA}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
 
 					const uuid_to_use = (动态UUID && url.pathname === `/${动态UUID}`) ? 动态UUID : userID;
-					const PhantomConfig = await 生成配置信息(uuid_to_use, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+					const secureProtoConfig = await 生成配置信息(uuid_to_use, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
 
-                    if (PhantomConfig instanceof Response) {
-                        return PhantomConfig;
+                    if (secureProtoConfig instanceof Response) {
+                        return secureProtoConfig;
                     }
                     
 					const now = Date.now();
@@ -817,7 +893,7 @@ export default {
 					let total = 24 * 1099511627776;
 
 					if (userAgent && userAgent.includes('mozilla') && !subParams.some(p => url.searchParams.has(p))) {
-						return new Response(PhantomConfig, {
+						return new Response(secureProtoConfig, {
 							status: 200,
 							headers: {
 								"Content-Type": "text/html;charset=utf-8",
@@ -828,7 +904,7 @@ export default {
 						});
 					} else {
                         // 对于 Base64 的请求，直接返回文本，而不是作为文件下载
-						return new Response(PhantomConfig, {
+						return new Response(secureProtoConfig, {
 							status: 200,
 							headers: {
 								"Content-Type": "text/plain;charset=utf-8",
@@ -894,7 +970,7 @@ export default {
 					enableSocks = false;
 				}
 
-				return await PhantomOverWSHandler(request);
+				return await secureProtoOverWSHandler(request);
 			}
 		} catch (err) {
 			return new Response(err.toString());
@@ -902,7 +978,7 @@ export default {
 	},
 };
 
-async function PhantomOverWSHandler(request) {
+async function secureProtoOverWSHandler(request) {
     const webSocketPair = new WebSocketPair();
     const [client, webSocket] = Object.values(webSocketPair);
 
@@ -922,7 +998,7 @@ async function PhantomOverWSHandler(request) {
         value: null
     };
     let udpStreamProcessed = false;
-    let PhantomResponseHeader = null;
+    let secureProtoResponseHeader = null;
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk, controller) {
@@ -948,9 +1024,9 @@ async function PhantomOverWSHandler(request) {
                 portRemote = 443,
                 addressRemote = '',
                 rawDataIndex,
-                PhantomVersion = new Uint8Array([0, 0]),
+                secureProtoVersion = new Uint8Array([0, 0]),
                 isUDP,
-            } = processPhantomHeader(chunk, userID);
+            } = processsecureProtoHeader(chunk, userID);
 
             address = addressRemote;
             portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
@@ -958,12 +1034,12 @@ async function PhantomOverWSHandler(request) {
                 throw new Error(message);
             }
 
-            PhantomResponseHeader = new Uint8Array([PhantomVersion[0], 0]);
+            secureProtoResponseHeader = new Uint8Array([secureProtoVersion[0], 0]);
             const rawClientData = chunk.slice(rawDataIndex);
 
             if (isUDP) {
                 if (portRemote === 53) {
-                    const udpHandler = await handleUDPOutBound(webSocket, PhantomResponseHeader, log);
+                    const udpHandler = await handleUDPOutBound(webSocket, secureProtoResponseHeader, log);
                     udpHandler.write(rawClientData);
                     udpStreamProcessed = true;
                 } else {
@@ -976,7 +1052,7 @@ async function PhantomOverWSHandler(request) {
                 throw new Error('Domain is blocked');
             }
             log(`Handling TCP outbound for ${addressRemote}:${portRemote}`);
-            handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, PhantomResponseHeader, log);
+            handleTCPOutBound(remoteSocketWrapper, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log);
         },
         close() {
             log(`客户端 WebSocket 的可读流已关闭 (正常关闭)。`);
@@ -1011,14 +1087,14 @@ async function PhantomOverWSHandler(request) {
 /**
  * 处理出站 
  * @param {import("@cloudflare/workers-types").WebSocket} webSocket 
- * @param {ArrayBuffer} PhantomResponseHeader 
+ * @param {ArrayBuffer} secureProtoResponseHeader 
  * @param {(string)=> void} log 
  */
-async function handleUDPOutBound(webSocket, PhantomResponseHeader, log) {
+async function handleUDPOutBound(webSocket, secureProtoResponseHeader, log) {
 
-    const DOH_URL = 'https://dns.google/dns-query'; 
+    const DOH_URL = 'https://dns.google/dns-query'; //https://cloudflare-dns.com/dns-query
 
-    let isPhantomHeaderSent = false;
+    let issecureProtoHeaderSent = false;
     let buffer = new Uint8Array(0);
     const transformStream = new TransformStream({
         transform(chunk, controller) {
@@ -1056,11 +1132,11 @@ async function handleUDPOutBound(webSocket, PhantomResponseHeader, log) {
 
             if (webSocket.readyState === WS_READY_STATE_OPEN) {
                 log(`DoH查询成功，DNS消息长度为: ${udpSize}`);
-                if (isPhantomHeaderSent) {
+                if (issecureProtoHeaderSent) {
                     webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
                 } else {
-                    webSocket.send(await new Blob([PhantomResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-                    isPhantomHeaderSent = true;
+                    webSocket.send(await new Blob([secureProtoResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                    issecureProtoHeaderSent = true;
                 }
             }
         }
@@ -1077,7 +1153,7 @@ async function handleUDPOutBound(webSocket, PhantomResponseHeader, log) {
     };
 }
 
-async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, PhantomResponseHeader, log) {
+async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
 
 	const createConnection = async (address, port, proxyOptions = null) => {
 		const proxyType = proxyOptions ? proxyOptions.type : 'direct';
@@ -1138,99 +1214,124 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         try {
             const tcpSocket = await currentStrategy.execute();
             log(`Strategy '${currentStrategy.name}' connected successfully. Piping data.`);
-
-            // 如果本次连接失败，重试函数将用剩余的策略继续尝试
             const retryNext = () => tryConnectionStrategies(nextStrategies);
-            remoteSocketToWS(tcpSocket, webSocket, PhantomResponseHeader, retryNext, log);
-
+            await remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryNext, log, addressRemote);
         } catch (error) {
             log(`Strategy '${currentStrategy.name}' failed: ${error.message}. Trying next strategy...`);
-            await tryConnectionStrategies(nextStrategies); // 立即尝试下一个策略
+            await tryConnectionStrategies(nextStrategies);
         }
     }
 
     // --- 组装策略列表 ---
     const connectionStrategies = [];
-    const shouldUseSocks = enableSocks && go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+    if (await isCloudflareDestination(addressRemote)) {
+        log(`目标 [${addressRemote}] 是CF相关网站，启用代理优先策略链（每种策略带重试）。`);
 
-    // 1. 主要连接策略
-        connectionStrategies.push({
-        name: 'Direct Connection',
-        execute: () => createConnection(addressRemote, portRemote, null)
-        });
-    if (shouldUseSocks) {
-        connectionStrategies.push({
-            name: 'SOCKS5 Proxy (go2Socks5s)',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-        });
-    }
-    if (enableHttpProxy) {
-        connectionStrategies.push({
-            name: 'HTTP Proxy',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
-        });
-    }
+        // 定义每种策略的内部重试次数
+        const strategyRetryCount = 3;
+        
+        // 1. 决定启用的策略及其顺序
+        const baseStrategies = [];
 
-    // 2. 备用 (Fallback) 策略
-    if (enableSocks && !shouldUseSocks) {
-        connectionStrategies.push({
-            name: 'SOCKS5 Proxy (Fallback)',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-        });
-    }
-
-    if (proxyIP && proxyIP.trim() !== '') {
-        connectionStrategies.push({
-            name: '用户配置的 PROXYIP',
+        // HTTP 代理
+        if (enableHttpProxy) {
+            baseStrategies.push({
+                name: 'HTTP Proxy',
+                execute: () => createConnection(addressRemote, portRemote, { type: 'http' })
+            });
+        }
+        
+        // SOCKS5 代理 
+        if (enableSocks) {
+            const shouldUseSocksEarly = go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+            const socksStrategy = {
+                name: 'SOCKS5 Proxy',
+                execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
+            };
+            if (shouldUseSocksEarly) {
+                baseStrategies.unshift(socksStrategy); 
+            } else {
+                baseStrategies.push(socksStrategy);
+            }
+        }
+        
+        // 用户配置的 PROXYIP
+        if (proxyIP && proxyIP.trim() !== '') {
+            baseStrategies.push({
+                name: '用户配置的 PROXYIP',
+                execute: () => {
+                    const { address, port } = parseProxyIP(proxyIP, portRemote);
+                    return createConnection(address, port);
+                }
+            });
+        }
+        
+        // 用户配置的 NAT64
+        const userNat64Server = DNS64Server && DNS64Server.trim() !== '' && DNS64Server !== atob("ZG5zNjQuY21saXVzc3NzLm5ldA==");
+        if (userNat64Server) {
+            baseStrategies.push({
+                name: '用户配置的 NAT64',
+                execute: async () => {
+                    const nat64Address = await resolveToIPv6(addressRemote);
+                    return createConnection(`[${nat64Address}]`, 443);
+                }
+            });
+        }
+        
+        // 内置的默认 PROXYIP
+        baseStrategies.push({
+            name: '内置的默认 PROXYIP',
             execute: () => {
-                const { address, port } = parseProxyIP(proxyIP, portRemote);
+                const defaultProxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
+                const { address, port } = parseProxyIP(defaultProxyIP, portRemote);
                 return createConnection(address, port);
             }
         });
-    }
-
-    const userNat64Server = DNS64Server && DNS64Server.trim() !== '' && DNS64Server !== atob("ZG5zNjQuY21saXVzc3NzLm5ldA==");
-    if (userNat64Server) {
-        connectionStrategies.push({
-            name: '用户配置的 NAT64',
+        
+        // 内置的默认 NAT64
+        baseStrategies.push({
+            name: '内置的默认 NAT64',
             execute: async () => {
+                if (!DNS64Server || DNS64Server.trim() === '') {
+                    DNS64Server = atob("ZG5zNjQuY21pLnp0dmkub3Jn");
+                }
                 const nat64Address = await resolveToIPv6(addressRemote);
                 return createConnection(`[${nat64Address}]`, 443);
             }
         });
-    }
 
-    connectionStrategies.push({
-        name: '内置的默认 PROXYIP',
-        execute: () => {
-            const defaultProxyIP = atob('UFJPWFlJUC50cDEuZnh4ay5kZWR5bi5pbw==');
-            const { address, port } = parseProxyIP(defaultProxyIP, portRemote);
-            return createConnection(address, port);
-        }
-    });
-
-    connectionStrategies.push({
-        name: '内置的默认 NAT64',
-        execute: async () => {
-            if (!DNS64Server || DNS64Server.trim() === '') {
-                DNS64Server = atob("ZG5zNjQuY21pLnp0dmkub3Jn");
+        // 2. 重试次数的最终策略
+        for (const baseStrategy of baseStrategies) {
+            for (let i = 0; i < strategyRetryCount; i++) {
+                connectionStrategies.push({
+                    name: `${baseStrategy.name} (Attempt ${i + 1}/${strategyRetryCount})`,
+                    execute: baseStrategy.execute
+                });
             }
-            const nat64Address = await resolveToIPv6(addressRemote);
-            return createConnection(`[${nat64Address}]`, 443);
         }
-    });
 
+    } else {
+        // ---直连 ---
+        log(`目标 [${addressRemote}] ，仅尝试直连。`);
+        const retryCount = 3;
+        for (let i = 0; i < retryCount; i++) {
+            connectionStrategies.push({
+                name: `Direct Connection (Attempt ${i + 1}/${retryCount})`,
+                execute: () => createConnection(addressRemote, portRemote, null)
+            });
+        }
+    }
     // --- 启动策略链 ---
     await tryConnectionStrategies(connectionStrategies);
 }
 
-function processPhantomHeader(PhantomBuffer, userID) {
-    if (PhantomBuffer.byteLength < 24) {
+function processsecureProtoHeader(secureProtoBuffer, userID) {
+    if (secureProtoBuffer.byteLength < 24) {
         return { hasError: true, message: 'Invalid data' };
     }
 
-    const version = new Uint8Array(PhantomBuffer.slice(0, 1));
-    const userIDArray = new Uint8Array(PhantomBuffer.slice(1, 17));
+    const version = new Uint8Array(secureProtoBuffer.slice(0, 1));
+    const userIDArray = new Uint8Array(secureProtoBuffer.slice(1, 17));
     const userIDString = stringify(userIDArray);
     const isValidUser = userIDString === userID || userIDString === userIDLow;
 
@@ -1238,8 +1339,8 @@ function processPhantomHeader(PhantomBuffer, userID) {
         return { hasError: true, message: 'Invalid user' };
     }
 
-    const optLength = new Uint8Array(PhantomBuffer.slice(17, 18))[0];
-    const command = new Uint8Array(PhantomBuffer.slice(18 + optLength, 18 + optLength + 1))[0];
+    const optLength = new Uint8Array(secureProtoBuffer.slice(17, 18))[0];
+    const command = new Uint8Array(secureProtoBuffer.slice(18 + optLength, 18 + optLength + 1))[0];
     let isUDP = false;
 
     switch (command) {
@@ -1250,10 +1351,10 @@ function processPhantomHeader(PhantomBuffer, userID) {
     }
 
     const portIndex = 18 + optLength + 1;
-    const portRemote = new DataView(PhantomBuffer).getUint16(portIndex);
+    const portRemote = new DataView(secureProtoBuffer).getUint16(portIndex);
 
     const addressIndex = portIndex + 2;
-    const addressType = new Uint8Array(PhantomBuffer.slice(addressIndex, addressIndex + 1))[0];
+    const addressType = new Uint8Array(secureProtoBuffer.slice(addressIndex, addressIndex + 1))[0];
     let addressValue = '';
     let addressLength = 0;
     let addressValueIndex = addressIndex + 1;
@@ -1261,16 +1362,16 @@ function processPhantomHeader(PhantomBuffer, userID) {
     switch (addressType) {
         case 1:
             addressLength = 4;
-            addressValue = new Uint8Array(PhantomBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
+            addressValue = new Uint8Array(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength)).join('.');
             break;
         case 2:
-            addressLength = new Uint8Array(PhantomBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
+            addressLength = new Uint8Array(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + 1))[0];
             addressValueIndex += 1;
-            addressValue = new TextDecoder().decode(PhantomBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+            addressValue = new TextDecoder().decode(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
             break;
         case 3:
             addressLength = 16;
-            const dataView = new DataView(PhantomBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
+            const dataView = new DataView(secureProtoBuffer.slice(addressValueIndex, addressValueIndex + addressLength));
             const ipv6 = [];
             for (let i = 0; i < 8; i++) {
                 ipv6.push(dataView.getUint16(i * 2).toString(16));
@@ -1291,12 +1392,12 @@ function processPhantomHeader(PhantomBuffer, userID) {
         addressType,
         portRemote,
         rawDataIndex: addressValueIndex + addressLength,
-        PhantomVersion: version,
+        secureProtoVersion: version,
         isUDP,
     };
 }
 
-async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log) {
+async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, log, addressRemote) {
     let hasIncomingData = false;
     let header = responseHeader;
     try {
@@ -1330,9 +1431,12 @@ async function remoteSocketToWS(remoteSocket, webSocket, responseHeader, retry, 
         safeCloseWebSocket(webSocket, 1011, `remoteSocketToWS pipe error: ${error.message}`);
     }
         
+    // --- 智能重试逻辑 ---
     if (!hasIncomingData && retry) {
-        log(`连接成功但未收到任何数据，触发重试机制...`);
-            retry();
+        log(`目标 [${addressRemote}] 连接成功但未收到数据，触发重试机制...`);
+        retry();
+    } else if (!hasIncomingData) {
+        log(`目标 [${addressRemote}] 检测失败，即使无初始数据也视为连接成功。`);
     }
 }
 
@@ -1706,9 +1810,9 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
     }
 }
 
-const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
+const protocolEncodedFlag = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
-	const 协议类型 = atob(啥啥啥_写的这是啥啊);
+	const 协议类型 = atob(protocolEncodedFlag);
 
 	const 别名 = FileName;
 	let 地址 = 域名地址;
@@ -2688,7 +2792,7 @@ async function prepareNodeList(host, UUID, noTLS) {
 
             return {
                 name: finalName,
-                type: atob(啥啥啥_写的这是啥啊),
+                type: atob(protocolEncodedFlag),
                 server: server,
                 port: parseInt(port, 10),
                 uuid: UUID,
@@ -2712,33 +2816,22 @@ async function prepareNodeList(host, UUID, noTLS) {
 
 //根据节点对象数组生成 Base64 编码的订阅内容
 function 生成本地订阅(nodeObjects) {
-	const 协议类型 = atob(啥啥啥_写的这是啥啊);
-    const subscriptionLinks = nodeObjects.map(node => {
-        const UUID = node.uuid;
-        const address = node.server;
-        const port = node.port;
-        const 伪装域名 = node.servername; 
-        const 最终路径 = node['ws-opts'].path;
-        const 节点备注 = node.name; 
-
-        let cxw; 
-        if (node.tls) {
-            cxw = `${协议类型}://${UUID}@${address}:${port}` +
-                   `?encryption=none&security=tls&sni=${伪装域名}` +
-                   `&fp=random&type=ws&host=${伪装域名}` +
-                   `&path=${encodeURIComponent(最终路径)}` +
-                   `#${encodeURIComponent(节点备注)}`;
-        } else {
-            cxw = `${协议类型}://${UUID}@${address}:${port}` +
-                   `?encryption=none&security=none&type=ws&host=${伪装域名}` +
-                   `&path=${encodeURIComponent(最终路径)}` +
-                   `#${encodeURIComponent(节点备注)}`;
-        }        
-        return cxw; 
+	const 协议类型 = atob(protocolEncodedFlag);
+    const secureProtoLinks = nodeObjects.map(node => {
+        const link = `${协议类型}://${node.uuid}@${node.server}:${node.port}?` +
+            `encryption=none&` +
+            `security=${node.tls ? 'tls' : 'none'}&` +
+            `${node.tls ? `sni=${node.servername}&` : ''}` +
+            `${node.tls ? `fp=${node['client-fingerprint']}&` : ''}` +
+            `type=${node.network}&` +
+            `host=${node.servername}&` +
+            `path=${encodeURIComponent(node['ws-opts'].path)}` +
+            `#${encodeURIComponent(node.name)}`;
+        return link;
     }).join('\n');
     
-    let finalLinks = subscriptionLinks;
-    if (typeof link !== 'undefined' && Array.isArray(link) && link.length > 0) {
+    let finalLinks = secureProtoLinks;
+    if (link.length > 0) {
         finalLinks += '\n' + link.join('\n');
     }
 	return btoa(finalLinks);
@@ -3702,7 +3795,7 @@ async function handleGetRequest(env) {
                         <div class="test-group">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'nat64')">测试连接</button>
                             <span id="nat64-status" class="test-status"></span>
-                            <span class="test-note">（将尝试解析）</span>
+                            <span class="test-note">（将尝试解析 www.cloudflare.com）</span>
                             </div>
                         <div id="nat64-results" class="test-results-container"></div>
                                 </div>
@@ -3943,6 +4036,7 @@ async function handleGetRequest(env) {
 // #################################################################
 
 /**
+ * 新增：处理连接测试的后端函数 (使用 HTTP 路由探针)
  * @param {Request} request
  * @returns {Promise<Response>}
  */
@@ -3967,13 +4061,13 @@ async function handleTestConnection(request) {
         switch (type) {
             case 'http': {
                 const parsed = httpProxyAddressParser(address);
-                const testSocket = await httpConnect('one.one.one.one', 443, log, controller.signal, parsed);
+                const testSocket = await httpConnect('www.cloudflare.com', 443, log, controller.signal, parsed); // www.gstatic.com, 443
                 await testSocket.close();
                 break;
             }
             case 'socks5': {
                 const parsed = socks5AddressParser(address);
-                const testSocket = await socks5Connect(2, 'one.one.one.one', 443, log, controller.signal, parsed);
+                const testSocket = await socks5Connect(2, 'www.cloudflare.com', 443, log, controller.signal, parsed);
                 await testSocket.close();
                 break;
             }
@@ -4032,8 +4126,8 @@ async function handleTestConnection(request) {
                 if (!DNS64Server || DNS64Server.trim() === '') {
                     throw new Error("NAT64/DNS64 服务器地址不能为空");
                 }
-                log(`NAT64 Test: 步骤 1/2 - 正在使用 ${DNS64Server} 解析 speed.cloudflare.com...`);
-                const ipv6Address = await resolveToIPv6('speed.cloudflare.com');
+                log(`NAT64 Test: 步骤 1/2 - 正在使用 ${DNS64Server} 解析 www.cloudflare.com...`);
+                const ipv6Address = await resolveToIPv6('www.cloudflare.com');
                 log(`NAT64 Test: 解析成功，获得 IPv6 地址: ${ipv6Address}`);
 
                 log(`NAT64 Test: 步骤 2/2 - 正在通过 Socket 连接到 [${ipv6Address}]:80 并请求 /cdn-cgi/trace...`);
@@ -4043,7 +4137,7 @@ async function handleTestConnection(request) {
                     const writer = testSocket.writable.getWriter();
                     const httpProbeRequest = [
                         `GET /cdn-cgi/trace HTTP/1.1`,
-                        `Host: speed.cloudflare.com`,
+                        `Host: www.cloudflare.com`,
                         'User-Agent: Cloudflare-NAT64-Test',
                         'Connection: close',
                         '\r\n'
@@ -4060,7 +4154,7 @@ async function handleTestConnection(request) {
                     }
                     
                     const responseText = new TextDecoder().decode(value);
-                    if (responseText.includes('h=speed.cloudflare.com') && responseText.includes('colo=')) {
+                    if (responseText.includes('h=www.cloudflare.com') && responseText.includes('colo=')) {
                         log(`NAT64 Test: /cdn-cgi/trace 响应有效。测试通过。`);
                         successMessage = `可用！解析到 ${ipv6Address}`;
                     } else {
