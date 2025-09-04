@@ -258,64 +258,117 @@ function parseProxyIP(proxyString, defaultPort) {
     return { address: address.toLowerCase(), port: Number(port) };
 }
 
+// ReadableStream
+function createWebSocketStreamWithManualBackpressure(webSocket, log) {
+    let readableStreamCancel = false;
+    let backpressure = false;
+    let messageQueue = [];
+    let isProcessing = false;
 
-// TransformStream
-function createWebSocketStream(webSocket, earlyDataHeader, log) {
-	let streamCancelled = false;
-	const stream = new TransformStream({
-		start(controller) {
-			// 处理早期数据
+    const processMessage = async (data, controller) => {
+        if (isProcessing) {
+            messageQueue.push(data);
+            return;
+        }
+        isProcessing = true;
+        try {
+            controller.enqueue(data);
+            while (messageQueue.length > 0 && !backpressure) {
+                const queuedData = messageQueue.shift();
+                controller.enqueue(queuedData);
+            }
+        } catch (error) {
+            log(`Message processing error: ${error.message}`);
+        } finally {
+            isProcessing = false;
+        }
+    };
+
+    const handleEarlyData = async (earlyDataHeader, controller) => {
 			const { earlyData, error } = utils.base64.toArrayBuffer(earlyDataHeader);
 			if (error) {
-				log(`处理早期数据时出错: ${error.message}`);
 				controller.error(error);
 			} else if (earlyData) {
-				log('成功注入早期数据到流中。');
 				controller.enqueue(earlyData);
 			}
+    };
+    
+    const cleanup = () => {
+        if (readableStreamCancel) return;
+        readableStreamCancel = true;
+        messageQueue = [];
+        isProcessing = false;
+        backpressure = false;
+        safeCloseWebSocket(webSocket);
+    };
 
-			// 监听 WebSocket 事件
-			webSocket.addEventListener('message', event => {
-				// TransformStream 自动处理背压，只需将数据写入即可
-				if (streamCancelled) return;
-				try {
-					controller.enqueue(event.data);
-				} catch (error) {
-					log(`向流控制器添加数据时出错: ${error.message}`);
+    const handleStreamStart = async (controller, earlyDataHeader) => {
+        try {
+            webSocket.addEventListener('message', (event) => {
+                if (readableStreamCancel) return;
+                if (!backpressure) {
+                    processMessage(event.data, controller);
+                } else {
+                    messageQueue.push(event.data);
+                    log('Backpressure detected, message queued');
 				}
 			});
 
 			webSocket.addEventListener('close', () => {
-				log('WebSocket 已关闭，终止流。');
-				if (!streamCancelled) {
-					streamCancelled = true;
+                 if (!readableStreamCancel) {
 					try {
-						controller.terminate();
+                        controller.close();
 					} catch (error) {
 						log(`关闭流时出错: ${error.message}`);
 					}
 				}
+                cleanup();
 			});
 
-			webSocket.addEventListener('error', err => {
-				log(`WebSocket 遇到错误: ${err.message}`);
-				if (!streamCancelled) {
-					streamCancelled = true;
+            webSocket.addEventListener('error', (err) => {
+                log(`WebSocket error: ${err.message}`);
+                if (!readableStreamCancel) {
+                    try {
 					controller.error(err);
-				}
-			});
-		},
+                    } catch (error) {
+                        log(`向流报告错误时出错: ${error.message}`);
+                    }
+                }
+                cleanup();
+            });
 
-		cancel(reason) {
-			// 当流的消费者取消时（例如，pipeTo的另一端出错）
-			if (streamCancelled) return;
-			streamCancelled = true;
-			log(`流被消费者取消，原因: ${reason}`);
-			safeCloseWebSocket(webSocket);
-		}
-	});
+            await handleEarlyData(earlyDataHeader, controller);
+        } catch (error) {
+            log(`Stream start error: ${error.message}`);
+            controller.error(error);
+        }
+    };
 
-	return stream.readable;
+    const handleStreamPull = (controller) => {
+        if (controller.desiredSize > 0) {
+            backpressure = false;
+            while (messageQueue.length > 0 && controller.desiredSize > 0) {
+                const data = messageQueue.shift();
+                processMessage(data, controller);
+            }
+        } else {
+            backpressure = true;
+        }
+    };
+
+    const handleStreamCancel = (reason) => {
+        if (readableStreamCancel) return;
+        log(`Readable stream canceled, reason: ${reason}`);
+        cleanup();
+    };
+
+    return (earlyDataHeader) => {
+        return new ReadableStream({
+            start: (controller) => handleStreamStart(controller, earlyDataHeader),
+            pull: (controller) => handleStreamPull(controller),
+            cancel: (reason) => handleStreamCancel(reason),
+        });
+    }
 }
 
 // =================================================================
@@ -862,7 +915,8 @@ async function PhantomOverWSHandler(request) {
         console.log(`[${timestamp}] [${address}:${portWithRandomLog}] ${info}`, event);
     };
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
-    const readableWebSocketStream = createWebSocketStream(webSocket, earlyDataHeader, log);
+    const createStream = createWebSocketStreamWithManualBackpressure(webSocket, log);
+    const readableWebSocketStream = createStream(earlyDataHeader);
 
     let remoteSocketWrapper = {
         value: null
@@ -1652,9 +1706,9 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
     }
 }
 
-const protocolEncodedFlag = atob('ZG14bGMzTT0=');
+const 啥啥啥_写的这是啥啊 = atob('ZG14bGMzTT0=');
 function 配置信息(UUID, 域名地址) {
-	const 协议类型 = atob(protocolEncodedFlag);
+	const 协议类型 = atob(啥啥啥_写的这是啥啊);
 
 	const 别名 = FileName;
 	let 地址 = 域名地址;
@@ -2634,7 +2688,7 @@ async function prepareNodeList(host, UUID, noTLS) {
 
             return {
                 name: finalName,
-                type: atob(protocolEncodedFlag),
+                type: atob(啥啥啥_写的这是啥啊),
                 server: server,
                 port: parseInt(port, 10),
                 uuid: UUID,
@@ -2658,7 +2712,7 @@ async function prepareNodeList(host, UUID, noTLS) {
 
 //根据节点对象数组生成 Base64 编码的订阅内容
 function 生成本地订阅(nodeObjects) {
-	const 协议类型 = atob(protocolEncodedFlag);
+	const 协议类型 = atob(啥啥啥_写的这是啥啊);
     const subscriptionLinks = nodeObjects.map(node => {
         const UUID = node.uuid;
         const address = node.server;
