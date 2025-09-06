@@ -1339,8 +1339,6 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
 
 const protocolEncodedFlag = atob('ZG14bGMzTT0=');
 let subParams = ['sub', 'base64', 'b64'];
-const cmad = decodeURIComponent(atob('dGVsZWdyYW0lMjAlRTQlQkElQTQlRTYlQjUlODElRTclQkUlQTQlMjAlRTYlOEElODAlRTYlOUMlQUYlRTUlQTQlQTclRTQlQkQlQUMlN0UlRTUlOUMlQTglRTclQkElQkYlRTUlOEYlOTElRTclODklOEMhJTNDYnIlM0UKJTNDYSUyMGhyZWYlM0QlMjdodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlMjclM0VodHRwcyUzQSUyRiUyRnQubWUlMkZDTUxpdXNzc3MlM0MlMkZhJTNFJTNDYnIlM0UKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJTNDYnIlM0UKZ2l0aHViJTIwJUU5JUExJUI5JUU3JTlCJUFFJUU1JTlDJUIwJUU1JTlEJTgwJTIwU3RhciFTdGFyIVN0YXIhISElM0NiciUzRQolM0NhJTIwaHJlZiUzRCUyN2h0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUyNyUzRWh0dHBzJTNBJTJGJTJGZ2l0aHViLmNvbSUyRmNtbGl1JTJGZWRnZXR1bm5lbCUzQyUyRmElM0UlM0NiciUzRQotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0lM0NiciUzRQo='));
-
 async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 
 	if (sub) {
@@ -1543,12 +1541,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 						padding-bottom: 10px;
 						border-bottom: 2px solid var(--border-color);
 					}
-
-					.divider {
-						height: 1px;
-						background: var(--border-color);
-						margin: 15px 0;
-					}
 					
 					.config-info {
 						background: #f8f9fa;
@@ -1728,9 +1720,6 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 							${订阅器.replace(/\n/g, '<br>')}
 						</div>
 					</div>
-
-					<div class="divider"></div>
-					${cmad}
 				</div>
 
 				<script>
@@ -2390,20 +2379,6 @@ async function handleGetRequest(env) {
                 .slider.round { border-radius: 20px; }
                 .slider.round:before { border-radius: 50%; }
 
-                /* --- Footer Styles --- */
-                .footer {
-                    margin-top: 20px;
-                    padding-top: 15px;
-                    border-top: 1px solid var(--border-color);
-                    text-align: left;
-                    font-size: 1em;
-                    color: #6c757d;
-                    line-height: 1.6;
-                }
-                html.dark-mode .footer {
-                    color: #aaa;
-                }
-
             </style>
             <script>
                 (function() {
@@ -2518,9 +2493,6 @@ async function handleGetRequest(env) {
                     </div>
                         </div>
 
-                <div class="footer">
-                        ${cmad}
-                </div>
             </div>
 
             <script>
