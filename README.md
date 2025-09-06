@@ -22,7 +22,6 @@ KV变量名：KV
 | ADDNOTLS | icook.tw:80#优选域名/1.2.3.4 :80#优选IP |
 | ADDNOTLSAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
 | SUB | 自定义 |
-| SUBAPI | 自定义 |
 | ····· | ····· |
 
 # 感谢
