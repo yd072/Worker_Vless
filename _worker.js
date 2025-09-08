@@ -2,7 +2,7 @@
 import { connect } from 'cloudflare:sockets';
 
 // --- 全局配置缓存 ---
-let cachedSettings = null;       // 用于存储从KV读取的配置对象
+let cachedSettings = null;     
 // --------------------
 
 let userID = '';
@@ -65,8 +65,7 @@ const utils = {
 };
 
 /**
- * 生成一个8位的随机路径
- * @returns {string} 例如 /aK7b2CDE
+ * @returns {string} 
  */
 function generateRandomPath() {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -78,8 +77,7 @@ function generateRandomPath() {
 }
 
 /**
- * 随机获取一个 TLS 指纹
- * @returns {string} 例如 'chrome', 'random', 'randomized'
+ * @returns {string} 
  */
 function getRandomFingerprint() {
     return validFingerprints[Math.floor(Math.random() * validFingerprints.length)];
@@ -181,7 +179,6 @@ async function loadConfigurations(env) {
 }
 
 /**
- * 解析 PROXYIP 字符串，提取地址和端口
  * @param {string} proxyString
  * @param {number} defaultPort
  * @returns {{address: string, port: number}}
@@ -195,7 +192,6 @@ function parseProxyIP(proxyString, defaultPort) {
         address += ']';
     } else if (address.includes(':')) {
         const parts = address.split(':');
-        // 处理IPv6地址中包含多个冒号的情况
         if (parts.length > 2) {
             port = parts.pop();
             address = parts.join(':');
@@ -534,11 +530,10 @@ export default {
 				RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
 			}
 
-            // 5. 根据请求类型（WebSocket 或 HTTP）进行路由
+            // 5. 根据请求类型进行路由
 			const upgradeHeader = request.headers.get('Upgrade');
 			const url = new URL(request.url);
 			if (!upgradeHeader || upgradeHeader !== 'websocket') {
-				// HTTP 请求处理
                 let sub = env.SUB || '';
                 let path = ''; // path 变量在此处作用域内定义
 				if (url.searchParams.has('sub') && url.searchParams.get('sub') !== '') sub = url.searchParams.get('sub').toLowerCase();
@@ -1324,7 +1319,6 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
             headers: new Headers(响应.headers)
         });
 
-        // 移除可能暴露信息的特有请求头
         新响应.headers.delete('cf-ray');
         新响应.headers.delete('cf-connecting-ip');
         新响应.headers.delete('x-forwarded-proto');
@@ -1336,6 +1330,48 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
         return new Response(`代理请求失败: ${error.message}`, { status: 500 });
     }
 }
+
+// =================================================================
+// =========== START OF REFACTORED HELPER FUNCTIONS ================
+// =================================================================
+
+function getConnectionTypeInfo(enableSocks, proxyIP, proxyIPs, newSocks5s, socks5List, RproxyIP) {
+    if (enableSocks) {
+        return `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
+    }
+    if (proxyIP && proxyIP.trim() !== '') {
+        return `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
+    }
+    if (RproxyIP === 'true') {
+        return `CFCDN（访问方式）: 自动获取<br>`;
+    }
+    return `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
+}
+
+/**
+ * @returns {string} 
+ */
+function buildAddressListsHtml() {
+    const sources = [
+        { label: 'ADDS', data: [...new Set([...adds, ...addsapi])] },
+        { label: 'ADD', data: [...new Set([...addresses, ...addressesapi])] },
+        { label: 'ADDNOTLS ', data: [...new Set([...addressesnotls, ...addressesnotlsapi])] },
+        { label: `ADDCSV （IPTest csv文件 ${DLS} ）`, data: [...new Set(addressescsv)] }
+    ];
+
+    let html = '';
+    for (const source of sources) {
+        if (source.data.length > 0) {
+            html += `${source.label}: <br>&nbsp;&nbsp;${source.data.join('<br>&nbsp;&nbsp;')}<br>`;
+        }
+    }
+    return html;
+}
+
+// =================================================================
+// ============ END OF REFACTORED HELPER FUNCTIONS =================
+// =================================================================
+
 
 const protocolEncodedFlag = atob('ZG14bGMzTT0=');
 let subParams = ['sub', 'base64', 'b64'];
@@ -1393,7 +1429,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
 			    const randomIP = generateRandomIPFromCIDR(randomCIDR);
 			    const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
-			    addressesnotls.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
+			    addressesnotls.push(`${randomIP}:${port}#CF随机ID${String(counter++).padStart(2, '0')}`);
 		    }
 	    } else {
 		    const randomPorts = httpsPorts.length > 0 ? httpsPorts : ['443'];
@@ -1401,7 +1437,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
 			    const randomIP = generateRandomIPFromCIDR(randomCIDR);
 			    const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
-			    addresses.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
+			    addresses.push(`${randomIP}:${port}#CF随机ID${String(counter++).padStart(2, '0')}`);
 		    }
 	    }
     }
@@ -1444,28 +1480,22 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) socks5List += `${decodeURIComponent('%E6%89%80%E6%9C%89%E6%B5%81%E9%87%8F')}<br>`;
 			else socks5List += `<br>&nbsp;&nbsp;${go2Socks5s.join('<br>&nbsp;&nbsp;')}<br>`;
 		}
-
-		let 订阅器 = '<br>';
-		let 判断是否绑定KV空间 = env.KV ? ` <a href='${_url.pathname}/edit'>编辑优选列表</a>` : '';
-
-		if (sub) {
-			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
-			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
-			else if (RproxyIP == 'true') 订阅器 += `CFCDN（访问方式）: 自动获取ProxyIP<br>`;
-			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`
-			订阅器 += `<br>SUB（优选订阅生成器）: ${sub}${判断是否绑定KV空间}<br>`;
-		} else {
-			if (enableSocks) 订阅器 += `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
-			else if (proxyIP && proxyIP != '') 订阅器 += `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
-			else 订阅器 += `CFCDN（访问方式）: 无法访问, 需要您设置 proxyIP/PROXYIP ！！！<br>`;
-			订阅器 += `<br>您的订阅内容由 内置 adds/ADD* 参数变量提供${判断是否绑定KV空间}<br>`;
-			if (adds.length > 0 || addsapi.length > 0) 订阅器 += `ADDS (官方优选): <br>&nbsp;&nbsp;${[...adds, ...addsapi].join('<br>&nbsp;&nbsp;')}<br>`;
-			if (addresses.length > 0 || addressesapi.length > 0) 订阅器 += `ADD (TLS优选域名&IP): <br>&nbsp;&nbsp;${[...addresses, ...addressesapi].join('<br>&nbsp;&nbsp;')}<br>`;
-			if (addressesnotls.length > 0 || addressesnotlsapi.length > 0) 订阅器 += `ADDNOTLS (noTLS优选域名&IP): <br>&nbsp;&nbsp;${[...addressesnotls, ...addressesnotlsapi].join('<br>&nbsp;&nbsp;')}<br>`;
-			if (addressescsv.length > 0) 订阅器 += `ADDCSV（IPTest测速csv文件 限速 ${DLS} ）: <br>&nbsp;&nbsp;${addressescsv.join('<br>&nbsp;&nbsp;')}<br>`;
-		}
 		
-		const 节点配置页 = `
+        // --- START OF OPTIMIZED LOGIC ---
+        const editLink = env.KV ? ` <a href='${_url.pathname}/edit'>设置列表</a>` : '';
+        const connectionInfoHtml = getConnectionTypeInfo(enableSocks, proxyIP, proxyIPs, newSocks5s, socks5List, RproxyIP);
+
+        let settingsInfo = '<br>' + connectionInfoHtml;
+
+        if (sub) {
+            settingsInfo += `<br>SUB: ${sub}${editLink}<br>`;
+        } else {
+            settingsInfo += `<br>您的内容参数${editLink}<br>`;
+            settingsInfo += buildAddressListsHtml();
+        }
+        // --- END OF OPTIMIZED LOGIC ---
+
+		const details = `
 			<!DOCTYPE html>
 			<html lang="zh-CN">
 			<head>
@@ -1693,12 +1723,12 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 				<div class="container">
 					
 					<div class="section">
-						<div class="section-title">📋 一键复制订阅</div>
+						<div class="section-title">📋 一键复制</div>
 						
 						<div class="subscription-buttons-container">
 							
 							<div class="subscription-button-item">
-								<span class="subscription-label">通用订阅</span>
+								<span class="subscription-label">通用</span>
 								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}')">复制</button>
 							</div>
 
@@ -1711,13 +1741,13 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 					</div>
 
 					<div class="section">
-						<div class="section-title">🔧 配置信息</div>
+						<div class="section-title">🔧 设置信息</div>
 						<div class="config-info">
 							HOST: ${hostName}<br>
 							UUID: ${userID}<br>
 							FKID: ${fakeUserID}<br>
 							UA: ${UA}<br>
-							${订阅器.replace(/\n/g, '<br>')}
+							${settingsInfo.replace(/\n/g, '<br>')}
 						</div>
 					</div>
 				</div>
@@ -1757,9 +1787,9 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			</body>
 			</html>
 		`;
-		return 节点配置页;
+		return details;
 	} else {
-		// --- 对于非浏览器或带参数的请求，直接生成并返回Base64订阅 ---
+		// --- 对于非浏览器或带参数的请求，直接生成Base64 ---
 		if (hostName.includes(".workers.dev") || noTLS === 'true') {
 			noTLS = 'true';
 			fakeHostName = `${fakeHostName}.workers.dev`;
@@ -1811,12 +1841,12 @@ async function 整理优选列表(api) {
                 if (lines.length > 0 && lines[0].split(',').length > 3) {
                     // CSV 格式处理
                     const 测速端口 = 链接指定端口 || '443';
-                    const 节点备注 = 链接指定备注;
+                    const 备注 = 链接指定备注;
                     for (let i = 1; i < lines.length; i++) {
                         const columns = lines[i].split(',');
                         if (columns[0]) {
                             const addressWithPort = `${columns[0]}:${测速端口}`;
-                            newapi += `${addressWithPort}${节点备注 ? `#${节点备注}` : ''}\n`;
+                            newapi += `${addressWithPort}${备注 ? `#${备注}` : ''}\n`;
                             if (currentApiUrl.includes('proxyip=true') && !httpsPorts.includes(测速端口)) {
                                 proxyIPPool.push(addressWithPort);
                             }
@@ -1930,20 +1960,20 @@ async function prepareNodeList(host, UUID, noTLS) {
     const allSources = [];
 
     // 1. 统一收集所有地址源，并标记来源
-    // 官方优选 (直连地址)
+    // 官方(直连地址)
     [...new Set(adds)].forEach(addr => allSources.push({ address: addr, source: 'adds' }));
     
-    // 官方优选 (API地址)
+    // 官方 (API地址)
     const newAddsApi = await 整理优选列表(addsapi);
     [...new Set(newAddsApi)].forEach(addr => allSources.push({ address: addr, source: 'adds' }));
 
-    // 用户优选 (TLS)
+    // 用户 (TLS)
     const newAddressesapi = await 整理优选列表(addressesapi);
     const newAddressescsv = await 整理测速结果('TRUE');
     [...new Set(addresses.concat(newAddressesapi).concat(newAddressescsv))]
         .forEach(addr => allSources.push({ address: addr, source: 'add', tls: true }));
 
-    // 用户优选 (noTLS)
+    // 用户 (noTLS)
     if (noTLS === 'true') {
         const newAddressesnotlsapi = await 整理优选列表(addressesnotlsapi);
         const newAddressesnotlscsv = await 整理测速结果('FALSE');
@@ -1951,14 +1981,13 @@ async function prepareNodeList(host, UUID, noTLS) {
             .forEach(addr => allSources.push({ address: addr, source: 'add', tls: false }));
     }
 
-    // 2. 统一处理和生成节点
+    // 2. 统一处理
     const finalNodeObjects = allSources.flatMap(sourceItem => {
         const { address: addressString, source } = sourceItem;
         const tls = source === 'adds' ? noTLS !== 'true' : sourceItem.tls;
         
         let server, initialPort = "-1", name = addressString;
 
-        // 解析地址、端口和备注
         const match = addressString.match(/^(.*?)(?::(\d+))?(?:#(.*))?$/);
         if (match) {
             server = match[1] || addressString;
@@ -1969,7 +1998,7 @@ async function prepareNodeList(host, UUID, noTLS) {
         let portsToUse = [];
 
         if (source === 'adds') {
-            // 官方列表逻辑：如果无端口，则为每个勾选的端口生成节点
+            // 官方列表逻辑
             if (initialPort !== "-1") {
                 portsToUse.push(initialPort);
             } else {
@@ -1979,7 +2008,7 @@ async function prepareNodeList(host, UUID, noTLS) {
                 portsToUse.push(...selectedPorts);
             }
         } else { // source === 'add'
-            // 用户列表逻辑：如果无端口，则按旧规则选择一个端口
+            // 用户列表逻辑
             if (initialPort !== "-1") {
                 portsToUse.push(initialPort);
             } else {
@@ -1999,7 +2028,7 @@ async function prepareNodeList(host, UUID, noTLS) {
             }
         }
 
-        // 为每个确定的端口创建节点对象
+        // 为每个确定的端口创建对象
         return portsToUse.map(port => {
             let finalName = name;
             let servername = host;
@@ -2038,7 +2067,7 @@ async function prepareNodeList(host, UUID, noTLS) {
 }
 
 
-//根据节点对象数组生成 Base64 编码的订阅内容
+//生成 Base64 编码内容
 function 生成本地订阅(nodeObjects) {
     	const 协议类型 = atob(protocolEncodedFlag);
 	const secureProtoLinks = nodeObjects.map(node => {
@@ -2189,7 +2218,7 @@ async function handleGetRequest(env) {
         <!DOCTYPE html>
         <html lang="zh-CN">
         <head>
-            <title>优选订阅列表</title>
+            <title>设置列表</title>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
@@ -2348,7 +2377,7 @@ async function handleGetRequest(env) {
                     overflow-y: auto;
                     font-family: Monaco, Consolas, "Courier New", monospace;
                     font-size: 13px;
-                    display: none; /* 默认隐藏 */
+                    display: none; 
                 }
                 .test-result-item {
                     padding: 4px 0;
@@ -2399,12 +2428,12 @@ async function handleGetRequest(env) {
                 </label>
             </div>
             <div class="container">
-                <div class="title">📝 ${FileName} 优选订阅列表</div>
+                <div class="title">📝 ${FileName} 设置列表</div>
 
                 <div class="tab-container">
-                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">优选列表</button>
-                    <button class="tab-link" onclick="openTab(event, 'tab-adds')">官方优选</button>
-                    <button class="tab-link" onclick="openTab(event, 'tab-proxy')">代理设置</button>
+                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">ADD列表</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-adds')">官方列表</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-proxy')">ID设置</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-sub')">订阅设置</button>
                 </div>
 
@@ -2482,8 +2511,8 @@ async function handleGetRequest(env) {
 
                 <div id="tab-sub" class="tab-content">
                         <div class="setting-item">
-                        <h4>SUB (优选订阅生成器)</h4>
-                                <p>只支持单个优选订阅生成器地址</p>
+                        <h4>SUB </h4>
+                                <p>只支持单个地址</p>
                                 <textarea id="sub" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}">${subContent}</textarea>
                             </div>
                     <div class="button-group">
@@ -2697,7 +2726,6 @@ async function handleGetRequest(env) {
 // #################################################################
 
 /**
- * 新增：处理连接测试的后端函数 (使用 HTTP 路由探针)
  * @param {Request} request
  * @returns {Promise<Response>}
  */
@@ -2727,7 +2755,6 @@ async function handleTestConnection(request) {
                 break;
             }
             case 'proxyip': {
-                // 对于 PROXYIP，默认测试其作为 HTTP 反向代理的能力，所以使用 443 端口
                 const { address: ip, port } = parseProxyIP(address, 443);
                 log(`PROXYIP Test: 步骤 1/2 - 正在连接到 ${ip}:${port}`);
                 const testSocket = await connect({ hostname: ip, port: port, signal: controller.signal });
