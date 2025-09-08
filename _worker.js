@@ -1356,7 +1356,7 @@ function buildAddressListsHtml() {
         { label: 'ADDS', data: [...new Set([...adds, ...addsapi])] },
         { label: 'ADD', data: [...new Set([...addresses, ...addressesapi])] },
         { label: 'ADDNOTLS ', data: [...new Set([...addressesnotls, ...addressesnotlsapi])] },
-        { label: `ADDCSV （IPTest测速csv文件 ${DLS} ）`, data: [...new Set(addressescsv)] }
+        { label: `ADDCSV （IPTest csv文件 ${DLS} ）`, data: [...new Set(addressescsv)] }
     ];
 
     let html = '';
