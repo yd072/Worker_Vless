@@ -1723,18 +1723,16 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 				<div class="container">
 					
 					<div class="section">
-						<div class="section-title">📋 一键复制</div>
+						<div class="section-title">🔌 服务信息</div>
 						
 						<div class="subscription-buttons-container">
 							
 							<div class="subscription-button-item">
-								<span class="subscription-label">通用</span>
-								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}')">复制</button>
+								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}')">通用</button>
 							</div>
 
 							<div class="subscription-button-item">
-								<span class="subscription-label">Base64</span>
-								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?b64')">复制</button>
+								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?b64')">Base64</button>
 							</div>
 
 						</div>
