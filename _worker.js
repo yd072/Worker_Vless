@@ -2263,11 +2263,11 @@ function generateClashConfig(nodeObjects) {
 
     const customRulesArray = [
         '# Rule set for internal traffic management',
-        'GEOSITE,category-ads-all,Quarantine', 
-        'GEOSITE,private,Bypass-Internal',          
-        'GEOIP,private,Bypass-Internal,no-resolve', 
-        'GEOSITE,cn,Bypass-Internal',               
-        'GEOIP,CN,Bypass-Internal',                 
+        `GEOSITE,category-ads-all,${rejectGroupName}`, 
+        `GEOSITE,private,${bypassGroupName}`,          
+        `GEOIP,private,${bypassGroupName},no-resolve`, 
+        `GEOSITE,cn,${bypassGroupName}`,               
+        `GEOIP,CN,${bypassGroupName}`,                 
         '# Default traffic is routed through the primary data path',
         `MATCH,${primaryRouteGroupName}`   
     ];
