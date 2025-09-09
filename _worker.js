@@ -12,6 +12,9 @@ let socks5Address = '';
 let parsedSocks5Address = {};
 let enableSocks = false;
 
+let fallback64Prefixes = []; 
+let fallback64Enabled = false; 
+
 let noTLS = 'false';
 const expire = -1;
 let proxyIPs = [];
@@ -31,7 +34,7 @@ let addressesnotlsapi = [];
 let addressescsv = [];
 let DLS = 8;
 let remarkIndex = 1;
-let FileName = atob('ZWRnZXR1bm5lbA==');
+let FileName = 'Analytics';
 let proxyhosts = [];
 let proxyhostsURL = '';
 let RproxyIP = 'false';
@@ -98,6 +101,8 @@ async function loadConfigurations(env) {
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
     if (env.SOCKS5) socks5Address = env.SOCKS5;
     if (env.SUBNAME) FileName = env.SUBNAME;
+    
+    if (env.FALLBACK64) fallback64Prefixes = 整理(env.FALLBACK64);
 
     if (env.ADD) addresses = 整理(env.ADD);
     if (env.ADDS) adds = 整理(env.ADDS);
@@ -119,13 +124,18 @@ async function loadConfigurations(env) {
             if (advancedSettingsJSON) {
                 const settings = JSON.parse(advancedSettingsJSON);
                 
-                // 将新配置存入内存缓存
                 cachedSettings = settings;
 
                 // 使用KV中的配置覆盖当前变量
                 if (settings.proxyip && settings.proxyip.trim()) proxyIP = settings.proxyip;
                 if (settings.socks5 && settings.socks5.trim()) socks5Address = settings.socks5.split('\n')[0].trim();
                 if (settings.sub && settings.sub.trim()) env.SUB = settings.sub.trim().split('\n')[0];
+                
+                if (settings.fallback64 && settings.fallback64.trim()) fallback64Prefixes = 整理(settings.fallback64);
+                if (settings.fallback64Enabled) {
+                    fallback64Enabled = settings.fallback64Enabled === 'true';
+                }
+
 				if (settings.httpsports && settings.httpsports.trim()) {
                     httpsPorts = 整理(settings.httpsports);
                 }
@@ -331,7 +341,7 @@ async function statusPage() {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Service Status</title>
+        <title>Service Status - Analytics</title>
         <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0ZGRiI+PHBhdGggZD0iTTAgMGgyNHYyNEgweiIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Ik05IDE2LjE3TDQuODMgMTJsLTEuNDIgMS40MUw5IDE5IDIxIDdsLTEuNDEtMS40MXoiIGZpbGw9IiMyZGNlODkiLz48L3N2Zz4=">
         <style>
             :root {
@@ -458,7 +468,7 @@ async function statusPage() {
                     <span id="date-container"></span>
                     <span id="time-container" class="notranslate"></span>
                 </p>
-                <a href="#" target="_blank" rel="noopener noreferrer">Powered</a>
+                <a href="#" target="_blank" rel="noopener noreferrer">Powered by Analytics</a>
             </div>
         </div>
         <script>
@@ -487,6 +497,50 @@ async function statusPage() {
         status: 200,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+}
+
+/**
+ * @param {string} domain 
+ * @returns {Promise<string>}
+ */
+async function resolveViaFallback64(domain) {
+    if (!fallback64Prefixes || fallback64Prefixes.length === 0) {
+        throw new Error('未配置Fallback64');
+    }
+
+    async function fetchIPv4(domain) {
+        const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=A`;
+        const response = await fetch(url, {
+            headers: { 'Accept': 'application/dns-json' }
+        });
+
+        if (!response.ok) {
+            throw new Error('查询失败');
+        }
+
+        const data = await response.json();
+        const ipv4s = (data.Answer || [])
+            .filter(record => record.type === 1) 
+            .map(record => record.data);
+
+        if (ipv4s.length === 0) {
+            throw new Error('未找到');
+        }
+
+        return ipv4s[Math.floor(Math.random() * ipv4s.length)];
+    }
+
+    const ipv4 = await fetchIPv4(domain);
+
+    const prefix = fallback64Prefixes[Math.floor(Math.random() * fallback64Prefixes.length)];
+
+    const ipv4Parts = ipv4.split('.').map(part => parseInt(part, 10).toString(16).padStart(2, '0'));
+    
+    const synthesizedIPv6 = prefix.replace(/::\/\d{1,3}$/, '::').replace(/:\/\d{1,3}$/, ':') + 
+                            ipv4Parts[0] + ipv4Parts[1] + ':' + 
+                            ipv4Parts[2] + ipv4Parts[3];
+
+    return synthesizedIPv6;
 }
 
 export default {
@@ -556,14 +610,14 @@ export default {
 						return await statusPage();
 					}
 				} else if (路径 === `/${fakeUserID}`) {
-					const fakeConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, 'CF-Workers-SUB', RproxyIP, url, fakeUserID, fakeHostName, env);
+					const fakeConfig = await generateIntegrationDetails(userID, request.headers.get('Host'), sub, 'CF-Workers-SUB', RproxyIP, url, fakeUserID, fakeHostName, env);
 					return new Response(`${fakeConfig}`, { status: 200 });
 				}
 				else if (路径 === `/${userID}/edit`) {
 					return await KV(request, env);
 				} else if (路径 === `/${userID}`) {
 					const UA = request.headers.get('User-Agent') || 'null';
-					const secureProtoConfig = await 生成配置信息(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
+					const secureProtoConfig = await generateIntegrationDetails(userID, request.headers.get('Host'), sub, UA, RproxyIP, url, fakeUserID, fakeHostName, env);
 
                     if (secureProtoConfig instanceof Response) {
                         return secureProtoConfig;
@@ -931,7 +985,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 		}
 	};
 
-    // 新的递归函数，用于按顺序尝试所有连接策略
+    // 所有连接策略
     async function tryConnectionStrategies(strategies) {
         if (!strategies || strategies.length === 0) {
             log('All connection strategies failed. Closing WebSocket.');            
@@ -946,50 +1000,80 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
             const tcpSocket = await currentStrategy.execute();
             log(`Strategy '${currentStrategy.name}' connected successfully. Piping data.`);
 
-            // 如果本次连接失败，重试函数将用剩余的策略继续尝试
             const retryNext = () => tryConnectionStrategies(nextStrategies);
             remoteSocketToWS(tcpSocket, webSocket, secureProtoResponseHeader, retryNext, log);
 
         } catch (error) {
             log(`Strategy '${currentStrategy.name}' failed: ${error.message}. Trying next strategy...`);
-            await tryConnectionStrategies(nextStrategies); // 立即尝试下一个策略
+            await tryConnectionStrategies(nextStrategies);
         }
     }
 
-    // --- 组装策略列表 ---
+    // --- 构建不同的连接策略 ---
     const connectionStrategies = [];
-    const shouldUseSocks = enableSocks && go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+    
+    if (fallback64Enabled) {
+        log('Fallback64 模式已强制开启。');
+        connectionStrategies.push({
+            name: 'Direct Connection',
+            execute: () => createConnection(addressRemote, portRemote, null)
+        });
 
-    // 1. 主要连接策略
+        if (fallback64Prefixes.length > 0) {
+            connectionStrategies.push({
+                name: 'Fallback64',
+                execute: async () => {
+                    const fallback64Address = await resolveViaFallback64(addressRemote);
+                    return createConnection(`[${fallback64Address}]`, portRemote);
+                }
+            });
+        }
+
+    } else {
+        // --- 默认（正常）模式 ---
+        const shouldUseSocks = enableSocks && go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+
         connectionStrategies.push({
-        name: 'Direct Connection',
-        execute: () => createConnection(addressRemote, portRemote, null)
+            name: 'Direct Connection',
+            execute: () => createConnection(addressRemote, portRemote, null)
         });
-    if (shouldUseSocks) {
-        connectionStrategies.push({
-            name: 'SOCKS5 Proxy (go2Socks5s)',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-        });
+
+        if (shouldUseSocks) {
+            connectionStrategies.push({
+                name: 'SOCKS5 Proxy (go2Socks5s)',
+                execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
+            });
+        }
+
+        if (enableSocks && !shouldUseSocks) {
+            connectionStrategies.push({
+                name: 'SOCKS5 Proxy (Fallback)',
+                execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
+            });
+        }
+
+        if (proxyIP && proxyIP.trim() !== '') {
+            connectionStrategies.push({
+                name: '用户配置的 PROXYIP',
+                execute: () => {
+                    const { address, port } = parseProxyIP(proxyIP, portRemote);
+                    return createConnection(address, port);
+                }
+            });
+        }
+
+        if (fallback64Prefixes.length > 0) {
+            connectionStrategies.push({
+                name: 'Fallback64',
+                execute: async () => {
+                    const fallback64Address = await resolveViaFallback64(addressRemote);
+                    return createConnection(`[${fallback64Address}]`, portRemote);
+                }
+            });
+        }
     }
 
-    // 2. 备用 (Fallback) 策略
-    if (enableSocks && !shouldUseSocks) {
-        connectionStrategies.push({
-            name: 'SOCKS5 Proxy (Fallback)',
-            execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-        });
-    }
-
-    if (proxyIP && proxyIP.trim() !== '') {
-        connectionStrategies.push({
-            name: '用户配置的 PROXYIP',
-            execute: () => {
-                const { address, port } = parseProxyIP(proxyIP, portRemote);
-                return createConnection(address, port);
-            }
-        });
-    }
-
+    // 最终的备用方案，对两种模式都适用
     connectionStrategies.push({
         name: '内置的默认 PROXYIP',
         execute: () => {
@@ -999,7 +1083,6 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         }
     });
 
-    // --- 启动策略链 ---
     await tryConnectionStrategies(connectionStrategies);
 }
 
@@ -1253,7 +1336,7 @@ function socks5AddressParser(address) {
     }
 }
 
-function 恢复伪装信息(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
+function decodeIntegrationData(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     if (isBase64) {
         content = atob(content);
     }
@@ -1374,8 +1457,8 @@ function buildAddressListsHtml() {
 
 
 const protocolEncodedFlag = atob('ZG14bGMzTT0=');
-let subParams = ['sub', 'base64', 'b64'];
-async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
+let subParams = ['sub', 'base64', 'b64', 'clash', 'singbox', 'sb'];
+async function generateIntegrationDetails(uuid, hostName, sub, UA, RproxyIP, _url, fakeUserID, fakeHostName, env) {
 
 	if (sub) {
 		const match = sub.match(/^(?:https?:\/\/)?([^\/]+)/);
@@ -1501,7 +1584,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 			<head>
 				<meta charset="utf-8">
 				<meta name="viewport" content="width=device-width, initial-scale=1">
-				<title>${FileName} 配置信息</title>
+				<title>${FileName} 服务信息</title>
 				<style>
 					:root {
 						--primary-color: #0d6efd;
@@ -1735,6 +1818,14 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?b64')">Base64</button>
 							</div>
 
+							<div class="subscription-button-item">
+								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?clash')">Clash</button>
+							</div>
+
+							<div class="subscription-button-item">
+								<button class="copy-button" onclick="copyToClipboard('https://${proxyhost}${hostName}/${uuid}?sb')">Sing-box</button>
+							</div>
+
 						</div>
 					</div>
 
@@ -1787,7 +1878,7 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		`;
 		return details;
 	} else {
-		// --- 对于非浏览器或带参数的请求，直接生成Base64 ---
+		// --- 对于非浏览器或带参数的请求，生成配置文件或Base64 ---
 		if (hostName.includes(".workers.dev") || noTLS === 'true') {
 			noTLS = 'true';
 			fakeHostName = `${fakeHostName}.workers.dev`;
@@ -1801,9 +1892,41 @@ async function 生成配置信息(uuid, hostName, sub, UA, RproxyIP, _url, fakeU
 		}
 
 		const nodeObjects = await prepareNodeList(fakeHostName, fakeUserID, noTLS);
-		const base64Config = 生成本地订阅(nodeObjects);
-		const restoredConfig = 恢复伪装信息(base64Config, userID, hostName, fakeUserID, fakeHostName, true);
-		return new Response(restoredConfig);
+		
+		let configContent = '';
+		let contentType = 'text/plain;charset=utf-8';
+		let finalFileName = FileName; // Default filename
+		const isBrowser = userAgent.includes('mozilla');
+		
+		const wantsClash = (userAgent.includes('clash') && !userAgent.includes('nekobox')) || _url.searchParams.has('clash');
+		const wantsSingbox = userAgent.includes('sing-box') || userAgent.includes('singbox') || _url.searchParams.has('singbox') || _url.searchParams.has('sb');
+
+		if (wantsClash) {
+			configContent = generateClashConfig(nodeObjects);
+			contentType = isBrowser ? 'text/plain;charset=utf-8' : 'application/x-yaml;charset=utf-8';
+			finalFileName  = `${FileName}.yaml`;
+		} else if (wantsSingbox) {
+			configContent = generateSingboxConfig(nodeObjects);
+			contentType = isBrowser ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8';
+			finalFileName = `${FileName}.json`;
+		} else {
+			// Default to Base64
+			const base64Config = generateClientConfig(nodeObjects);
+			const restoredConfig = decodeIntegrationData(base64Config, userID, hostName, fakeUserID, fakeHostName, true);
+			return new Response(restoredConfig);
+		}
+		
+		const finalContent = decodeIntegrationData(configContent, userID, hostName, fakeUserID, fakeHostName, false); 
+
+		const headers = {
+			"Content-Type": contentType,
+		};
+
+		if (!isBrowser) {
+			headers["Content-Disposition"] = `attachment; filename=${finalFileName}; filename*=utf-8''${encodeURIComponent(finalFileName)}`;
+		}
+	   
+		return new Response(finalContent, { headers });
 	}
 }
 
@@ -2066,10 +2189,10 @@ async function prepareNodeList(host, UUID, noTLS) {
 
 
 //生成 Base64 编码内容
-function 生成本地订阅(nodeObjects) {
-    	const 协议类型 = atob(protocolEncodedFlag);
+function generateClientConfig(nodeObjects) {
+    	const protocolType = atob(protocolEncodedFlag);
 	const secureProtoLinks = nodeObjects.map(node => {
-		const cxw = `${协议类型}://${node.uuid}@${node.server}:${node.port}?` +
+		const cxw = `${protocolType}://${node.uuid}@${node.server}:${node.port}?` +
 			`${atob('ZW5jcnlwdGlvbj1ub25l')}&` +
 			`${atob('c2VjdXJpdHk=')}=${node.tls ? atob('dGxz') : atob('bm9uZQ==')}&` +
 			`${node.tls ? `${atob('c25p')}=${node.servername}&` : ''}` +
@@ -2086,6 +2209,336 @@ function 生成本地订阅(nodeObjects) {
         finalLinks += '\n' + link.join('\n');
     }
 	return btoa(finalLinks);
+}
+
+function generateClashConfig(nodeObjects) {
+    const header = `
+# =================================================================
+#      System Performance & Network Routing Configuration
+# =================================================================
+#
+# File Version: 2.7.3
+# Last Modified: ${new Date().toISOString()}
+#
+# !! DO NOT EDIT THIS FILE MANUALLY !!
+# Changes should be deployed via the central configuration management system.
+#
+# monitoring settings for internal services.
+#
+`;
+
+    const proxiesYaml = nodeObjects.map(p => {
+        let entryConfig = `  - name: ${JSON.stringify(p.name)}\n`;
+        entryConfig += `    ${atob('dHlwZQ==')}: ${p.type}\n`;
+        entryConfig += `    ${atob('c2VydmVy')}: ${p.server}\n`;
+        entryConfig += `    ${atob('cG9ydA==')}: ${p.port}\n`;
+        entryConfig += `    ${atob('dXVpZA==')}: ${p.uuid}\n`;
+        entryConfig += `    ${atob('bmV0d29yaw==')}: ${p.network}\n`;
+        entryConfig += `    ${atob('dGxz')}: ${p.tls}\n`;
+        entryConfig += `    ${atob('dWRw')}: true\n`;
+        if (p.tls) {
+            entryConfig += `    ${atob('c2VydmVybmFtZQ==')}: ${p.servername}\n`;
+            if (p['client-fingerprint']) {
+                entryConfig += `    ${atob('Y2xpZW50LWZpbmdlcnByaW50')}: ${p['client-fingerprint']}\n`;
+            }
+        }
+        if (p['ws-opts']) {
+            entryConfig += `    ${atob('d3Mtb3B0cw==')}:\n`;
+            entryConfig += `      ${atob('cGF0aA==')}: ${JSON.stringify(p['ws-opts'].path)}\n`;
+            if (p['ws-opts'].headers && p['ws-opts'].headers.Host) {
+                entryConfig += `      ${atob('aGVhZGVycw==')}:\n`;
+                entryConfig += `        ${atob('SG9zdA==')}: ${p['ws-opts'].headers.Host}\n`;
+            }
+        }
+        return entryConfig;
+    }).join('');
+
+    const proxyNames = nodeObjects.map(p => p.name);
+    
+    const healthCheckGroupName = "自动";
+    const primaryRouteGroupName = "手动";
+    const bypassGroupName = "直连";
+    const rejectGroupName = "广告拦截";
+
+
+    const customRulesArray = [
+        '# Rule set for internal traffic management',
+        'GEOSITE,category-ads-all,Quarantine', 
+        'GEOSITE,private,Bypass-Internal',          
+        'GEOIP,private,Bypass-Internal,no-resolve', 
+        'GEOSITE,cn,Bypass-Internal',               
+        'GEOIP,CN,Bypass-Internal',                 
+        '# Default traffic is routed through the primary data path',
+        `MATCH,${primaryRouteGroupName}`   
+    ];
+
+    const rulesYaml = customRulesArray.map(rule => `  - ${rule}`).join('\n');
+
+    const footer = `
+# --- END OF CONFIGURATION ---
+# checksum: ${Math.random().toString(36).substring(2)}
+`;
+    
+    const config = `
+${header}
+# Core service ports
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+
+# DNS settings for service discovery
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: true
+  enhanced-mode: redir-host
+  nameserver:
+    - 223.5.5.5
+    - https://dns.google/dns-query
+  nameserver-policy:
+    'geosite:cn': '223.5.5.5'
+
+# Network interface card (NIC) layer settings
+tun:
+  enable: true
+  stack: mixed
+  auto-route: true
+  strict-route: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+
+# Data entry points (DEPs)
+proxies:
+${proxiesYaml}
+
+# Traffic routing policies
+proxy-groups:
+  - name: ${JSON.stringify(healthCheckGroupName)}
+    # Type: Latency-based health check
+    type: url-test
+    proxies:
+${proxyNames.map(name => `      - ${JSON.stringify(name)}`).join('\n')}
+    url: 'http://www.gstatic.com/generate_204'
+    interval: 300
+    
+  - name: ${JSON.stringify(primaryRouteGroupName)}
+    # Type: Manual selection with failover
+    type: select
+    proxies:
+      - ${JSON.stringify(healthCheckGroupName)}
+      - ${JSON.stringify(bypassGroupName)}
+      - ${JSON.stringify(rejectGroupName)}
+${proxyNames.map(name => `      - ${JSON.stringify(name)}`).join('\n')}
+
+  - name: ${JSON.stringify(bypassGroupName)}
+    type: select
+    proxies:
+      - DIRECT
+      
+  - name: ${JSON.stringify(rejectGroupName)}
+    type: select
+    proxies:
+      - REJECT
+
+# Access Control List (ACL)
+rules:
+${rulesYaml}
+
+${footer}
+`;
+    return config.trim();
+}
+
+function generateSingboxConfig(nodeObjects) {
+    const outbounds = nodeObjects.map(p => {
+        let outbound = {
+            type: p.type,
+            tag: p.name,
+            server: p.server,
+            server_port: p.port,
+            uuid: p.uuid,
+            transport: {
+                type: p.network,
+                path: p['ws-opts'].path,
+                headers: {
+                    Host: p.servername 
+                }
+            }
+        };
+
+        if (p.tls) {
+            outbound.tls = {
+                enabled: true,
+                server_name: p.servername,
+                utls: {
+                    enabled: true,
+                    fingerprint: p['client-fingerprint']
+                }
+            };
+        }
+        return outbound;
+    });
+
+    const proxyNames = outbounds.map(o => o.tag);
+
+    const config = {
+        "log": {
+            "level": "error",
+            "timestamp": true
+        },
+        "dns": {
+            "servers": [{
+                "tag": "proxy-dns",
+                "server": "8.8.8.8",
+                "detour": "proxy",
+                "type": "https"
+            }, {
+                "tag": "local-dns",
+                "type": "local",
+                "detour": "direct"
+            }, {
+                "tag": "direct-dns",
+                "server": "223.5.5.5",
+                "type": "https"
+            }],
+            "rules": [{
+                "rule_set": "geosite-cn", 
+                "server": "direct-dns"
+            }, {
+                "server": "proxy-dns",
+                "source_ip_cidr": [
+                    "172.19.0.1/30",
+                    "fdfe:dcba:9876::1/126"
+                ]
+            }, {
+                "clash_mode": "直连",
+                "server": "direct-dns"
+            }, {
+                "clash_mode": "全局",
+                "server": "proxy-dns"
+            }],
+            "strategy": "prefer_ipv4",
+            "final": "proxy-dns",
+            "independent_cache": true
+        },
+        "inbounds": [{
+            "type": "tun",
+            "tag": "tun-in",
+            "stack": "mixed",
+            "mtu": 9000,
+            "auto_route": true,
+            "address": [
+                "172.19.0.1/30",
+                "fdfe:dcba:9876::1/126"
+            ],
+            "platform": {
+                "http_proxy": {
+                    "enabled": true,
+                    "server": "127.0.0.1",
+                    "server_port": 7890
+                }
+            }
+        }, {
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": 7890
+        }],
+        "outbounds": [{
+                "type": "selector",
+                "tag": "proxy",
+                "outbounds": [
+                    "auto",
+                    ...proxyNames
+                ],
+                "default": "auto"
+            },
+            {
+                "type": "urltest",
+                "tag": "auto",
+                "outbounds": proxyNames,
+                "url": "https://www.gstatic.com/generate_204",
+                "interval": "5m0s",
+                "tolerance": 50,
+                "interrupt_exist_connections": false
+            },
+            ...outbounds, 
+            {
+                "type": "direct",
+                "tag": "direct",
+                "domain_resolver": {
+                    "server": "local-dns",
+                    "strategy": "prefer_ipv4"
+                }
+            },
+            {
+                "type": "block",
+                "tag": "block"
+            }
+        ],
+        "route": {
+            "auto_detect_interface": true,
+            "default_domain_resolver": "direct-dns",
+            "final": "proxy",
+            "override_android_vpn": true,
+            "rule_set": [{
+                    "tag": "geosite-ads",
+                    "type": "remote",
+                    "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/category-ads-all.srs",
+                    "download_detour": "direct"
+                },
+                {
+                    "tag": "geosite-cn",
+                    "type": "remote",
+                    "format": "binary",
+                    "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
+                    "download_detour": "direct"
+                },
+                {
+                    "tag": "geoip-cn",
+                    "type": "remote",
+                    "format": "binary",
+                    "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
+                    "download_detour": "direct"
+                }
+            ],
+            "rules": [{
+                "action": "sniff",
+                "timeout": "1s"
+            }, {
+                "action": "hijack-dns",
+                "protocol": "dns"
+            }, {
+                "ip_is_private": true, 
+                "outbound": "direct"
+            }, {
+                "clash_mode": "直连",
+                "outbound": "direct"
+            }, {
+                "outbound": "direct",
+                "rule_set": [
+                    "geosite-cn",
+                    "geoip-cn"
+                ]
+            }, {
+                "outbound": "block",
+                "rule_set": "geosite-ads"
+            }, {
+                "clash_mode": "全局",
+                "outbound": "proxy"
+            }]
+        },
+        "experimental": {
+            "cache_file": {
+                "enabled": true
+            }
+        }
+    };
+
+    return JSON.stringify(config, null, 2);
 }
 
 function 整理(内容) {
@@ -2163,6 +2616,9 @@ async function handleGetRequest(env) {
 	let httpsPortsContent = '';
     let httpPortsContent = '';
     let noTLSContent = 'false';
+    
+    let fallback64Content = ''; 
+    let fallback64Enabled = false;
 
     if (hasKV) {
         try {
@@ -2177,6 +2633,8 @@ async function handleGetRequest(env) {
 				httpsPortsContent = settings.httpsports || httpsPorts.join(',');
                 httpPortsContent = settings.httpports || httpPorts.join(',');
                 noTLSContent = settings.notls || 'false';
+                fallback64Content = settings.fallback64 || ''; 
+                fallback64Enabled = settings.fallback64Enabled === 'true';
             } else {
 				httpsPortsContent = httpsPorts.join(',');
 				httpPortsContent = httpPorts.join(',');
@@ -2216,7 +2674,7 @@ async function handleGetRequest(env) {
         <!DOCTYPE html>
         <html lang="zh-CN">
         <head>
-            <title>设置列表</title>
+            <title>服务设置</title>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
@@ -2426,11 +2884,11 @@ async function handleGetRequest(env) {
                 </label>
             </div>
             <div class="container">
-                <div class="title">📝 ${FileName} 设置列表</div>
+                <div class="title">📝 ${FileName} 服务设置</div>
 
                 <div class="tab-container">
-                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">ADD列表</button>
-                    <button class="tab-link" onclick="openTab(event, 'tab-adds')">官方列表</button>
+                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">自定义端点</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-adds')">官方端点</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-proxy')">ID设置</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-sub')">订阅设置</button>
                 </div>
@@ -2440,7 +2898,7 @@ async function handleGetRequest(env) {
                         <textarea class="editor" id="content" placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}">${content}</textarea>
 
                         <div class="button-group">
-                            <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                            <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
                             <button class="btn btn-primary" onclick="saveAddTab(this)">保存</button>
                             <span class="save-status" id="saveStatus"></span>
                         </div>
@@ -2470,7 +2928,7 @@ async function handleGetRequest(env) {
                         <textarea class="editor" id="adds_content" placeholder="${decodeURIComponent(atob('JTBBQUREUyVFNyVBNCVCQSVFNCVCRSU4QiVFRiVCQyU5QSUwQXZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQlMEExMjcuMC4wLjElMjNDRm5hdCUwQSU1QjI2ODYlM0E0NzY2JTNBJTNBJTVEJTIzSVB2NiUwQSUwQSUwQUFERFNBUEklRTclQTQlQkElRTQlQkUlOEIlRUYlQkMlOUElMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRnJlZnMlMkZoZWFkcyUyRm1haW4lMkZhZGRyZXNzZXNhcGkudHh0'))}">${addsContent}</textarea>
                         
                         <div class="button-group">
-                            <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                            <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
                             <button class="btn btn-primary" onclick="saveAddsTab(this)">保存</button>
                             <span class="save-status" id="adds-save-status"></span>
                         </div>
@@ -2499,9 +2957,21 @@ async function handleGetRequest(env) {
                             <span class="test-note">（批量测试并自动移除失败地址）</span>
                             </div>
                         <div id="socks5-results" class="test-results-container"></div>
+                        </div>                        
+                        <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 20px;">
+                             <h4>Fallback64 设置</h4>
+                             <div class="switch-container">
+                                <label class="theme-switch" for="fallback64-switch-checkbox">
+                                    <input type="checkbox" id="fallback64-switch-checkbox" ${fallback64Enabled ? 'checked' : ''}>
+                                    <div class="slider round"></div>
+                                </label>
+                                <span>启用 Fallback64</span>
+                            </div>
+                            <p style="margin-top: 15px;">每行或每个逗号/空格分隔一个</p>
+                            <textarea id="fallback64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTBBMjYwMiUzQWZjNTklM0ExMSUzQTY0JTNBJTNBJTBBMjYwMiUzQWZjNTklM0ExMSUzQTY0JTNBJTNBJTJGOTY='))}">${fallback64Content}</textarea>
                         </div>
                     <div class="button-group">
-                        <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                        <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
                         <button class="btn btn-primary" onclick="saveProxyTab(this)">保存</button>
                         <span class="save-status" id="proxy-save-status"></span>
                             </div>
@@ -2514,7 +2984,7 @@ async function handleGetRequest(env) {
                                 <textarea id="sub" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnN1Yi5nb29nbGUuY29tCnN1Yi5leGFtcGxlLmNvbQ=='))}">${subContent}</textarea>
                             </div>
                     <div class="button-group">
-                        <button class="btn btn-secondary" onclick="goBack()">返回配置页</button>
+                        <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
                         <button class="btn btn-primary" onclick="saveSubTab(this)">保存</button>
                         <span class="save-status" id="sub-save-status"></span>
                     </div>
@@ -2544,8 +3014,6 @@ async function handleGetRequest(env) {
                     window.location.href = newPath || '/';
                 }
                 
-                // --- Reverted and granular save functions ---
-
                 async function saveAddTab(button) {
                     const statusEl = button.parentElement.querySelector('.save-status');
                     const payload = {
@@ -2571,7 +3039,9 @@ async function handleGetRequest(env) {
                     const statusEl = button.parentElement.querySelector('.save-status');
                     const payload = {
                         proxyip: document.getElementById('proxyip').value,
-                        socks5: document.getElementById('socks5').value
+                        socks5: document.getElementById('socks5').value,
+                        fallback64: document.getElementById('fallback64').value,
+                        fallback64Enabled: document.getElementById('fallback64-switch-checkbox').checked.toString()
                     };
                     await saveData(button, statusEl, JSON.stringify(payload));
                 }
