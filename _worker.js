@@ -2669,7 +2669,6 @@ async function handleGetRequest(env) {
                 </div>`;
     }).join('\n');
 
-
     const html = `
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -2959,7 +2958,20 @@ async function handleGetRequest(env) {
                         <div id="socks5-results" class="test-results-container"></div>
                         </div>                        
                         <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 20px;">
-                             <h4>Fallback64 设置</h4>
+                            <h4>Fallback64 </h4>
+                            <p>
+                               <a id="Fallback64-link" target="_blank">自行查询</a>
+                            </p>
+                            <script>
+                                (function() {
+                                    const encodedURL = 'aHR0cHM6Ly9uYXQ2NC54eXo=';
+                                    const decodedURL = atob(encodedURL);
+                                    const link = document.getElementById('Fallback64-link');
+                                    if (link) {
+                                        link.setAttribute('href', decodedURL);
+                                    }
+                                })();
+                            </script>
                              <div class="switch-container">
                                 <label class="theme-switch" for="fallback64-switch-checkbox">
                                     <input type="checkbox" id="fallback64-switch-checkbox" ${fallback64Enabled ? 'checked' : ''}>
