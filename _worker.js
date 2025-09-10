@@ -1877,55 +1877,72 @@ async function generateIntegrationDetails(uuid, hostName, sub, UA, RproxyIP, _ur
 		`;
 		return details;
 	} else {
-		// --- 对于非浏览器或带参数的请求，生成配置文件或Base64 ---
-		if (hostName.includes(".workers.dev") || noTLS === 'true') {
-			noTLS = 'true';
-			fakeHostName = `${fakeHostName}.workers.dev`;
-		} else if (hostName.includes(".pages.dev")) {
-			fakeHostName = `${fakeHostName}.pages.dev`;
-		} else if (hostName.includes("worker") || hostName.includes("notls")) {
-			noTLS = 'true';
-			fakeHostName = `notls${fakeHostName}.net`;
+		if (sub && sub.trim() !== '') {
+			let subUrl = `https://${sub}/sub?host=${fakeHostName}&uuid=${fakeUserID}&path=${encodeURIComponent('/')}`;
+			let isBase64 = true;			
+			try {
+				const response = await fetch(subUrl, {
+					headers: {
+						'User-Agent': UA + atob('IENGLVdvcmtlcnMtZWRnZXR1bm5lbC9jbWxpdQ==')
+					}
+				});
+				const content = await response.text();
+				if (_url.pathname == `/${fakeUserID}`) return content;
+				return decodeIntegrationData(content, userID, hostName, fakeUserID, fakeHostName, isBase64);
+			} catch (error) {
+				console.error('Error fetching SUB content:', error);
+				return `Error fetching SUB content: ${error.message}`;
+			}
+
 		} else {
-			fakeHostName = `${fakeHostName}.xyz`;
+			if (hostName.includes(".workers.dev") || noTLS === 'true') {
+				noTLS = 'true';
+				fakeHostName = `${fakeHostName}.workers.dev`;
+			} else if (hostName.includes(".pages.dev")) {
+				fakeHostName = `${fakeHostName}.pages.dev`;
+			} else if (hostName.includes("worker") || hostName.includes("notls")) {
+				noTLS = 'true';
+				fakeHostName = `notls${fakeHostName}.net`;
+			} else {
+				fakeHostName = `${fakeHostName}.xyz`;
+			}
+
+			const nodeObjects = await prepareNodeList(fakeHostName, fakeUserID, noTLS);
+			
+			let configContent = '';
+			let contentType = 'text/plain;charset=utf-8';
+			let finalFileName = FileName;
+			const isBrowser = userAgent.includes('mozilla');
+			
+			const wantsClash = (userAgent.includes('clash') && !userAgent.includes('nekobox')) || _url.searchParams.has('clash');
+			const wantsSingbox = userAgent.includes('sing-box') || userAgent.includes('singbox') || _url.searchParams.has('singbox') || _url.searchParams.has('sb');
+
+			if (wantsClash) {
+				configContent = generateClashConfig(nodeObjects);
+				contentType = isBrowser ? 'text/plain;charset=utf-8' : 'application/x-yaml;charset=utf-8';
+				finalFileName  = `${FileName}.yaml`;
+			} else if (wantsSingbox) {
+				configContent = generateSingboxConfig(nodeObjects);
+				contentType = isBrowser ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8';
+				finalFileName = `${FileName}.json`;
+			} else {
+				const base64Config = generateClientConfig(nodeObjects);
+				const restoredConfig = decodeIntegrationData(base64Config, userID, hostName, fakeUserID, fakeHostName, true);
+				return new Response(restoredConfig);
+			}
+			
+			const finalContent = decodeIntegrationData(configContent, userID, hostName, fakeUserID, fakeHostName, false); 
+
+			const headers = {
+				"Content-Type": contentType,
+			};
+
+			if (!isBrowser) {
+				headers["Content-Disposition"] = `attachment; filename=${finalFileName}; filename*=utf-8''${encodeURIComponent(finalFileName)}`;
+			}
+		   
+			return new Response(finalContent, { headers });
 		}
-
-		const nodeObjects = await prepareNodeList(fakeHostName, fakeUserID, noTLS);
-		
-		let configContent = '';
-		let contentType = 'text/plain;charset=utf-8';
-		let finalFileName = FileName; // Default filename
-		const isBrowser = userAgent.includes('mozilla');
-		
-		const wantsClash = (userAgent.includes('clash') && !userAgent.includes('nekobox')) || _url.searchParams.has('clash');
-		const wantsSingbox = userAgent.includes('sing-box') || userAgent.includes('singbox') || _url.searchParams.has('singbox') || _url.searchParams.has('sb');
-
-		if (wantsClash) {
-			configContent = generateClashConfig(nodeObjects);
-			contentType = isBrowser ? 'text/plain;charset=utf-8' : 'application/x-yaml;charset=utf-8';
-			finalFileName  = `${FileName}.yaml`;
-		} else if (wantsSingbox) {
-			configContent = generateSingboxConfig(nodeObjects);
-			contentType = isBrowser ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8';
-			finalFileName = `${FileName}.json`;
-		} else {
-			// Default to Base64
-			const base64Config = generateClientConfig(nodeObjects);
-			const restoredConfig = decodeIntegrationData(base64Config, userID, hostName, fakeUserID, fakeHostName, true);
-			return new Response(restoredConfig);
-		}
-		
-		const finalContent = decodeIntegrationData(configContent, userID, hostName, fakeUserID, fakeHostName, false); 
-
-		const headers = {
-			"Content-Type": contentType,
-		};
-
-		if (!isBrowser) {
-			headers["Content-Disposition"] = `attachment; filename=${finalFileName}; filename*=utf-8''${encodeURIComponent(finalFileName)}`;
-		}
-	   
-		return new Response(finalContent, { headers });
 	}
 }
 
@@ -3229,7 +3246,6 @@ async function handleTestConnection(request) {
             throw new Error('请求参数不完整或地址为空');
         }
 
-        log(`Testing type: ${type}, address: ${address}`);
         let successMessage = '连接成功！';
 
         switch (type) {
@@ -3241,12 +3257,9 @@ async function handleTestConnection(request) {
             }
             case 'proxyip': {
                 const { address: ip, port } = parseProxyIP(address, 443);
-                log(`PROXYIP Test: 步骤 1/2 - 正在连接到 ${ip}:${port}`);
                 const testSocket = await connect({ hostname: ip, port: port, signal: controller.signal });
-                log(`PROXYIP Test: TCP 连接成功。`);
 
                 try {
-                    log(`PROXYIP Test: 步骤 2/2 - 正在发送 HTTP 路由探针...`);
                     const writer = testSocket.writable.getWriter();
                     const workerHostname = new URL(request.url).hostname;
                     
@@ -3260,7 +3273,6 @@ async function handleTestConnection(request) {
 
                     await writer.write(new TextEncoder().encode(httpProbeRequest));
                     writer.releaseLock();
-                    log(`PROXYIP Test: 已发送 GET 请求, Host: ${workerHostname}`);
 
                     const reader = testSocket.readable.getReader();
                     const { value, done } = await reader.read();
@@ -3270,10 +3282,7 @@ async function handleTestConnection(request) {
                     }
 
                     const responseText = new TextDecoder().decode(value);
-                    log(`PROXYIP Test: 收到响应:\n${responseText.substring(0, 200)}...`);
-
                     if (responseText.toLowerCase().includes('server: cloudflare')) {
-                        log(`PROXYIP Test: 响应头包含 "Server: cloudflare"。测试通过。`);
                         successMessage = '连接成功';
                     } else {
                         throw new Error("该IP可能无效。");
@@ -3291,7 +3300,7 @@ async function handleTestConnection(request) {
 			case 'fallback64': {
                 const prefix = address;
                 if (!prefix || !/::(?:\/\d{1,3})?$/.test(prefix)) {
-                     throw new Error("无效的 Fallback64 前缀格式。应为 xxxx:: 或 xxxx::/96");
+                     throw new Error("无效的 Fallback64 ");
                 }
 
                 const testDomain = 'www.cloudflare.com';
@@ -3334,7 +3343,6 @@ async function handleTestConnection(request) {
                     
                     const responseText = new TextDecoder().decode(value);
                     if (responseText.includes(`h=${testDomain}`) && responseText.includes('colo=')) {
-                        log(`Fallback64 Test: /cdn-cgi/trace 响应有效。测试通过。`);
                         successMessage = `可用！成功通过 ${testDomain} 验证`;
                     } else {
                         throw new Error("响应无效，或非 Cloudflare trace 信息。");
