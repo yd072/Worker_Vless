@@ -536,9 +536,8 @@ async function resolveViaFallback64(domain) {
 
     const ipv4Parts = ipv4.split('.').map(part => parseInt(part, 10).toString(16).padStart(2, '0'));
     
-    const synthesizedIPv6 = prefix.replace(/::\/\d{1,3}$/, '::').replace(/:\/\d{1,3}$/, ':') + 
-                            ipv4Parts[0] + ipv4Parts[1] + ':' + 
-                            ipv4Parts[2] + ipv4Parts[3];
+    const cleanPrefix = prefix.replace(/::(?:\/\d{1,3})?$/, '::');
+    const synthesizedIPv6 = `${cleanPrefix.slice(0, -1)}${ipv4Parts[0]}${ipv4Parts[1]}:${ipv4Parts[2]}${ipv4Parts[3]}`;
 
     return synthesizedIPv6;
 }
@@ -2981,6 +2980,12 @@ async function handleGetRequest(env) {
                             </div>
                             <p style="margin-top: 15px;">每行或每个逗号/空格分隔一个</p>
                             <textarea id="fallback64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTBBMjYwMiUzQWZjNTklM0ExMSUzQTY0JTNBJTNBJTBBMjYwMiUzQWZjNTklM0ExMSUzQTY0JTNBJTNBJTJGOTY='))}">${fallback64Content}</textarea>
+							<div class="test-group">
+								<button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'fallback64')">测试连接</button>
+								<span id="fallback64-status" class="test-status"></span>
+								<span class="test-note">（将尝试连接）</span>
+							</div>
+							<div id="fallback64-results" class="test-results-container"></div>
                         </div>
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
@@ -3099,7 +3104,7 @@ async function handleGetRequest(env) {
                     resultsContainer.innerHTML = '';
                     resultsContainer.style.display = 'none';
 
-                    const originalAddresses = textarea.value.trim().split(/\\r?\\n/).map(addr => addr.trim()).filter(Boolean);
+                    const originalAddresses = textarea.value.trim().split(/[\\s,]+/).map(addr => addr.trim()).filter(Boolean);
                     const total = originalAddresses.length;
 
                     if (total === 0) {
@@ -3280,6 +3285,65 @@ async function handleTestConnection(request) {
                 } catch(err) {
                     if (testSocket) await testSocket.close();
                     throw err;
+                }
+                break;
+            }
+			case 'fallback64': {
+                const prefix = address;
+                if (!prefix || !/::(?:\/\d{1,3})?$/.test(prefix)) {
+                     throw new Error("无效的 Fallback64 前缀格式。应为 xxxx:: 或 xxxx::/96");
+                }
+
+                const testDomain = 'www.cloudflare.com';
+                const testPath = '/cdn-cgi/trace';
+                const dnsUrl = `https://cloudflare-dns.com/dns-query?name=${testDomain}&type=A`;
+                const dnsResponse = await fetch(dnsUrl, { headers: { 'Accept': 'application/dns-json' }, signal: controller.signal });
+                if (!dnsResponse.ok) throw new Error('DNS查询失败');
+                const dnsData = await dnsResponse.json();
+                const ipv4 = (dnsData.Answer || []).find(record => record.type === 1)?.data;
+                if (!ipv4) throw new Error(`未能找到 ${testDomain} 的 IPv4 地址`);
+
+                const ipv4Parts = ipv4.split('.').map(part => parseInt(part, 10).toString(16).padStart(2, '0'));
+                
+                const prefixPart = prefix.split('/96')[0];
+                const synthesizedIPv6 = prefixPart + ipv4Parts[0] + ipv4Parts[1] + ":" + ipv4Parts[2] + ipv4Parts[3];
+                
+                let testSocket;
+                try {
+                    testSocket = await connect({ hostname: `[${synthesizedIPv6}]`, port: 80, signal: controller.signal });
+                    log(`Fallback64 Test: TCP 连接成功。`);
+                    
+                    const writer = testSocket.writable.getWriter();
+                    const httpProbeRequest = [
+                        `GET ${testPath} HTTP/1.1`,
+                        `Host: ${testDomain}`,
+                        'User-Agent: Cloudflare-Fallback64-Test',
+                        'Connection: close',
+                        '\r\n'
+                    ].join('\r\n');
+
+                    await writer.write(new TextEncoder().encode(httpProbeRequest));
+                    writer.releaseLock();
+                    
+                    const reader = testSocket.readable.getReader();
+                    const { value, done } = await reader.read();
+
+                    if (done || !value) {
+                        throw new Error("连接已关闭，未收到任何响应。");
+                    }
+                    
+                    const responseText = new TextDecoder().decode(value);
+                    if (responseText.includes(`h=${testDomain}`) && responseText.includes('colo=')) {
+                        log(`Fallback64 Test: /cdn-cgi/trace 响应有效。测试通过。`);
+                        successMessage = `可用！成功通过 ${testDomain} 验证`;
+                    } else {
+                        throw new Error("响应无效，或非 Cloudflare trace 信息。");
+                    }
+                    reader.releaseLock();
+                } finally {
+                     if (testSocket) {
+                        await testSocket.close();
+                    }
                 }
                 break;
             }
