@@ -16,7 +16,6 @@ KV变量名：KV
 |--------|---------|
 | UUID  | fca6e4ec-c882-4876-992c-cf354fd3f2ae |
 | PROXYIP | bpb.radically.pro/1.2.3.4 |
-| SOCKS5 | user:password@1.2.3.4 :2222 |
 | ADD | icook.tw:8443#优选域名/1.2.3.4 :8443#优选IP |
 | ADDAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
 | ADDNOTLS | icook.tw:80#优选域名/1.2.3.4 :80#优选IP |
