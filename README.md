@@ -9,7 +9,7 @@
 ## 邦定KV
 KV变量名：KV
 
-添加在线设置：PROXYIP、SOCKS5、SUB 
+添加在线设置：PROXYIP、SUB 
 
 # 变量
 | 常用变量 | 示例 |
