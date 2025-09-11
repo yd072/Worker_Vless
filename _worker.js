@@ -8,23 +8,13 @@ let cachedSettings = null;
 let userID = '';
 let proxyIP = '';
 //let sub = '';
-let socks5Address = '';
-let parsedSocks5Address = {};
-let enableSocks = false;
+let noTLS = 'false';
 
 let fallback64Prefixes = []; 
 let fallback64Enabled = false; 
 
-let noTLS = 'false';
 const expire = -1;
 let proxyIPs = [];
-let socks5s = [];
-let go2Socks5s = [
-	'*ttvnw.net',
-	'*tapecontent.net',
-	'*cloudatacdn.com',
-	'*.loadshare.org',
-];
 let addresses = [];
 let adds = [];
 let addressesapi = [];
@@ -99,7 +89,6 @@ async function loadConfigurations(env) {
     // 2. 从环境变量加载，如果存在则覆盖默认值
     if (env.UUID || env.uuid || env.PASSWORD || env.pswd) userID = env.UUID || env.uuid || env.PASSWORD || env.pswd;
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
-    if (env.SOCKS5) socks5Address = env.SOCKS5;
     if (env.SUBNAME) FileName = env.SUBNAME;
     
     if (env.FALLBACK64) fallback64Prefixes = 整理(env.FALLBACK64);
@@ -111,7 +100,6 @@ async function loadConfigurations(env) {
     if (env.ADDNOTLSAPI) addressesnotlsapi = 整理(env.ADDNOTLSAPI);
     if (env.ADDCSV) addressescsv = 整理(env.ADDCSV);
     if (env.LINK) link = 整理(env.LINK);
-    if (env.GO2SOCKS5) go2Socks5s = 整理(env.GO2SOCKS5);
     if (env.BAN) banHosts = 整理(env.BAN);
 
     if (env.DLS) DLS = Number(env.DLS);
@@ -128,7 +116,6 @@ async function loadConfigurations(env) {
 
                 // 使用KV中的配置覆盖当前变量
                 if (settings.proxyip && settings.proxyip.trim()) proxyIP = settings.proxyip;
-                if (settings.socks5 && settings.socks5.trim()) socks5Address = settings.socks5.split('\n')[0].trim();
                 if (settings.sub && settings.sub.trim()) env.SUB = settings.sub.trim().split('\n')[0];
                 
                 if (settings.fallback64 && settings.fallback64.trim()) fallback64Prefixes = 整理(settings.fallback64);
@@ -181,11 +168,6 @@ async function loadConfigurations(env) {
     // 4. 最终处理
     proxyIPs = 整理(proxyIP);
     proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
-
-    socks5s = 整理(socks5Address);
-    socks5Address = socks5s.length > 0 ? socks5s[Math.floor(Math.random() * socks5s.length)] : '';
-	socks5Address = socks5Address.split('//')[1] || socks5Address;
-
 }
 
 /**
@@ -568,20 +550,8 @@ export default {
 
 			const fakeHostName = `${fakeUserIDSHA256.slice(6, 9)}.${fakeUserIDSHA256.slice(13, 19)}`;
 
-            // 4. 处理 SOCKS5
-			if (socks5Address) {
-				try {
-					parsedSocks5Address = socks5AddressParser(socks5Address);
-					RproxyIP = env.RPROXYIP || 'false';
-					enableSocks = true;
-				} catch (err) {
-					console.log(err.toString());
-					RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
-					enableSocks = false;
-				}
-			} else {
-				RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
-			}
+            // 4. 处理 RproxyIP
+			RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
 
             // 5. 根据请求类型进行路由
 			const upgradeHeader = request.headers.get('Upgrade');
@@ -594,9 +564,6 @@ export default {
 
 				if (url.searchParams.has('proxyip')) {
 					path = `/?proxyip=${url.searchParams.get('proxyip')}`;
-					RproxyIP = 'false';
-				} else if (url.searchParams.has('socks5') || url.searchParams.has('socks')) {
-					path = `/?socks5=${url.searchParams.get('socks5') || url.searchParams.get('socks')}`;
 					RproxyIP = 'false';
 				}
 
@@ -662,51 +629,14 @@ export default {
 				}
 			} else {
                 // WebSocket 请求处理
-				socks5Address = url.searchParams.get('socks5') || socks5Address;
-				if (new RegExp('/socks5=', 'i').test(url.pathname)) {
-                    socks5Address = url.pathname.split('5=')[1];
-                }
-				else if (new RegExp('/socks://', 'i').test(url.pathname) || new RegExp('/socks5://', 'i').test(url.pathname)) {
-					socks5Address = url.pathname.split('://')[1].split('#')[0];
-					if (socks5Address.includes('@')) {
-						let userPassword = socks5Address.split('@')[0];
-						const base64Regex = /^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i;
-						if (base64Regex.test(userPassword) && !userPassword.includes(':')) {
-							
-							try {
-								userPassword = atob(userPassword);
-							} catch (e) {
-								console.error(`SOCKS5 auth: Failed to decode Base64 string "${userPassword}". Using it as-is. Error: ${e.message}`);
-							}
-						}
-						socks5Address = `${userPassword}@${socks5Address.split('@')[1]}`;
-					}
-				}
-
-				if (socks5Address) {
-					try {
-						parsedSocks5Address = socks5AddressParser(socks5Address);
-						enableSocks = true;
-					} catch (err) {
-						console.log(err.toString());
-						enableSocks = false;
-					}
-				} else {
-					enableSocks = false;
-				}
-
 				if (url.searchParams.has('proxyip')) {
 					proxyIP = url.searchParams.get('proxyip');
-					enableSocks = false;
 				} else if (new RegExp('/proxyip=', 'i').test(url.pathname)) {
 					proxyIP = url.pathname.toLowerCase().split('/proxyip=')[1];
-					enableSocks = false;
 				} else if (new RegExp('/proxyip.', 'i').test(url.pathname)) {
 					proxyIP = `proxyip.${url.pathname.toLowerCase().split("/proxyip.")[1]}`;
-					enableSocks = false;
 				} else if (new RegExp('/pyip=', 'i').test(url.pathname)) {
 					proxyIP = url.pathname.toLowerCase().split('/pyip=')[1];
-					enableSocks = false;
 				}
 
 				return await secureProtoOverWSHandler(request);
@@ -941,26 +871,20 @@ async function handleDNSQuery(udpChunk, webSocket, secureProtoResponseHeader, lo
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
 
-	const createConnection = async (address, port, proxyOptions = null) => {
-		const proxyType = proxyOptions ? proxyOptions.type : 'direct';
-		log(`建立连接: ${address}:${port} (方式: ${proxyType})`);
+	const createConnection = async (address, port) => {
+		log(`建立连接: ${address}:${port}`);
 
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort('Connection timeout'), 5000);
 
 		try {
-			let tcpSocketPromise;
-			if (proxyType === 'socks5') {
-				tcpSocketPromise = socks5Connect(addressType, address, port, log, controller.signal);
-			} else {
-				tcpSocketPromise = connect({
-					hostname: address,
-					port: port,
-					allowHalfOpen: false,
-                    keepAlive: true,
-                    signal: controller.signal
-				});
-			}
+			let tcpSocketPromise = connect({
+                hostname: address,
+                port: port,
+                allowHalfOpen: false,
+                keepAlive: true,
+                signal: controller.signal
+            });
 
 			const tcpSocket = await Promise.race([
 				tcpSocketPromise,
@@ -1015,7 +939,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         log('Fallback64 模式已强制开启。');
         connectionStrategies.push({
             name: 'Direct Connection',
-            execute: () => createConnection(addressRemote, portRemote, null)
+            execute: () => createConnection(addressRemote, portRemote)
         });
 
         if (fallback64Prefixes.length > 0) {
@@ -1030,26 +954,10 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
 
     } else {
         // --- 默认（正常）模式 ---
-        const shouldUseSocks = enableSocks && go2Socks5s.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
-
         connectionStrategies.push({
             name: 'Direct Connection',
-            execute: () => createConnection(addressRemote, portRemote, null)
+            execute: () => createConnection(addressRemote, portRemote)
         });
-
-        if (shouldUseSocks) {
-            connectionStrategies.push({
-                name: 'SOCKS5 Proxy (go2Socks5s)',
-                execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-            });
-        }
-
-        if (enableSocks && !shouldUseSocks) {
-            connectionStrategies.push({
-                name: 'SOCKS5 Proxy (Fallback)',
-                execute: () => createConnection(addressRemote, portRemote, { type: 'socks5' })
-            });
-        }
 
         if (proxyIP && proxyIP.trim() !== '') {
             connectionStrategies.push({
@@ -1228,113 +1136,6 @@ function stringify(arr, offset = 0) {
     return uuid;
 }
 
-async function socks5Connect(addressType, addressRemote, portRemote, log, signal = null, customProxyAddress = null) {
-    const { username, password, hostname, port } = customProxyAddress || parsedSocks5Address;
-    const socket = await connect({ hostname, port, signal });
-
-    const socksGreeting = new Uint8Array([5, 2, 0, 2]);
-    const writer = socket.writable.getWriter();
-    await writer.write(socksGreeting);
-    log('SOCKS5 greeting sent');
-
-    const reader = socket.readable.getReader();
-    const encoder = new TextEncoder();
-    let res = (await reader.read()).value;
-
-    if (res[0] !== 0x05) {
-        log(`SOCKS5 version error: received ${res[0]}, expected 5`);
-        return;
-    }
-    if (res[1] === 0xff) {
-        log("No acceptable authentication methods");
-        return;
-    }
-
-    if (res[1] === 0x02) {
-        log("SOCKS5 requires authentication");
-        if (!username || !password) {
-            log("Username and password required");
-            return;
-        }
-        const authRequest = new Uint8Array([
-            1,
-            username.length,
-            ...encoder.encode(username),
-            password.length,
-            ...encoder.encode(password)
-        ]);
-        await writer.write(authRequest);
-        res = (await reader.read()).value;
-        if (res[0] !== 0x01 || res[1] !== 0x00) {
-            log("SOCKS5 authentication failed");
-            throw new Error("SOCKS5 authentication failed");
-        }
-    }
-
-    let DSTADDR;
-    switch (addressType) {
-        case 1:
-            DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
-            break;
-        case 2:
-            DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
-            break;
-        case 3:
-            DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]);
-            break;
-        default:
-            log(`Invalid address type: ${addressType}`);
-            return;
-    }
-    const socksRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
-    await writer.write(socksRequest);
-    log('SOCKS5 request sent');
-
-    res = (await reader.read()).value;
-    if (res[1] === 0x00) {
-        log("SOCKS5 connection established");
-    } else {
-        log("SOCKS5 connection failed");
-        return;
-    }
-    writer.releaseLock();
-    reader.releaseLock();
-    return socket;
-}
-
-function socks5AddressParser(address) {
-    let [latter, former] = address.split("@").reverse();
-    let username, password, hostname, port;
-
-    if (former) {
-        const formers = former.split(":");
-        if (formers.length !== 2) {
-            throw new Error('Invalid SOCKS address format: "username:password" required');
-        }
-        [username, password] = formers;
-    }
-
-    const latters = latter.split(":");
-    port = Number(latters.pop());
-    if (isNaN(port)) {
-        throw new Error('Invalid SOCKS address format: port must be a number');
-    }
-
-    hostname = latters.join(":");
-
-    const regex = /^\[.*\]$/;
-    if (hostname.includes(":") && !regex.test(hostname)) {
-        throw new Error('Invalid SOCKS address format: IPv6 must be in brackets');
-    }
-
-    return {
-        username,
-        password,
-        hostname,
-        port,
-    }
-}
-
 function decodeIntegrationData(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     if (isBase64) {
         content = atob(content);
@@ -1417,10 +1218,7 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
 // =========== START OF REFACTORED HELPER FUNCTIONS ================
 // =================================================================
 
-function getConnectionTypeInfo(enableSocks, proxyIP, proxyIPs, newSocks5s, socks5List, RproxyIP) {
-    if (enableSocks) {
-        return `CFCDN（访问方式）: Socks5<br>&nbsp;&nbsp;${newSocks5s.join('<br>&nbsp;&nbsp;')}<br>${socks5List}`;
-    }
+function getConnectionTypeInfo(proxyIP, proxyIPs, RproxyIP) {
     if (proxyIP && proxyIP.trim() !== '') {
         return `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
     }
@@ -1550,22 +1348,10 @@ async function generateIntegrationDetails(uuid, hostName, sub, UA, RproxyIP, _ur
 
 	const isUserAgentMozilla = userAgent.includes('mozilla');
 	if (isUserAgentMozilla && !subParams.some(_searchParams => _url.searchParams.has(_searchParams))) {
-		const newSocks5s = socks5s.map(socks5Address => {
-			if (socks5Address.includes('@')) return socks5Address.split('@')[1];
-			else if (socks5Address.includes('//')) return socks5Address.split('//')[1];
-			else return socks5Address;
-		});
-
-		let socks5List = '';
-		if (go2Socks5s.length > 0 && enableSocks) {
-			socks5List = `${decodeURIComponent('SOCKS5%EF%BC%88%E7%99%BD%E5%90%8D%E5%8D%95%EF%BC%89%3A%20')}`;
-			if (go2Socks5s.includes(atob('YWxsIGlu')) || go2Socks5s.includes(atob('Kg=='))) socks5List += `${decodeURIComponent('%E6%89%80%E6%9C%89%E6%B5%81%E9%87%8F')}<br>`;
-			else socks5List += `<br>&nbsp;&nbsp;${go2Socks5s.join('<br>&nbsp;&nbsp;')}<br>`;
-		}
 		
         // --- START OF OPTIMIZED LOGIC ---
         const editLink = env.KV ? ` <a href='${_url.pathname}/edit'>设置列表</a>` : '';
-        const connectionInfoHtml = getConnectionTypeInfo(enableSocks, proxyIP, proxyIPs, newSocks5s, socks5List, RproxyIP);
+        const connectionInfoHtml = getConnectionTypeInfo(proxyIP, proxyIPs, RproxyIP);
 
         let settingsInfo = '<br>' + connectionInfoHtml;
 
@@ -1952,6 +1738,7 @@ async function 整理优选列表(api) {
     let newapi = "";
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
+	let proxyIPPool = [];
 
     try {
         const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
@@ -2038,6 +1825,7 @@ async function 整理测速结果(tls) {
 	}
 
 	let newAddressescsv = [];
+	let proxyIPPool = [];
 
 	for (const csvUrl of addressescsv) {
 		try {
@@ -2627,7 +2415,6 @@ async function handleGetRequest(env) {
     let addsContent = '';
     let hasKV = !!env.KV;
     let proxyIPContent = '';
-    let socks5Content = '';
     let subContent = '';
 	let httpsPortsContent = '';
     let httpPortsContent = '';
@@ -2644,7 +2431,6 @@ async function handleGetRequest(env) {
                 content = settings.ADD || ''; 
                 addsContent = settings.ADDS || '';
                 proxyIPContent = settings.proxyip || '';
-                socks5Content = settings.socks5 || '';
                 subContent = settings.sub || '';
 				httpsPortsContent = settings.httpsports || httpsPorts.join(',');
                 httpPortsContent = settings.httpports || httpPorts.join(',');
@@ -2962,17 +2748,6 @@ async function handleGetRequest(env) {
                             </div>
                         <div id="proxyip-results" class="test-results-container"></div>
                         </div>
-                        <div class="setting-item">
-                        <h4>SOCKS5</h4>
-                                <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
-                                <textarea id="socks5" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${socks5Content}</textarea>
-                         <div class="test-group">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'socks5')">测试连接</button>
-                                <span id="socks5-status" class="test-status"></span>
-                            <span class="test-note">（批量测试并自动移除失败地址）</span>
-                            </div>
-                        <div id="socks5-results" class="test-results-container"></div>
-                        </div>                        
                         <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 20px;">
                             <h4>Fallback64 </h4>
                             <p>
@@ -3073,7 +2848,6 @@ async function handleGetRequest(env) {
                     const statusEl = button.parentElement.querySelector('.save-status');
                     const payload = {
                         proxyip: document.getElementById('proxyip').value,
-                        socks5: document.getElementById('socks5').value,
                         fallback64: document.getElementById('fallback64').value,
                         fallback64Enabled: document.getElementById('fallback64-switch-checkbox').checked.toString()
                     };
@@ -3249,12 +3023,6 @@ async function handleTestConnection(request) {
         let successMessage = '连接成功！';
 
         switch (type) {
-            case 'socks5': {
-                const parsed = socks5AddressParser(address);
-                const testSocket = await socks5Connect(2, 'www.cloudflare.com', 443, log, controller.signal, parsed);
-                await testSocket.close();
-                break;
-            }
             case 'proxyip': {
                 const { address: ip, port } = parseProxyIP(address, 443);
                 const testSocket = await connect({ hostname: ip, port: port, signal: controller.signal });
