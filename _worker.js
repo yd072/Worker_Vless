@@ -10,7 +10,8 @@ let proxyIP = '';
 //let sub = '';
 let noTLS = 'false';
 
-let fallback64Prefixes = []; 
+
+let fallback64 = ''; 
 let fallback64Enabled = false; 
 
 const expire = -1;
@@ -91,7 +92,7 @@ async function loadConfigurations(env) {
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
     if (env.SUBNAME) FileName = env.SUBNAME;
     
-    if (env.FALLBACK64) fallback64Prefixes = 整理(env.FALLBACK64);
+    if (env.FALLBACK64) fallback64 = 整理(env.FALLBACK64)[0] || '';
 
     if (env.ADD) addresses = 整理(env.ADD);
     if (env.ADDS) adds = 整理(env.ADDS);
@@ -118,7 +119,8 @@ async function loadConfigurations(env) {
                 if (settings.proxyip && settings.proxyip.trim()) proxyIP = settings.proxyip;
                 if (settings.sub && settings.sub.trim()) env.SUB = settings.sub.trim().split('\n')[0];
                 
-                if (settings.fallback64 && settings.fallback64.trim()) fallback64Prefixes = 整理(settings.fallback64);
+                // Använda settings.fallback64 för att ställa in NAT64-servern
+                if (settings.fallback64 && settings.fallback64.trim()) fallback64 = 整理(settings.fallback64)[0] || '';
                 if (settings.fallback64Enabled) {
                     fallback64Enabled = settings.fallback64Enabled === 'true';
                 }
@@ -481,48 +483,180 @@ async function statusPage() {
     });
 }
 
-/**
- * @param {string} domain 
- * @returns {Promise<string>}
- */
-async function resolveViaFallback64(domain) {
-    if (!fallback64Prefixes || fallback64Prefixes.length === 0) {
-        throw new Error('未配置Fallback64');
+// --- Logic (replaces Fallback64) ---
+async function resolveToIPv6(target) {
+    // 检查是否为IPv4
+    function isIPv4(str) {
+        const parts = str.split('.');
+        return parts.length === 4 && parts.every(part => {
+            const num = parseInt(part, 10);
+            return num >= 0 && num <= 255 && part === num.toString();
+        });
     }
 
+    // 检查是否为IPv6
+    function isIPv6(str) {
+        return str.includes(':') && /^[0-9a-fA-F:]+$/.test(str);
+    }
+
+    // 获取域名的IPv4地址
     async function fetchIPv4(domain) {
         const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=A`;
         const response = await fetch(url, {
             headers: { 'Accept': 'application/dns-json' }
         });
 
-        if (!response.ok) {
-            throw new Error('查询失败');
-        }
+        if (!response.ok) throw new Error('DNS查询失败');
 
         const data = await response.json();
         const ipv4s = (data.Answer || [])
-            .filter(record => record.type === 1) 
+            .filter(record => record.type === 1)
             .map(record => record.data);
 
-        if (ipv4s.length === 0) {
-            throw new Error('未找到');
-        }
-
+        if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
         return ipv4s[Math.floor(Math.random() * ipv4s.length)];
     }
 
-    const ipv4 = await fetchIPv4(domain);
+    // 查询NAT64 IPv6地址
+    async function queryNAT64(domain) {
+        const socket = connect({
+            hostname: isIPv6(fallback64) ? `[${fallback64}]` : fallback64,
+            port: 53
+        });
 
-    const prefix = fallback64Prefixes[Math.floor(Math.random() * fallback64Prefixes.length)];
+        const writer = socket.writable.getWriter();
+        const reader = socket.readable.getReader();
 
-    const ipv4Parts = ipv4.split('.').map(part => parseInt(part, 10).toString(16).padStart(2, '0'));
-    
-    const cleanPrefix = prefix.replace(/::(?:\/\d{1,3})?$/, '::');
-    const synthesizedIPv6 = `${cleanPrefix.slice(0, -1)}${ipv4Parts[0]}${ipv4Parts[1]}:${ipv4Parts[2]}${ipv4Parts[3]}`;
+        try {
+            // 发送DNS查询
+            const query = buildDNSQuery(domain);
+            const queryWithLength = new Uint8Array(query.length + 2);
+            queryWithLength[0] = query.length >> 8;
+            queryWithLength[1] = query.length & 0xFF;
+            queryWithLength.set(query, 2);
+            await writer.write(queryWithLength);
 
-    return synthesizedIPv6;
+            // 读取响应
+            const response = await readDNSResponse(reader);
+            const ipv6s = parseIPv6(response);
+
+            if (ipv6s.length > 0) {
+                return ipv6s[0];
+            } else {
+                throw new Error('No IPv6 address found in DNS response from NAT64 server');
+            }
+        } finally {
+            await writer.close();
+            await reader.cancel();
+        }
+    }
+
+    // 构建DNS查询包
+    function buildDNSQuery(domain) {
+        const buffer = new ArrayBuffer(512);
+        const view = new DataView(buffer);
+        let offset = 0;
+        view.setUint16(offset, Math.floor(Math.random() * 65536)); offset += 2;
+        view.setUint16(offset, 0x0100); offset += 2;
+        view.setUint16(offset, 1); offset += 2;
+        view.setUint16(offset, 0); offset += 6;
+		 // 域名编码
+        for (const label of domain.split('.')) {
+            view.setUint8(offset++, label.length);
+            for (let i = 0; i < label.length; i++) {
+                view.setUint8(offset++, label.charCodeAt(i));
+            }
+        }
+        view.setUint8(offset++, 0);
+		// 查询类型和类
+        view.setUint16(offset, 28); offset += 2; 
+        view.setUint16(offset, 1); offset += 2; 
+
+        return new Uint8Array(buffer, 0, offset);
+    }
+
+    // 读取DNS响应
+    async function readDNSResponse(reader) {
+        const chunks = [];
+        let totalLength = 0;
+        let expectedLength = null;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            totalLength += value.length;
+            if (expectedLength === null && totalLength >= 2) {
+                expectedLength = (chunks[0][0] << 8) | chunks[0][1];
+            }
+            if (expectedLength !== null && totalLength >= expectedLength + 2) {
+                break;
+            }
+        }
+        const fullResponse = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            fullResponse.set(chunk, offset);
+            offset += chunk.length;
+        }
+        return fullResponse.slice(2);
+    }
+
+    // 解析IPv6地址
+    function parseIPv6(response) {
+        const view = new DataView(response.buffer);
+        let offset = 12;
+        while (view.getUint8(offset) !== 0) {
+            offset += view.getUint8(offset) + 1;
+        }
+        offset += 5;
+        const answers = [];
+        const answerCount = view.getUint16(6);
+        for (let i = 0; i < answerCount; i++) {
+            if ((view.getUint8(offset) & 0xC0) === 0xC0) {
+                offset += 2;
+            } else {
+                while (view.getUint8(offset) !== 0) {
+                    offset += view.getUint8(offset) + 1;
+                }
+                offset++;
+            }
+            const type = view.getUint16(offset); offset += 2;
+            offset += 6;
+            const dataLength = view.getUint16(offset); offset += 2;
+            if (type === 28 && dataLength === 16) {
+                const parts = [];
+                for (let j = 0; j < 8; j++) {
+                    parts.push(view.getUint16(offset + j * 2).toString(16));
+                }
+                answers.push(parts.join(':'));
+            }
+            offset += dataLength;
+        }
+        return answers;
+    }
+
+    function convertToNAT64IPv6(ipv4Address) {
+        const parts = ipv4Address.split('.');
+        if (parts.length !== 4) throw new Error('Invalid IPv4 address for NAT64 conversion');
+        const hex = parts.map(part => parseInt(part, 10).toString(16).padStart(2, '0'));
+        return fallback64.split('/96')[0] + hex[0] + hex[1] + ":" + hex[2] + hex[3];
+    }
+
+    try {
+        if (isIPv6(target)) return target;
+        const ipv4 = isIPv4(target) ? target : await fetchIPv4(target);
+        const nat64 = fallback64.endsWith('/96') ? convertToNAT64IPv6(ipv4) : await queryNAT64(ipv4 + atob('LmlwLjA5MDIyNy54eXo='));
+
+        if (isIPv6(nat64)) {
+            return nat64;
+        } else {
+            throw new Error('Resolved NAT64 address is not a valid IPv6 address.');
+        }
+    } catch (error) {
+        throw new Error(`NAT64 resolution failed: ${error.message}`);
+	}
 }
+
 
 export default {
 	async fetch(request, env, ctx) {
@@ -935,52 +1069,33 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     // --- 构建不同的连接策略 ---
     const connectionStrategies = [];
     
-    if (fallback64Enabled) {
-        log('Fallback64 模式已强制开启。');
+    // --- 默认（正常）模式 ---
+    connectionStrategies.push({
+        name: 'Direct Connection',
+        execute: () => createConnection(addressRemote, portRemote)
+    });
+
+    if (proxyIP && proxyIP.trim() !== '') {
         connectionStrategies.push({
-            name: 'Direct Connection',
-            execute: () => createConnection(addressRemote, portRemote)
+            name: '用户配置的 PROXYIP',
+            execute: () => {
+                const { address, port } = parseProxyIP(proxyIP, portRemote);
+                return createConnection(address, port);
+            }
         });
-
-        if (fallback64Prefixes.length > 0) {
-            connectionStrategies.push({
-                name: 'Fallback64',
-                execute: async () => {
-                    const fallback64Address = await resolveViaFallback64(addressRemote);
-                    return createConnection(`[${fallback64Address}]`, portRemote);
-                }
-            });
-        }
-
-    } else {
-        // --- 默认（正常）模式 ---
-        connectionStrategies.push({
-            name: 'Direct Connection',
-            execute: () => createConnection(addressRemote, portRemote)
-        });
-
-        if (proxyIP && proxyIP.trim() !== '') {
-            connectionStrategies.push({
-                name: '用户配置的 PROXYIP',
-                execute: () => {
-                    const { address, port } = parseProxyIP(proxyIP, portRemote);
-                    return createConnection(address, port);
-                }
-            });
-        }
-
-        if (fallback64Prefixes.length > 0) {
-            connectionStrategies.push({
-                name: 'Fallback64',
-                execute: async () => {
-                    const fallback64Address = await resolveViaFallback64(addressRemote);
-                    return createConnection(`[${fallback64Address}]`, portRemote);
-                }
-            });
-        }
     }
 
-    // 最终的备用方案，对两种模式都适用
+    if (fallback64Enabled && fallback64 && fallback64.trim() !== '') {
+        connectionStrategies.push({
+            name: 'Fallback64 (NAT64)',
+            execute: async () => {
+                const nat64Address = await resolveToIPv6(addressRemote);
+                return createConnection(`[${nat64Address}]`, portRemote);
+            }
+        });
+    }
+
+    // 最终的备用方案
     connectionStrategies.push({
         name: '内置的默认 PROXYIP',
         execute: () => {
@@ -2770,12 +2885,12 @@ async function handleGetRequest(env) {
                                 </label>
                                 <span>启用 Fallback64</span>
                             </div>
-                            <p style="margin-top: 15px;">每行或每个逗号/空格分隔一个</p>
-                            <textarea id="fallback64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJUVGJUJDJTlBJTBBMjYwMiUzQWZjNTklM0ExMSUzQTY0JTNBJTNBJTBBMjYwMiUzQWZjNTklM0ExMSUzQTY0JTNBJTNBJTJGOTY='))}">${fallback64Content}</textarea>
+                            <p style="margin-top: 15px;">只支持单个地址，将使用文本框的第一行。</p>
+                            <textarea id="fallback64" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBJTBBZG5zNjQuZXhhbXBsZS5jb20lMEEyYTAxJTNBNGY4JTNBYzJjJTNBMTIzZiUzQSUzQSUyRjk2'))}">${fallback64Content}</textarea>
 							<div class="test-group">
 								<button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'fallback64')">测试连接</button>
 								<span id="fallback64-status" class="test-status"></span>
-								<span class="test-note">（将尝试连接）</span>
+								<span class="test-note">（将尝试解析）</span>
 							</div>
 							<div id="fallback64-results" class="test-results-container"></div>
                         </div>
@@ -3066,34 +3181,20 @@ async function handleTestConnection(request) {
                 break;
             }
 			case 'fallback64': {
-                const prefix = address;
-                if (!prefix || !/::(?:\/\d{1,3})?$/.test(prefix)) {
-                     throw new Error("无效的 Fallback64 ");
+                fallback64 = address;
+                if (!fallback64 || fallback64.trim() === '') {
+                    throw new Error("Fallback64 服务器地址不能为空");
                 }
-
-                const testDomain = 'www.cloudflare.com';
-                const testPath = '/cdn-cgi/trace';
-                const dnsUrl = `https://cloudflare-dns.com/dns-query?name=${testDomain}&type=A`;
-                const dnsResponse = await fetch(dnsUrl, { headers: { 'Accept': 'application/dns-json' }, signal: controller.signal });
-                if (!dnsResponse.ok) throw new Error('DNS查询失败');
-                const dnsData = await dnsResponse.json();
-                const ipv4 = (dnsData.Answer || []).find(record => record.type === 1)?.data;
-                if (!ipv4) throw new Error(`未能找到 ${testDomain} 的 IPv4 地址`);
-
-                const ipv4Parts = ipv4.split('.').map(part => parseInt(part, 10).toString(16).padStart(2, '0'));
-                
-                const prefixPart = prefix.split('/96')[0];
-                const synthesizedIPv6 = prefixPart + ipv4Parts[0] + ipv4Parts[1] + ":" + ipv4Parts[2] + ipv4Parts[3];
-                
+                const ipv6Address = await resolveToIPv6('www.cloudflare.com');
                 let testSocket;
                 try {
-                    testSocket = await connect({ hostname: `[${synthesizedIPv6}]`, port: 80, signal: controller.signal });
+                    testSocket = await connect({ hostname: `[${ipv6Address}]`, port: 80, signal: controller.signal });
                     log(`Fallback64 Test: TCP 连接成功。`);
                     
                     const writer = testSocket.writable.getWriter();
                     const httpProbeRequest = [
-                        `GET ${testPath} HTTP/1.1`,
-                        `Host: ${testDomain}`,
+                        `GET /cdn-cgi/trace HTTP/1.1`,
+                        `Host: www.cloudflare.com`,
                         'User-Agent: Cloudflare-Fallback64-Test',
                         'Connection: close',
                         '\r\n'
@@ -3110,8 +3211,9 @@ async function handleTestConnection(request) {
                     }
                     
                     const responseText = new TextDecoder().decode(value);
-                    if (responseText.includes(`h=${testDomain}`) && responseText.includes('colo=')) {
-                        successMessage = `可用！成功通过 ${testDomain} 验证`;
+                    if (responseText.includes('h=www.cloudflare.com') && responseText.includes('colo=')) {
+                        log(`Fallback64 Test: /cdn-cgi/trace 响应有效。测试通过。`);
+                        successMessage = `可用！成功通过 www.cloudflare.com 验证`;
                     } else {
                         throw new Error("响应无效，或非 Cloudflare trace 信息。");
                     }
