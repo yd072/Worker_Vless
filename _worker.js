@@ -1,21 +1,27 @@
 
 import { connect } from 'cloudflare:sockets';
 
-// --- 全局配置缓存 ---
 let cachedSettings = null;     
-// --------------------
-
 let userID = '';
 let proxyIP = '';
 //let sub = '';
-let noTLS = 'false';
-
+let secureRelayAddress = '';
+let parsedSecureRelayAddress = {};
+let enableSecureRelay = false;
 
 let fallback64 = ''; 
 let fallback64Enabled = false; 
 
+let noTLS = 'false';
 const expire = -1;
 let proxyIPs = [];
+let secureRelays = [];
+let routeToSecureRelay = [
+	'*ttvnw.net',
+	'*tapecontent.net',
+	'*cloudatacdn.com',
+	'*.loadshare.org',
+];
 let addresses = [];
 let adds = [];
 let addressesapi = [];
@@ -90,6 +96,7 @@ async function loadConfigurations(env) {
     // 2. 从环境变量加载，如果存在则覆盖默认值
     if (env.UUID || env.uuid || env.PASSWORD || env.pswd) userID = env.UUID || env.uuid || env.PASSWORD || env.pswd;
     if (env.PROXYIP || env.proxyip) proxyIP = env.PROXYIP || env.proxyip;
+    if (env.SECURERELAY) secureRelayAddress = env.SECURERELAY;
     if (env.SUBNAME) FileName = env.SUBNAME;
     
     if (env.FALLBACK64) fallback64 = 整理(env.FALLBACK64)[0] || '';
@@ -101,6 +108,7 @@ async function loadConfigurations(env) {
     if (env.ADDNOTLSAPI) addressesnotlsapi = 整理(env.ADDNOTLSAPI);
     if (env.ADDCSV) addressescsv = 整理(env.ADDCSV);
     if (env.LINK) link = 整理(env.LINK);
+    if (env.ROUTETORELAY) routeToSecureRelay = 整理(env.ROUTETORELAY);
     if (env.BAN) banHosts = 整理(env.BAN);
 
     if (env.DLS) DLS = Number(env.DLS);
@@ -117,6 +125,7 @@ async function loadConfigurations(env) {
 
                 // 使用KV中的配置覆盖当前变量
                 if (settings.proxyip && settings.proxyip.trim()) proxyIP = settings.proxyip;
+                if (settings.secureRelay && settings.secureRelay.trim()) secureRelayAddress = settings.secureRelay.split('\n')[0].trim();
                 if (settings.sub && settings.sub.trim()) env.SUB = settings.sub.trim().split('\n')[0];
                 
                 // Använda settings.fallback64 för att ställa in NAT64-servern
@@ -170,6 +179,11 @@ async function loadConfigurations(env) {
     // 4. 最终处理
     proxyIPs = 整理(proxyIP);
     proxyIP = proxyIPs.length > 0 ? proxyIPs[Math.floor(Math.random() * proxyIPs.length)] : '';
+
+    secureRelays = 整理(secureRelayAddress);
+    secureRelayAddress = secureRelays.length > 0 ? secureRelays[Math.floor(Math.random() * secureRelays.length)] : '';
+	secureRelayAddress = secureRelayAddress.split('//')[1] || secureRelayAddress;
+
 }
 
 /**
@@ -684,8 +698,20 @@ export default {
 
 			const fakeHostName = `${fakeUserIDSHA256.slice(6, 9)}.${fakeUserIDSHA256.slice(13, 19)}`;
 
-            // 4. 处理 RproxyIP
-			RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
+            // 4. 处理 Secure Relay
+			if (secureRelayAddress) {
+				try {
+					parsedSecureRelayAddress = secureRelayAddressParser(secureRelayAddress);
+					RproxyIP = env.RPROXYIP || 'false';
+					enableSecureRelay = true;
+				} catch (err) {
+					console.log(err.toString());
+					RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
+					enableSecureRelay = false;
+				}
+			} else {
+				RproxyIP = env.RPROXYIP || !proxyIP ? 'true' : 'false';
+			}
 
             // 5. 根据请求类型进行路由
 			const upgradeHeader = request.headers.get('Upgrade');
@@ -698,6 +724,9 @@ export default {
 
 				if (url.searchParams.has('proxyip')) {
 					path = `/?proxyip=${url.searchParams.get('proxyip')}`;
+					RproxyIP = 'false';
+				} else if (url.searchParams.has('relay')) {
+					path = `/?relay=${url.searchParams.get('relay')}`;
 					RproxyIP = 'false';
 				}
 
@@ -763,14 +792,51 @@ export default {
 				}
 			} else {
                 // WebSocket 请求处理
+				secureRelayAddress = url.searchParams.get('relay') || secureRelayAddress;
+				if (new RegExp('/relay=', 'i').test(url.pathname)) {
+                    secureRelayAddress = url.pathname.split('ay=')[1];
+                }
+				else if (new RegExp('/relay://', 'i').test(url.pathname)) {
+					secureRelayAddress = url.pathname.split('://')[1].split('#')[0];
+					if (secureRelayAddress.includes('@')) {
+						let userPassword = secureRelayAddress.split('@')[0];
+						const base64Regex = /^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i;
+						if (base64Regex.test(userPassword) && !userPassword.includes(':')) {
+							
+							try {
+								userPassword = atob(userPassword);
+							} catch (e) {
+								console.error(`Secure Relay auth: Failed to decode Base64 string "${userPassword}". Using it as-is. Error: ${e.message}`);
+							}
+						}
+						secureRelayAddress = `${userPassword}@${secureRelayAddress.split('@')[1]}`;
+					}
+				}
+
+				if (secureRelayAddress) {
+					try {
+						parsedSecureRelayAddress = secureRelayAddressParser(secureRelayAddress);
+						enableSecureRelay = true;
+					} catch (err) {
+						console.log(err.toString());
+						enableSecureRelay = false;
+					}
+				} else {
+					enableSecureRelay = false;
+				}
+
 				if (url.searchParams.has('proxyip')) {
 					proxyIP = url.searchParams.get('proxyip');
+					enableSecureRelay = false;
 				} else if (new RegExp('/proxyip=', 'i').test(url.pathname)) {
 					proxyIP = url.pathname.toLowerCase().split('/proxyip=')[1];
+					enableSecureRelay = false;
 				} else if (new RegExp('/proxyip.', 'i').test(url.pathname)) {
 					proxyIP = `proxyip.${url.pathname.toLowerCase().split("/proxyip.")[1]}`;
+					enableSecureRelay = false;
 				} else if (new RegExp('/pyip=', 'i').test(url.pathname)) {
 					proxyIP = url.pathname.toLowerCase().split('/pyip=')[1];
+					enableSecureRelay = false;
 				}
 
 				return await secureProtoOverWSHandler(request);
@@ -1005,20 +1071,26 @@ async function handleDNSQuery(udpChunk, webSocket, secureProtoResponseHeader, lo
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, secureProtoResponseHeader, log) {
 
-	const createConnection = async (address, port) => {
-		log(`建立连接: ${address}:${port}`);
+	const createConnection = async (address, port, proxyOptions = null) => {
+		const proxyType = proxyOptions ? proxyOptions.type : 'direct';
+		log(`建立连接: ${address}:${port} (方式: ${proxyType})`);
 
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort('Connection timeout'), 5000);
 
 		try {
-			let tcpSocketPromise = connect({
-                hostname: address,
-                port: port,
-                allowHalfOpen: false,
-                keepAlive: true,
-                signal: controller.signal
-            });
+			let tcpSocketPromise;
+			if (proxyType === 'secureRelay') {
+				tcpSocketPromise = secureRelayConnect(addressType, address, port, log, controller.signal);
+			} else {
+				tcpSocketPromise = connect({
+					hostname: address,
+					port: port,
+					allowHalfOpen: false,
+                    keepAlive: true,
+                    signal: controller.signal
+				});
+			}
 
 			const tcpSocket = await Promise.race([
 				tcpSocketPromise,
@@ -1070,10 +1142,26 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
     const connectionStrategies = [];
     
     // --- 默认（正常）模式 ---
+    const shouldUseSecureRelay = enableSecureRelay && routeToSecureRelay.some(pattern => new RegExp(`^${pattern.replace(/\*/g, '.*')}$`, 'i').test(addressRemote));
+
     connectionStrategies.push({
         name: 'Direct Connection',
-        execute: () => createConnection(addressRemote, portRemote)
+        execute: () => createConnection(addressRemote, portRemote, null)
     });
+
+    if (shouldUseSecureRelay) {
+        connectionStrategies.push({
+            name: 'Secure Relay (routeToSecureRelay)',
+            execute: () => createConnection(addressRemote, portRemote, { type: 'secureRelay' })
+        });
+    }
+
+    if (enableSecureRelay && !shouldUseSecureRelay) {
+        connectionStrategies.push({
+            name: 'Secure Relay (Fallback)',
+            execute: () => createConnection(addressRemote, portRemote, { type: 'secureRelay' })
+        });
+    }
 
     if (proxyIP && proxyIP.trim() !== '') {
         connectionStrategies.push({
@@ -1251,6 +1339,113 @@ function stringify(arr, offset = 0) {
     return uuid;
 }
 
+async function secureRelayConnect(addressType, addressRemote, portRemote, log, signal = null, customProxyAddress = null) {
+    const { username, password, hostname, port } = customProxyAddress || parsedSecureRelayAddress;
+    const socket = await connect({ hostname, port, signal });
+
+    const relayGreeting = new Uint8Array([5, 2, 0, 2]);
+    const writer = socket.writable.getWriter();
+    await writer.write(relayGreeting);
+    log('Secure Relay greeting sent');
+
+    const reader = socket.readable.getReader();
+    const encoder = new TextEncoder();
+    let res = (await reader.read()).value;
+
+    if (res[0] !== 0x05) {
+        log(`Secure Relay protocol version error: received ${res[0]}, expected 5`);
+        return;
+    }
+    if (res[1] === 0xff) {
+        log("No acceptable authentication methods for Secure Relay");
+        return;
+    }
+
+    if (res[1] === 0x02) {
+        log("Secure Relay requires authentication");
+        if (!username || !password) {
+            log("Username and password required for Secure Relay");
+            return;
+        }
+        const authRequest = new Uint8Array([
+            1,
+            username.length,
+            ...encoder.encode(username),
+            password.length,
+            ...encoder.encode(password)
+        ]);
+        await writer.write(authRequest);
+        res = (await reader.read()).value;
+        if (res[0] !== 0x01 || res[1] !== 0x00) {
+            log("Secure Relay authentication failed");
+            throw new Error("Secure Relay authentication failed");
+        }
+    }
+
+    let DSTADDR;
+    switch (addressType) {
+        case 1:
+            DSTADDR = new Uint8Array([1, ...addressRemote.split('.').map(Number)]);
+            break;
+        case 2:
+            DSTADDR = new Uint8Array([3, addressRemote.length, ...encoder.encode(addressRemote)]);
+            break;
+        case 3:
+            DSTADDR = new Uint8Array([4, ...addressRemote.split(':').flatMap(x => [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2), 16)])]);
+            break;
+        default:
+            log(`Invalid address type: ${addressType}`);
+            return;
+    }
+    const relayRequest = new Uint8Array([5, 1, 0, ...DSTADDR, portRemote >> 8, portRemote & 0xff]);
+    await writer.write(relayRequest);
+    log('Secure Relay request sent');
+
+    res = (await reader.read()).value;
+    if (res[1] === 0x00) {
+        log("Secure Relay connection established");
+    } else {
+        log("Secure Relay connection failed");
+        return;
+    }
+    writer.releaseLock();
+    reader.releaseLock();
+    return socket;
+}
+
+function secureRelayAddressParser(address) {
+    let [latter, former] = address.split("@").reverse();
+    let username, password, hostname, port;
+
+    if (former) {
+        const formers = former.split(":");
+        if (formers.length !== 2) {
+            throw new Error('Invalid Secure Relay address format: "username:password" required');
+        }
+        [username, password] = formers;
+    }
+
+    const latters = latter.split(":");
+    port = Number(latters.pop());
+    if (isNaN(port)) {
+        throw new Error('Invalid Secure Relay address format: port must be a number');
+    }
+
+    hostname = latters.join(":");
+
+    const regex = /^\[.*\]$/;
+    if (hostname.includes(":") && !regex.test(hostname)) {
+        throw new Error('Invalid Secure Relay address format: IPv6 must be in brackets');
+    }
+
+    return {
+        username,
+        password,
+        hostname,
+        port,
+    }
+}
+
 function decodeIntegrationData(content, userID, hostName, fakeUserID, fakeHostName, isBase64) {
     if (isBase64) {
         content = atob(content);
@@ -1333,7 +1528,10 @@ async function 代理URL(request, 代理网址, 目标网址, 调试模式 = fal
 // =========== START OF REFACTORED HELPER FUNCTIONS ================
 // =================================================================
 
-function getConnectionTypeInfo(proxyIP, proxyIPs, RproxyIP) {
+function getConnectionTypeInfo(enableSecureRelay, proxyIP, proxyIPs, newSecureRelays, secureRelayList, RproxyIP) {
+    if (enableSecureRelay) {
+        return `CFCDN（访问方式）: SecureRelay<br>&nbsp;&nbsp;${newSecureRelays.join('<br>&nbsp;&nbsp;')}<br>${secureRelayList}`;
+    }
     if (proxyIP && proxyIP.trim() !== '') {
         return `CFCDN（访问方式）: ProxyIP<br>&nbsp;&nbsp;${proxyIPs.join('<br>&nbsp;&nbsp;')}<br>`;
     }
@@ -1463,10 +1661,22 @@ async function generateIntegrationDetails(uuid, hostName, sub, UA, RproxyIP, _ur
 
 	const isUserAgentMozilla = userAgent.includes('mozilla');
 	if (isUserAgentMozilla && !subParams.some(_searchParams => _url.searchParams.has(_searchParams))) {
+		const newSecureRelays = secureRelays.map(secureRelayAddress => {
+			if (secureRelayAddress.includes('@')) return secureRelayAddress.split('@')[1];
+			else if (secureRelayAddress.includes('//')) return secureRelayAddress.split('//')[1];
+			else return secureRelayAddress;
+		});
+
+		let secureRelayList = '';
+		if (routeToSecureRelay.length > 0 && enableSecureRelay) {
+			secureRelayList = `SecureRelay（白名单）: `;
+			if (routeToSecureRelay.includes(atob('YWxsIGlu')) || routeToSecureRelay.includes(atob('Kg=='))) secureRelayList += `所有流量<br>`;
+			else secureRelayList += `<br>&nbsp;&nbsp;${routeToSecureRelay.join('<br>&nbsp;&nbsp;')}<br>`;
+		}
 		
         // --- START OF OPTIMIZED LOGIC ---
         const editLink = env.KV ? ` <a href='${_url.pathname}/edit'>设置列表</a>` : '';
-        const connectionInfoHtml = getConnectionTypeInfo(proxyIP, proxyIPs, RproxyIP);
+        const connectionInfoHtml = getConnectionTypeInfo(enableSecureRelay, proxyIP, proxyIPs, newSecureRelays, secureRelayList, RproxyIP);
 
         let settingsInfo = '<br>' + connectionInfoHtml;
 
@@ -1853,7 +2063,6 @@ async function 整理优选列表(api) {
     let newapi = "";
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
-	let proxyIPPool = [];
 
     try {
         const responses = await Promise.allSettled(api.map(apiUrl => fetch(apiUrl, {
@@ -1940,7 +2149,6 @@ async function 整理测速结果(tls) {
 	}
 
 	let newAddressescsv = [];
-	let proxyIPPool = [];
 
 	for (const csvUrl of addressescsv) {
 		try {
@@ -2530,6 +2738,7 @@ async function handleGetRequest(env) {
     let addsContent = '';
     let hasKV = !!env.KV;
     let proxyIPContent = '';
+    let secureRelayContent = '';
     let subContent = '';
 	let httpsPortsContent = '';
     let httpPortsContent = '';
@@ -2546,6 +2755,7 @@ async function handleGetRequest(env) {
                 content = settings.ADD || ''; 
                 addsContent = settings.ADDS || '';
                 proxyIPContent = settings.proxyip || '';
+                secureRelayContent = settings.secureRelay || '';
                 subContent = settings.sub || '';
 				httpsPortsContent = settings.httpsports || httpsPorts.join(',');
                 httpPortsContent = settings.httpports || httpPorts.join(',');
@@ -2863,6 +3073,17 @@ async function handleGetRequest(env) {
                             </div>
                         <div id="proxyip-results" class="test-results-container"></div>
                         </div>
+                        <div class="setting-item">
+                        <h4>Secure Relay</h4>
+                                <p>每行一个地址，格式：[用户名:密码@]主机:端口</p>
+                                <textarea id="secureRelay" class="setting-editor" placeholder="${decodeURIComponent(atob('JUU0JUJFJThCJUU1JUE2JTgyJTNBCnVzZXIlM0FwYXNzJTQwMTI3LjAuMC4xJTNBMTA4MAoxMjcuMC4wLjElM0ExMDgw'))}">${secureRelayContent}</textarea>
+                         <div class="test-group">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="testSetting(event, 'secureRelay')">测试连接</button>
+                                <span id="secureRelay-status" class="test-status"></span>
+                            <span class="test-note">（批量测试并自动移除失败地址）</span>
+                            </div>
+                        <div id="secureRelay-results" class="test-results-container"></div>
+                        </div>                        
                         <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 20px;">
                             <h4>Fallback64 </h4>
                             <p>
@@ -2963,6 +3184,7 @@ async function handleGetRequest(env) {
                     const statusEl = button.parentElement.querySelector('.save-status');
                     const payload = {
                         proxyip: document.getElementById('proxyip').value,
+                        secureRelay: document.getElementById('secureRelay').value,
                         fallback64: document.getElementById('fallback64').value,
                         fallback64Enabled: document.getElementById('fallback64-switch-checkbox').checked.toString()
                     };
@@ -3138,6 +3360,12 @@ async function handleTestConnection(request) {
         let successMessage = '连接成功！';
 
         switch (type) {
+            case 'secureRelay': {
+                const parsed = secureRelayAddressParser(address);
+                const testSocket = await secureRelayConnect(2, 'www.cloudflare.com', 443, log, controller.signal, parsed);
+                await testSocket.close();
+                break;
+            }
             case 'proxyip': {
                 const { address: ip, port } = parseProxyIP(address, 443);
                 const testSocket = await connect({ hostname: ip, port: port, signal: controller.signal });
