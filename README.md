@@ -3,8 +3,6 @@
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，优化响应快稳定连接。
 
 简化代码
-## ⚠️注意
-使用过旧版的，KV中存在多个配置，请移除多余的配置只保留 `settinggs.txt` ，以免增加KV的消耗。
 
 ## 邦定KV
 KV变量名：KV
