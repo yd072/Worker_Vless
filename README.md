@@ -2,11 +2,6 @@
 
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，简化代码
 
-## 邦定KV
-KV变量名：KV
-
-添加在线设置：PROXYIP、SUB 
-
 # 变量
 | 常用变量 | 示例 |
 |--------|---------|
