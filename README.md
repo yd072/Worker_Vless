@@ -1,6 +1,6 @@
 # 项目
 
-这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，优化响应快稳定连接。
+这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改
 
 简化代码
 
