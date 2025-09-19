@@ -1489,7 +1489,6 @@ async function 整理测速结果(tls) {
     return newAddressescsv;
 }
 
-// Simplified node link creator
 function createNodeLink(address, port, remark, UUID, host, isTLS) {
     let finalPath = path;
     const matchingProxyIP = proxyIPPool.find(pIP => pIP.includes(address));
@@ -1509,26 +1508,21 @@ function createNodeLink(address, port, remark, UUID, host, isTLS) {
     }
 }
 
-// Refactored subscription generator with correct logic
 async function 生成本地订阅(host, UUID, noTLSValue, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
     
     let nodeCounter = 1;
     const allSources = [];
 
-    // 1. Collect all sources
-    // Official Lists ('adds')
     const combinedAddsApi = await 整理优选列表(addsapi);
     [...new Set(adds.concat(combinedAddsApi))].forEach(addr => allSources.push({ address: addr, source: 'adds' }));
 
-    // User TLS Lists ('add')
-    const combinedAddressesApi = newAddressesapi; // Already processed
-    const combinedAddressesCsv = newAddressescsv; // Already processed
+    const combinedAddressesApi = newAddressesapi;
+    const combinedAddressesCsv = newAddressescsv;
     [...new Set(addresses.concat(combinedAddressesApi, combinedAddressesCsv))].forEach(addr => allSources.push({ address: addr, source: 'add', tls: true }));
 
-    // User NoTLS Lists ('add')
     if (noTLSValue === 'true') {
-        const combinedAddressesNotlsApi = newAddressesnotlsapi; // Already processed
-        const combinedAddressesNotlsCsv = newAddressesnotlscsv; // Already processed
+        const combinedAddressesNotlsApi = newAddressesnotlsapi;
+        const combinedAddressesNotlsCsv = newAddressesnotlscsv;
         [...new Set(addressesnotls.concat(combinedAddressesNotlsApi, combinedAddressesNotlsCsv))].forEach(addr => allSources.push({ address: addr, source: 'add', tls: false }));
     }
 
@@ -1558,17 +1552,9 @@ async function 生成本地订阅(host, UUID, noTLSValue, newAddressesapi, newAd
                     ? (httpsPorts.length > 0 ? httpsPorts : ["443"])
                     : (httpPorts.length > 0 ? httpPorts : ["80"]);
                 portsToUse.push(...selectedPorts);
-            } else { // 'add'
-                const portList = isTls ? httpsPorts : httpPorts;
-                const defaultPort = isTls ? "443" : "80";
-                const effectivePortList = (portList && portList.length > 0) ? portList : [defaultPort];
-                let chosenPort;
-                if (!isValidIPv4(address)) {
-                    chosenPort = effectivePortList.find(p => address.includes(p)) || effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
-                } else {
-                    chosenPort = effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
-                }
-                portsToUse.push(chosenPort);
+            } else { 
+                 const defaultPort = isTls ? "443" : "80";
+                 portsToUse.push(defaultPort);
             }
         }
 
@@ -1908,7 +1894,7 @@ async function handleGetRequest(env) {
                         <textarea class="editor" id="content" placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}">${content}</textarea>
 
                         <div class="button-group">
-                            <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
+                            <button class="btn btn-secondary" onclick="goBack()">返回首页</button>
                             <button class="btn btn-primary" onclick="saveAddTab(this)">保存</button>
                             <span class="save-status" id="saveStatus-main"></span>
                         </div>
@@ -1938,7 +1924,7 @@ async function handleGetRequest(env) {
                         <textarea class="editor" id="adds_content" placeholder="${decodeURIComponent(atob('JTBBQUREUyVFNyVBNCVCQSVFNCVCRSU4QiVFRiVCQyU5QSUwQXZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQlMEExMjcuMC4wLjElMjNDRm5hdCUwQSU1QjI2ODYlM0E0NzY2JTNBJTNBJTVEJTIzSVB2NiUwQSUwQSUwQUFERFNBUEklRTclQTQlQkElRTQlQkUlOEIlRUYlQkMlOUElMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRnJlZnMlMkZoZWFkcyUyRm1haW4lMkZhZGRyZXNzZXNhcGkudHh0'))}">${addsContent}</textarea>
                         
                         <div class="button-group">
-                            <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
+                            <button class="btn btn-secondary" onclick="goBack()">返回首页</button>
                             <button class="btn btn-primary" onclick="saveAddsTab(this)">保存</button>
                             <span class="save-status" id="saveStatus-adds"></span>
                         </div>
