@@ -1901,7 +1901,7 @@ async function handleGetRequest(env) {
                 </label>
             </div>
             <div class="container">
-                <div class="title">📝 ${FileName} 服务设置</div>
+                <div class="title">📝 ${FileName} 设置</div>
 
                 <div class="tab-container">
                     <button class="tab-link active" onclick="openTab(event, 'tab-main')">优选列表</button>
