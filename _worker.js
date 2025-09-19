@@ -1489,62 +1489,8 @@ async function 整理测速结果(tls) {
     return newAddressescsv;
 }
 
-
-/**
- * @param {string} rawAddress 
- * @param {string} host 
- * @param {boolean} isTLS 
- * @returns {string} 
- */
-function createNodeLink(rawAddress, UUID, host, isTLS) {
-    const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
-    let address = rawAddress;
-    let port = "-1";
-    let remark = rawAddress;
-
-    const match = address.match(regex);
-    if (match) {
-        address = match[1];
-        port = match[2] || port;
-        remark = match[3] || address;
-    } else {
-        if (address.includes(':') && address.includes('#')) {
-            const parts = address.split(':');
-            address = parts[0];
-            const subParts = parts[1].split('#');
-            port = subParts[0];
-            remark = subParts[1];
-        } else if (address.includes(':')) {
-            const parts = address.split(':');
-            address = parts[0];
-            port = parts[1];
-        } else if (address.includes('#')) {
-            const parts = address.split('#');
-            address = parts[0];
-            remark = parts[1];
-        }
-        if (remark.includes(':')) {
-            remark = remark.split(':')[0];
-        }
-    }
-
-    if (port === "-1") {
-        const portList = isTLS ? httpsPorts : httpPorts;
-        const defaultPort = isTLS ? "443" : "80"; // Ultimate fallback
-
-        // Ensure portList is a valid array with content
-        const effectivePortList = (portList && portList.length > 0) ? portList : [defaultPort];
-
-        if (!isValidIPv4(address)) {
-            // For hostnames, first try to find a matching port in the hostname string itself.
-            // If not found, pick a random port from the effective list.
-            port = effectivePortList.find(p => address.includes(p)) || effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
-        } else {
-            // For pure IPs, always pick a random port from the effective list.
-            port = effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
-        }
-    }
-
+// Simplified node link creator
+function createNodeLink(address, port, remark, UUID, host, isTLS) {
     let finalPath = path;
     const matchingProxyIP = proxyIPPool.find(pIP => pIP.includes(address));
     if (matchingProxyIP) {
@@ -1563,32 +1509,81 @@ function createNodeLink(rawAddress, UUID, host, isTLS) {
     }
 }
 
+// Refactored subscription generator with correct logic
+async function 生成本地订阅(host, UUID, noTLSValue, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
+    
+    let nodeCounter = 1;
+    const allSources = [];
 
+    // 1. Collect all sources
+    // Official Lists ('adds')
+    const combinedAddsApi = await 整理优选列表(addsapi);
+    [...new Set(adds.concat(combinedAddsApi))].forEach(addr => allSources.push({ address: addr, source: 'adds' }));
 
-function 生成本地订阅(host, UUID, noTLS, newAddressesapi, newAddressescsv, newAddressesnotlsapi, newAddressesnotlscsv) {
-    addresses = [...new Set(addresses.concat(newAddressesapi, newAddressescsv))];
-    addressesnotls = [...new Set(addressesnotls.concat(newAddressesnotlsapi, newAddressesnotlscsv))];
+    // User TLS Lists ('add')
+    const combinedAddressesApi = newAddressesapi; // Already processed
+    const combinedAddressesCsv = newAddressescsv; // Already processed
+    [...new Set(addresses.concat(combinedAddressesApi, combinedAddressesCsv))].forEach(addr => allSources.push({ address: addr, source: 'add', tls: true }));
 
-    const responseBody = addresses
-        .map(addr => createNodeLink(addr, UUID, host, true))
-        .join('\n');
-
-    let notlsresponseBody = '';
-    if (noTLS === 'true') {
-        notlsresponseBody = addressesnotls
-            .map(addr => createNodeLink(addr, UUID, host, false))
-            .join('\n');
+    // User NoTLS Lists ('add')
+    if (noTLSValue === 'true') {
+        const combinedAddressesNotlsApi = newAddressesnotlsapi; // Already processed
+        const combinedAddressesNotlsCsv = newAddressesnotlscsv; // Already processed
+        [...new Set(addressesnotls.concat(combinedAddressesNotlsApi, combinedAddressesNotlsCsv))].forEach(addr => allSources.push({ address: addr, source: 'add', tls: false }));
     }
 
-    let base64Response = responseBody;
-    if (notlsresponseBody) {
-        base64Response += `\n${notlsresponseBody}`;
-    }
+    // 2. Process sources and generate links
+    const finalLinks = allSources.flatMap(sourceItem => {
+        const { address: rawAddress, source } = sourceItem;
+        const isTls = source === 'adds' ? noTLSValue !== 'true' : sourceItem.tls;
+
+        const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]|[^#:]+):?(\d+)?#?(.*)?$/;
+        let address, port = "-1", remark;
+        const match = rawAddress.match(regex);
+        if (match) {
+            address = match[1];
+            port = match[2] || "-1";
+            remark = match[3] || address;
+        } else {
+            address = rawAddress.split('#')[0].split(':')[0];
+            remark = rawAddress;
+        }
+
+        let portsToUse = [];
+        if (port !== "-1") {
+            portsToUse.push(port);
+        } else {
+            if (source === 'adds') {
+                const selectedPorts = isTls
+                    ? (httpsPorts.length > 0 ? httpsPorts : ["443"])
+                    : (httpPorts.length > 0 ? httpPorts : ["80"]);
+                portsToUse.push(...selectedPorts);
+            } else { // 'add'
+                const portList = isTls ? httpsPorts : httpPorts;
+                const defaultPort = isTls ? "443" : "80";
+                const effectivePortList = (portList && portList.length > 0) ? portList : [defaultPort];
+                let chosenPort;
+                if (!isValidIPv4(address)) {
+                    chosenPort = effectivePortList.find(p => address.includes(p)) || effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
+                } else {
+                    chosenPort = effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
+                }
+                portsToUse.push(chosenPort);
+            }
+        }
+
+        return portsToUse.map(p => {
+            const finalRemark = `${remark}#${nodeCounter++}`;
+            return createNodeLink(address, p, finalRemark, UUID, host, isTls);
+        });
+    });
+
+    let combinedLinks = finalLinks.join('\n');
     if (link.length > 0) {
-        base64Response += '\n' + link.join('\n');
+        combinedLinks += '\n' + link.join('\n');
     }
 
-    return btoa(base64Response);
+    return btoa(combinedLinks);
 }
 
 
@@ -1859,7 +1854,7 @@ async function handleGetRequest(env) {
                 .setting-item { margin-bottom: 20px; }
 
                 .button-group { display: flex; align-items: center; gap: 12px; margin-top: 15px; }
-                .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+                .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; }
                 .btn-primary { background: var(--primary-color); color: #fff; }
                 .btn-primary:hover:not(:disabled) { background: var(--secondary-color); }
                 .btn-secondary { background: #6c757d; color: #fff; }
@@ -1874,8 +1869,8 @@ async function handleGetRequest(env) {
                 .theme-switch-wrapper { display: flex; align-items: center; position: fixed; top: 15px; right: 15px; }
                 .theme-switch { display: inline-block; height: 20px; position: relative; width: 36px; }
                 .theme-switch input { display:none; }
-                .slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; }
-                .slider:before { background-color: #fff; bottom: 3px; content: ""; height: 14px; left: 3px; position: absolute; transition: .4s; width: 14px; }
+                .slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; }
+                .slider:before { background-color: #fff; bottom: 3px; content: ""; height: 14px; left: 3px; position: absolute; width: 14px; }
                 input:checked + .slider { background-color: var(--primary-color); }
                 input:checked + .slider:before { transform: translateX(16px); }
                 .slider.round { border-radius: 20px; }
@@ -2397,22 +2392,14 @@ async function 生成配置信息(userID, hostName, sub, UA, 请求CF反代IP, _
                         addsapi = [...官方分类地址.接口地址];
                         adds = [...官方分类地址.优选地址];
                     }
-                    
-                    // FIX: Merge official list (adds/addsapi) into the correct processing list based on the noTLS setting
-                    if (noTLS === 'true') {
-                        addressesnotls = addressesnotls.concat(adds);
-                        addressesnotlsapi = addressesnotlsapi.concat(addsapi);
-                    } else {
-                        addresses = addresses.concat(adds);
-                        addressesapi = addressesapi.concat(addsapi);
-                    }
                 }
             } catch (e) {
                 console.error("从KV加载配置时出错: ", e);
             }
         }
 
-        if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
+        // CORRECTED LOGIC: Check for nodes *after* all sources have been potentially populated.
+        if ((addresses.length + addressesapi.length + adds.length + addsapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
             let cfips = [
                 '104.16.0.0/14',
                 '104.21.0.0/16',
@@ -2613,7 +2600,6 @@ function config_Html(token = "test", proxyhost = "") {
             line-height: 1.6;
             color: var(--text-color);
             background-color: var(--background-color);
-            transition: background-color 0.3s, color 0.3s;
         }
         
         .container {
@@ -2682,7 +2668,6 @@ function config_Html(token = "test", proxyhost = "") {
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
-            transition: background-color 0.2s;
             text-decoration: none;
         }
         .header-button:hover { background: var(--secondary-color); }
@@ -2705,7 +2690,6 @@ function config_Html(token = "test", proxyhost = "") {
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
-            transition: background-color 0.2s;
         }
         .copy-button:hover {
             background: var(--secondary-color);
@@ -2767,8 +2751,8 @@ function config_Html(token = "test", proxyhost = "") {
         .theme-switch-wrapper { display: flex; align-items: center; position: fixed; top: 15px; right: 15px; z-index: 1001; }
         .theme-switch { display: inline-block; height: 20px; position: relative; width: 36px; }
         .theme-switch input { display:none; }
-        .slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; }
-        .slider:before { background-color: #fff; bottom: 3px; content: ""; height: 14px; left: 3px; position: absolute; transition: .4s; width: 14px; }
+        .slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; }
+        .slider:before { background-color: #fff; bottom: 3px; content: ""; height: 14px; left: 3px; position: absolute; width: 14px; }
         input:checked + .slider { background-color: var(--primary-color); }
         input:checked + .slider:before { transform: translateX(16px); }
         .slider.round { border-radius: 20px; }
