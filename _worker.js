@@ -24,7 +24,9 @@ let go2Socks5s = [
     '*.loadshare.org',
 ];
 let addresses = [];
+let adds = [];
 let addressesapi = [];
+let addsapi = [];
 let addressesnotls = [];
 let addressesnotlsapi = [];
 let addressescsv = [];
@@ -36,8 +38,8 @@ let ChatID;
 let proxyhosts = [];
 let proxyhostsURL = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2NtbGl1L2NtbGl1L21haW4vUHJveHlIT1NU');
 let 请求CF反代IP = 'false';
-const httpPorts = ["8080", "8880", "2052", "2082", "2086", "2095"];
-let httpsPorts = ["2053", "2083", "2087", "2096", "8443"];
+let httpsPorts = ["443"];
+let httpPorts = ["80"];
 let proxyIPPool = [];
 let path = '/?ed=2560';
 let link = [];
@@ -1528,11 +1530,18 @@ function createNodeLink(rawAddress, UUID, host, isTLS) {
 
     if (port === "-1") {
         const portList = isTLS ? httpsPorts : httpPorts;
-        const defaultPort = isTLS ? "443" : "80";
+        const defaultPort = isTLS ? "443" : "80"; // Ultimate fallback
+
+        // Ensure portList is a valid array with content
+        const effectivePortList = (portList && portList.length > 0) ? portList : [defaultPort];
+
         if (!isValidIPv4(address)) {
-            port = portList.find(p => address.includes(p)) || defaultPort;
+            // For hostnames, first try to find a matching port in the hostname string itself.
+            // If not found, pick a random port from the effective list.
+            port = effectivePortList.find(p => address.includes(p)) || effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
         } else {
-            port = defaultPort;
+            // For pure IPs, always pick a random port from the effective list.
+            port = effectivePortList[Math.floor(Math.random() * effectivePortList.length)];
         }
     }
 
@@ -1630,250 +1639,409 @@ function isValidIPv4(address) {
     return ipv4Regex.test(address);
 }
 
-async function 迁移地址列表(env, txt = 'ADD.txt') {
-    const 旧数据 = await env.KV.get(`/${txt}`);
-    const 新数据 = await env.KV.get(txt);
-
-    if (旧数据 && !新数据) {
-        // 写入新位置
-        await env.KV.put(txt, 旧数据);
-        // 删除旧数据
-        await env.KV.delete(`/${txt}`);
-        return true;
-    }
-    return false;
+async function KV(request, env) {
+	try {
+		if (request.method === "POST") {
+			return await handlePostRequest(request, env);
+		}
+		return await handleGetRequest(env);
+	} catch (error) {
+		console.error('处理请求时发生错误:', error);
+		return new Response("服务器错误: " + error.message, {
+			status: 500,
+			headers: { "Content-Type": "text/plain;charset=utf-8" }
+		});
+	}
 }
 
-async function KV(request, env, txt = 'ADD.txt') {
+async function handlePostRequest(request, env) {
+    // 默认行为是保存配置
+    if (!env.KV) {
+        return new Response("未绑定KV空间", { status: 400 });
+    }
     try {
-        // POST请求处理
-        if (request.method === "POST") {
-            if (!env.KV) return new Response("未绑定KV空间", { status: 400 });
-            try {
-                const content = await request.text();
-                await env.KV.put(txt, content);
-                return new Response("保存成功");
-            } catch (error) {
-                console.error('保存KV时发生错误:', error);
-                return new Response("保存失败: " + error.message, { status: 500 });
-            }
+        const settingsJSON = await env.KV.get('settinggs.txt');
+        let settings = settingsJSON ? JSON.parse(settingsJSON) : {};
+
+        const updates = await request.json();
+
+        // 只允许更新指定的键，防止保存已移除的设置
+        const allowedKeys = ['ADD', 'ADDS', 'notls', 'httpsports', 'httpports'];
+		for (const key of allowedKeys) {
+			if (updates.hasOwnProperty(key)) {
+				settings[key] = updates[key];
+			}
+		}
+
+        await env.KV.put('settinggs.txt', JSON.stringify(settings, null, 2));
+
+        return new Response("保存成功");
+    } catch (error) {
+        console.error('保存KV时发生错误:', error);
+        return new Response("保存失败: " + error.message, { status: 500 });
+    }
+}
+
+async function handleGetRequest(env) {
+    let content = '';
+    let addsContent = '';
+    let hasKV = !!env.KV;
+	let httpsPortsContent = '';
+    let httpPortsContent = '';
+    let noTLSContent = 'false';
+
+    if (hasKV) {
+        try {
+            const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+            if (advancedSettingsJSON) {
+                const settings = JSON.parse(advancedSettingsJSON);
+                content = settings.ADD || '';
+                addsContent = settings.ADDS || '';
+				httpsPortsContent = settings.httpsports || httpsPorts.join(',');
+                httpPortsContent = settings.httpports || httpPorts.join(',');
+                noTLSContent = settings.notls || 'false';
+            } else {
+				httpsPortsContent = httpsPorts.join(',');
+				httpPortsContent = httpPorts.join(',');
+			}
+        } catch (error) {
+            console.error('读取KV时发生错误:', error);
+            content = '读取数据时发生错误: ' + error.message;
         }
+    }
 
-        // GET请求部分
-        let content = '';
-        let hasKV = !!env.KV;
+	// 为端口选择框生成HTML
+    const defaultHttpsPorts = ["443", "2053", "2083", "2087", "2096", "8443"];
+    const defaultHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086", "2095"];
 
-        if (hasKV) {
-            try {
-                content = await env.KV.get(txt) || '';
-            } catch (error) {
-                console.error('读取KV时发生错误:', error);
-                content = '读取数据时发生错误: ' + error.message;
-            }
-        }
+    const savedHttpsPorts = httpsPortsContent.split(',');
+    const allHttpsPorts = [...new Set([...defaultHttpsPorts, ...savedHttpsPorts])].filter(p => p.trim() !== "");
+    const httpsCheckboxesHTML = allHttpsPorts.map(port => {
+        const isChecked = savedHttpsPorts.includes(port.trim());
+        return `<div class="checkbox-item">
+                    <input type="checkbox" id="https-port-${port.trim()}" name="httpsports" value="${port.trim()}" ${isChecked ? 'checked' : ''}>
+                    <label for="https-port-${port.trim()}">${port.trim()}</label>
+                </div>`;
+    }).join('\n');
 
-        const html = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>优选订阅列表</title>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                        margin: 0;
-                        padding: 15px;
-                        box-sizing: border-box;
-                        font-size: 14px;
-                        background-color: #f5f5f5;
-                    }
-                    .editor-container {
-                        width: 100%;
-                        max-width: 1000px;
-                        margin: 0 auto;
-                        background: #fff;
-                        padding: 20px;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    }
-                    .editor-header {
-                        padding-bottom: 10px;
-                        border-bottom: 1px solid #e0e0e0;
-                        margin-bottom: 15px;
-                    }
-                    .editor-header h2 {
-                        margin: 0;
-                        font-size: 1.2em;
-                    }
-                    .editor-header p {
-                        margin: 5px 0 0;
-                        color: #666;
-                    }
-                    .editor {
-                        width: 100%;
-                        height: 520px;
-                        padding: 10px;
-                        box-sizing: border-box;
-                        border: 1px solid #ccc;
-                        border-radius: 4px;
-                        font-size: 13px;
-                        line-height: 1.5;
-                        resize: vertical;
-                    }
-                    .save-container {
-                        margin-top: 15px;
-                        display: flex;
-                        align-items: center;
-                        gap: 10px;
-                    }
-                    .btn {
-                        padding: 8px 18px;
-                        color: white;
-                        border: none;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        font-size: 14px;
-                        font-weight: 500;
-                        transition: background-color 0.2s;
-                    }
-                    .save-btn {
-                        background-color: #0d6efd; /* Blue */
-                    }
-                    .save-btn:hover {
-                        background-color: #0b5ed7;
-                    }
-                    .back-btn {
-                        background-color: #6c757d; /* Gray */
-                    }
-                    .back-btn:hover {
-                        background-color: #5a6268;
-                    }
-                    .save-status {
-                        color: #666;
-                        font-size: 14px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="editor-container">
-                    <div class="editor-header">
-                        <h2>${FileName} 优选订阅列表</h2>
-                    </div>
+    const savedHttpPorts = httpPortsContent.split(',');
+    const allHttpPorts = [...new Set([...defaultHttpPorts, ...savedHttpPorts])].filter(p => p.trim() !== "");
+    const httpCheckboxesHTML = allHttpPorts.map(port => {
+        const isChecked = savedHttpPorts.includes(port.trim());
+        return `<div class="checkbox-item">
+                    <input type="checkbox" id="http-port-${port.trim()}" name="httpports" value="${port.trim()}" ${isChecked ? 'checked' : ''}>
+                    <label for="http-port-${port.trim()}">${port.trim()}</label>
+                </div>`;
+    }).join('\n');
+
+    const html = `
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <title>服务设置</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                :root {
+                    --primary-color: #0d6efd;
+                    --secondary-color: #0b5ed7;
+                    --border-color: #e0e0e0;
+                    --text-color: #212529;
+                    --background-color: #f5f5f5;
+					--section-bg: white;
+					--link-color: #1a0dab;
+					--visited-link-color: #6c00a2;
+                    --tab-inactive-bg: #f1f1f1;
+                }
+
+                html.dark-mode {
+                    --primary-color: #589bff;
+                    --secondary-color: #458cff;
+                    --border-color: #3c3c3c;
+                    --text-color: #e0e0e0;
+                    --background-color: #1c1c1e;
+					--section-bg: #2a2a2a;
+					--link-color: #8ab4f8;
+					--visited-link-color: #c58af9;
+                    --tab-inactive-bg: #3a3a3a;
+                }
+
+                body {
+                    margin: 0;
+                    padding: 20px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                    line-height: 1.6;
+                    color: var(--text-color);
+                    background-color: var(--background-color);
+				}
+
+                .container {
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    background: var(--section-bg);
+                    padding: 25px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+
+                .title {
+                    font-size: 1.5em;
+                    color: var(--text-color);
+                    margin-bottom: 20px;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid var(--border-color);
+                }
+
+                /* --- Tabbed Interface Styles --- */
+                .tab-container {
+                    overflow: hidden;
+                    border: 1px solid var(--border-color);
+                    border-bottom: none;
+                    border-radius: 8px 8px 0 0;
+                    background-color: var(--tab-inactive-bg);
+                }
+
+                .tab-container button {
+                    background-color: inherit;
+                    float: left;
+                    border: none;
+                    outline: none;
+                    cursor: pointer;
+                    padding: 14px 16px;
+                    font-size: 16px;
+                    color: var(--text-color);
+                }
+
+                .tab-container button:hover {
+                    background-color: #ddd;
+                }
+                html.dark-mode .tab-container button:hover {
+                     background-color: #444;
+                }
+
+                .tab-container button.active {
+                    background-color: var(--section-bg);
+                    font-weight: bold;
+                    border-bottom: 2px solid var(--primary-color);
+                    padding-bottom: 12px;
+                }
+
+                .tab-content {
+                    display: none;
+                    padding: 20px;
+                    border: 1px solid var(--border-color);
+                    border-top: none;
+                    border-radius: 0 0 8px 8px;
+                    animation: fadeEffect 0.5s;
+				}
+
+                @keyframes fadeEffect {
+                    from {opacity: 0;}
+                    to {opacity: 1;}
+                }
+                /* --- End Tabbed Styles --- */
+
+                .editor {
+                    width: 100%;
+                    height: 520px;
+                    padding: 15px; box-sizing: border-box; border: 1px solid var(--border-color);
+                    border-radius: 8px; font-family: Monaco, Consolas, "Courier New", monospace;
+                    font-size: 14px; line-height: 1.5; resize: vertical;
+                    background-color: var(--section-bg); color: var(--text-color);
+                }
+
+                .editor:focus {
+                    outline: none;
+                    border-color: var(--primary-color);
+                    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 25%, transparent);
+                }
+
+                .setting-item { margin-bottom: 20px; }
+
+                .button-group { display: flex; align-items: center; gap: 12px; margin-top: 15px; }
+                .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+                .btn-primary { background: var(--primary-color); color: #fff; }
+                .btn-primary:hover:not(:disabled) { background: var(--secondary-color); }
+                .btn-secondary { background: #6c757d; color: #fff; }
+                .btn-secondary:hover:not(:disabled) { background: #5c636a; }
+                .save-status { font-size: 14px; color: var(--text-color); }
+
+                .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-top: 10px; }
+                .checkbox-item { display: flex; align-items: center; gap: 5px; }
+
+                /* --- Switch Styles --- */
+                .switch-container { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+                .theme-switch-wrapper { display: flex; align-items: center; position: fixed; top: 15px; right: 15px; }
+                .theme-switch { display: inline-block; height: 20px; position: relative; width: 36px; }
+                .theme-switch input { display:none; }
+                .slider { background-color: #ccc; bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: .4s; }
+                .slider:before { background-color: #fff; bottom: 3px; content: ""; height: 14px; left: 3px; position: absolute; transition: .4s; width: 14px; }
+                input:checked + .slider { background-color: var(--primary-color); }
+                input:checked + .slider:before { transform: translateX(16px); }
+                .slider.round { border-radius: 20px; }
+                .slider.round:before { border-radius: 50%; }
+
+            </style>
+            <script>
+                (function() {
+                    try {
+                        const theme = localStorage.getItem('theme');
+                        if (theme === 'dark-mode') {
+                            document.documentElement.classList.add('dark-mode');
+                        }
+                    } catch (e) { console.error(e); }
+                })();
+            </script>
+        </head>
+        <body>
+            <div class="theme-switch-wrapper">
+                <label class="theme-switch" for="theme-checkbox">
+                    <input type="checkbox" id="theme-checkbox" />
+                    <div class="slider round"></div>
+                </label>
+            </div>
+            <div class="container">
+                <div class="title">📝 ${FileName} 服务设置</div>
+
+                <div class="tab-container">
+                    <button class="tab-link active" onclick="openTab(event, 'tab-main')">优选列表</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-adds')">官方列表</button>
+                </div>
+
+                <div id="tab-main" class="tab-content" style="display: block;">
                     ${hasKV ? `
-                    <textarea class="editor" 
-                        placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}"
-                        id="content">${content}</textarea>
-                    <div class="save-container">
-                        <button class="btn back-btn" onclick="goBack()">返回配置页</button>
-                        <button class="btn save-btn" onclick="saveContent(this)">保存</button>
-                        <span class="save-status" id="saveStatus"></span>
-                    </div>
+                        <textarea class="editor" id="content" placeholder="${decodeURIComponent(atob('QUREJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCnZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQKMTI3LjAuMC4xJTNBMTIzNCUyM0NGbmF0CiU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MyUyM0lQdjYKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QQolRTYlQUYlOEYlRTglQTElOEMlRTQlQjglODAlRTQlQjglQUElRTUlOUMlQjAlRTUlOUQlODAlRUYlQkMlOEMlRTYlQTAlQkMlRTUlQkMlOEYlRTQlQjglQkElMjAlRTUlOUMlQjAlRTUlOUQlODAlM0ElRTclQUIlQUYlRTUlOEYlQTMlMjMlRTUlQTQlODclRTYlQjMlQTgKSVB2NiVFNSU5QyVCMCVFNSU5RCU4MCVFOSU5QyU4MCVFOCVBNiU4MSVFNyU5NCVBOCVFNCVCOCVBRCVFNiU4QiVBQyVFNSU4RiVCNyVFNiU4QiVBQyVFOCVCNSVCNyVFNiU5RCVBNSVFRiVCQyU4QyVFNSVBNiU4MiVFRiVCQyU5QSU1QjI2MDYlM0E0NzAwJTNBJTNBJTVEJTNBMjA1MwolRTclQUIlQUYlRTUlOEYlQTMlRTQlQjglOEQlRTUlODYlOTklRUYlQkMlOEMlRTklQkIlOTglRTglQUUlQTQlRTQlQjglQkElMjA0NDMlMjAlRTclQUIlQUYlRTUlOEYlQTMlRUYlQkMlOEMlRTUlQTYlODIlRUYlQkMlOUF2aXNhLmNuJTIzJUU0JUJDJTk4JUU5JTgwJTg5JUU1JTlGJTlGJUU1JTkwJThECgoKQUREQVBJJUU3JUE0JUJBJUU0JUJFJThCJUVGJUJDJTlBCmh0dHBzJTNBJTJGJTJGcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSUyRmNtbGl1JTJGV29ya2VyVmxlc3Myc3ViJTJGcmVmcyUyRmhlYWRzJTJGbWFpbiUyRmFkZHJlc3Nlc2FwaS50eHQKCiVFNiVCMyVBOCVFNiU4NCU4RiVFRiVCQyU5QUFEREFQSSVFNyU5QiVCNCVFNiU4RSVBNSVFNiVCNyVCQiVFNSU4QSVBMCVFNyU5QiVCNCVFOSU5MyVCRSVFNSU4RCVCMyVFNSU4RiVBRg=='))}">${content}</textarea>
+
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
+                            <button class="btn btn-primary" onclick="saveAddTab(this)">保存</button>
+                            <span class="save-status" id="saveStatus-main"></span>
+                        </div>
                     ` : '<p>未绑定KV空间</p>'}
                 </div>
-        
-                <script>
-                if (document.querySelector('.editor')) {
-                    let timer;
-                    const textarea = document.getElementById('content');
-                    const originalContent = textarea.value;
-        
-                    function goBack() {
-                        const currentUrl = window.location.href;
-                        const parentUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
-                        window.location.href = parentUrl;
-                    }
-        
-                    function replaceFullwidthColon() {
-                        const text = textarea.value;
-                        textarea.value = text.replace(/：/g, ':');
-                    }
-                    
-                    function saveContent(button) {
-                        try {
-                            const updateButtonText = (step) => {
-                                button.textContent = \`保存中...\`;
-                            };
-                            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                            if (!isIOS) {
-                                replaceFullwidthColon();
-                            }
-                            updateButtonText('开始保存');
-                            button.disabled = true;
-                            const textarea = document.getElementById('content');
-                            if (!textarea) throw new Error('找不到文本编辑区域');
-                            
-                            let newContent = textarea.value || '';
-                            const originalContent = textarea.defaultValue || '';
-                            
-                            const updateStatus = (message, isError = false) => {
-                                const statusElem = document.getElementById('saveStatus');
-                                if (statusElem) {
-                                    statusElem.textContent = message;
-                                    statusElem.style.color = isError ? 'red' : '#666';
-                                }
-                            };
-                            const resetButton = () => {
-                                button.textContent = '保存';
-                                button.disabled = false;
-                            };
-                            if (newContent !== originalContent) {
-                                fetch(window.location.href, {
-                                    method: 'POST',
-                                    body: newContent,
-                                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                                    cache: 'no-cache'
-                                })
-                                .then(response => {
-                                    if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
-                                    const now = new Date().toLocaleString();
-                                    document.title = \`编辑已保存 \${now}\`;
-                                    updateStatus(\`已保存 \${now}\`);
-                                })
-                                .catch(error => {
-                                    console.error('Save error:', error);
-                                    updateStatus(\`保存失败: \${error.message}\`, true);
-                                })
-                                .finally(() => {
-                                    resetButton();
-                                });
-                            } else {
-                                updateStatus('内容未变化');
-                                resetButton();
-                            }
-                        } catch (error) {
-                            console.error('保存过程出错:', error);
-                            button.textContent = '保存';
-                            button.disabled = false;
-                            const statusElem = document.getElementById('saveStatus');
-                            if (statusElem) {
-                                statusElem.textContent = \`错误: \${error.message}\`;
-                                statusElem.style.color = 'red';
-                            }
-                        }
-                    }
-        
-                    textarea.addEventListener('blur', saveContent);
-                    textarea.addEventListener('input', () => {
-                        clearTimeout(timer);
-                        timer = setTimeout(saveContent, 5000);
-                    });
-                }
-                </script>
-            </body>
-            </html>
-        `;
 
-        return new Response(html, {
-            headers: { "Content-Type": "text/html;charset=utf-8" }
-        });
-    } catch (error) {
-        console.error('处理请求时发生错误:', error);
-        return new Response("服务器错误: " + error.message, {
-            status: 500,
-            headers: { "Content-Type": "text/plain;charset=utf-8" }
-        });
-    }
+                <div id="tab-adds" class="tab-content">
+                    ${hasKV ? `
+                        <div class="setting-item" style="border-bottom: 1px solid var(--border-color); padding-bottom: 20px; margin-bottom: 20px;">
+                            <h4>端口设置</h4>
+                            <p>启用 noTLS (将不使用 TLS 加密)</p>
+                            <div class="switch-container">
+                                <label class="theme-switch" for="notls-checkbox">
+                                    <input type="checkbox" id="notls-checkbox" ${noTLSContent === 'true' ? 'checked' : ''}>
+                                    <div class="slider round"></div>
+                                </label>
+                                <span>启用 noTLS</span>
+                            </div>
+
+                            <h5 style="margin-top: 15px; margin-bottom: 5px;">TLS 端口</h5>
+                            <div class="checkbox-grid" id="httpsports-grid">${httpsCheckboxesHTML}</div>
+                            
+                            <h5 style="margin-top: 15px; margin-bottom: 5px;">noTLS 端口</h5>
+                            <div class="checkbox-grid" id="httpports-grid">${httpCheckboxesHTML}</div>
+                        </div>
+
+                        <textarea class="editor" id="adds_content" placeholder="${decodeURIComponent(atob('JTBBQUREUyVFNyVBNCVCQSVFNCVCRSU4QiVFRiVCQyU5QSUwQXZpc2EuY24lMjMlRTQlQkMlOTglRTklODAlODklRTUlOUYlOUYlRTUlOTAlOEQlMEExMjcuMC4wLjElMjNDRm5hdCUwQSU1QjI2ODYlM0E0NzY2JTNBJTNBJTVEJTIzSVB2NiUwQSUwQSUwQUFERFNBUEklRTclQTQlQkElRTQlQkUlOEIlRUYlQkMlOUElMEFodHRwcyUzQSUyRiUyRnJhdy5naXRodWJ1c2VyY29udGVudC5jb20lMkZjbWxpdSUyRldvcmtlclZsZXNzMnN1YiUyRnJlZnMlMkZoZWFkcyUyRm1haW4lMkZhZGRyZXNzZXNhcGkudHh0'))}">${addsContent}</textarea>
+                        
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="goBack()">返回服务页</button>
+                            <button class="btn btn-primary" onclick="saveAddsTab(this)">保存</button>
+                            <span class="save-status" id="saveStatus-adds"></span>
+                        </div>
+                    ` : '<p>未绑定KV空间</p>'}
+                </div>
+
+            </div>
+
+            <script>
+                function openTab(evt, tabName) {
+                    let i, tabcontent, tablinks;
+                    tabcontent = document.getElementsByClassName("tab-content");
+                    for (i = 0; i < tabcontent.length; i++) {
+                        tabcontent[i].style.display = "none";
+                    }
+                    tablinks = document.getElementsByClassName("tab-link");
+                    for (i = 0; i < tablinks.length; i++) {
+                        tablinks[i].className = tablinks[i].className.replace(" active", "");
+                    }
+                    document.getElementById(tabName).style.display = "block";
+                    evt.currentTarget.className += " active";
+                }
+
+                function goBack() {
+                    const pathParts = window.location.pathname.split('/');
+                    pathParts.pop(); // Remove "edit"
+                    const newPath = pathParts.join('/');
+                    window.location.href = newPath || '/';
+                }
+                
+                async function saveAddTab(button) {
+                    const statusEl = document.getElementById('saveStatus-main');
+                    const payload = {
+                        ADD: document.getElementById('content').value
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
+                }
+
+                async function saveAddsTab(button) {
+                    const statusEl = document.getElementById('saveStatus-adds');
+                    const selectedHttpsPorts = Array.from(document.querySelectorAll('input[name="httpsports"]:checked')).map(cb => cb.value).join(',');
+                    const selectedHttpPorts = Array.from(document.querySelectorAll('input[name="httpports"]:checked')).map(cb => cb.value).join(',');
+                    const payload = {
+                        ADDS: document.getElementById('adds_content').value,
+                        notls: document.getElementById('notls-checkbox').checked.toString(),
+                        httpsports: selectedHttpsPorts,
+                        httpports: selectedHttpPorts
+                    };
+                    await saveData(button, statusEl, JSON.stringify(payload));
+                }
+
+                async function saveData(button, statusEl, body) {
+                    if (!button || !statusEl) return;
+                    button.disabled = true;
+                    statusEl.textContent = '保存中...';
+                    try {
+                        const response = await fetch(window.location.href, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: body
+                        });
+                        if (!response.ok) throw new Error('保存失败: ' + await response.text());
+                        
+                        statusEl.textContent = '保存成功';
+                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+                    } catch (error) {
+                        statusEl.textContent = '❌ ' + error.message;
+                        console.error('保存时发生错误:', error);
+                    } finally {
+                        button.disabled = false;
+                    }
+                }
+
+                const themeToggleSwitch = document.querySelector('#theme-checkbox');
+                (function() {
+                    const currentTheme = localStorage.getItem('theme');
+                    if (currentTheme === 'dark-mode') {
+                        themeToggleSwitch.checked = true;
+                    }
+                })();
+                function switchTheme(e) {
+                    if (e.target.checked) {
+                        document.documentElement.classList.add('dark-mode');
+                        localStorage.setItem('theme', 'dark-mode');
+                    } else {
+                        document.documentElement.classList.remove('dark-mode');
+                        localStorage.setItem('theme', 'light-mode');
+                    }    
+                }
+                themeToggleSwitch.addEventListener('change', switchTheme, false);
+            </script>
+        </body>
+        </html>
+    `;
+
+    return new Response(html, {
+        headers: { "Content-Type": "text/html;charset=utf-8" }
+    });
 }
 
 async function resolveToIPv6(target) {
@@ -2198,74 +2366,109 @@ async function 生成配置信息(userID, hostName, sub, UA, 请求CF反代IP, _
         if (subs.length > 1) sub = subs[0];
     } else {
         if (env.KV) {
-            await 迁移地址列表(env);
-            const 优选地址列表 = await env.KV.get('ADD.txt');
-            if (优选地址列表) {
-                const 优选地址数组 = await 整理(优选地址列表);
-                const 分类地址 = {
-                    接口地址: new Set(),
-                    链接地址: new Set(),
-                    优选地址: new Set()
-                };
+            try {
+                const advancedSettingsJSON = await env.KV.get('settinggs.txt');
+                if (advancedSettingsJSON) {
+                    const settings = JSON.parse(advancedSettingsJSON);
+                    if (settings.httpsports && settings.httpsports.trim()) httpsPorts = await 整理(settings.httpsports);
+                    if (settings.httpports && settings.httpports.trim()) httpPorts = await 整理(settings.httpports);
+                    if (settings.notls) noTLS = settings.notls;
+                    
+                    if (settings.ADD) {
+                        const 优选地址数组 = await 整理(settings.ADD);
+                        const 分类地址 = { 接口地址: new Set(), 链接地址: new Set(), 优选地址: new Set() };
+                        for (const 元素 of 优选地址数组) {
+                            if (元素.startsWith('https://')) 分类地址.接口地址.add(元素);
+                            else if (元素.includes('://')) 分类地址.链接地址.add(元素);
+                            else 分类地址.优选地址.add(元素);
+                        }
+                        addressesapi = [...分类地址.接口地址];
+                        link = [...分类地址.链接地址];
+                        addresses = [...分类地址.优选地址];
+                    }
 
-                for (const 元素 of 优选地址数组) {
-                    if (元素.startsWith('https://')) {
-                        分类地址.接口地址.add(元素);
-                    } else if (元素.includes('://')) {
-                        分类地址.链接地址.add(元素);
+                    if (settings.ADDS) {
+                        const 官方优选数组 = await 整理(settings.ADDS);
+                        const 官方分类地址 = { 接口地址: new Set(), 优选地址: new Set() };
+                         for (const 元素 of 官方优选数组) {
+                            if (元素.startsWith('https://')) 官方分类地址.接口地址.add(元素);
+                            else 官方分类地址.优选地址.add(元素);
+                        }
+                        addsapi = [...官方分类地址.接口地址];
+                        adds = [...官方分类地址.优选地址];
+                    }
+                    
+                    // FIX: Merge official list (adds/addsapi) into the correct processing list based on the noTLS setting
+                    if (noTLS === 'true') {
+                        addressesnotls = addressesnotls.concat(adds);
+                        addressesnotlsapi = addressesnotlsapi.concat(addsapi);
                     } else {
-                        分类地址.优选地址.add(元素);
+                        addresses = addresses.concat(adds);
+                        addressesapi = addressesapi.concat(addsapi);
                     }
                 }
-
-                addressesapi = [...分类地址.接口地址];
-                link = [...分类地址.链接地址];
-                addresses = [...分类地址.优选地址];
+            } catch (e) {
+                console.error("从KV加载配置时出错: ", e);
             }
         }
 
         if ((addresses.length + addressesapi.length + addressesnotls.length + addressesnotlsapi.length + addressescsv.length) == 0) {
-            // 定义 Cloudflare IP 范围的 CIDR 列表
-            let cfips = ['104.16.0.0/13'];
-            // 请求 Cloudflare CIDR 列表
-            try {
-                const response = await fetch('https://raw.githubusercontent.com/cmliu/cmliu/main/CF-CIDR.txt');
-                if (response.ok) {
-                    const data = await response.text();
-                    cfips = await 整理(data);
-                }
-            } catch (error) {
-                console.log('获取 CF-CIDR 失败，使用默认值:', error);
+            let cfips = [
+                '104.16.0.0/14',
+                '104.21.0.0/16',
+                '104.24.0.0/14',
+            ];
+
+            function ipToInt(ip) {
+                return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
             }
 
-            // 生成符合给定 CIDR 范围的随机 IP 地址
+            function intToIp(int) {
+                return [
+                    (int >>> 24) & 255,
+                    (int >>> 16) & 255,
+                    (int >>> 8) & 255,
+                    int & 255
+                ].join('.');
+            }
+
             function generateRandomIPFromCIDR(cidr) {
                 const [base, mask] = cidr.split('/');
-                const baseIP = base.split('.').map(Number);
-                const subnetMask = 32 - parseInt(mask, 10);
-                const maxHosts = Math.pow(2, subnetMask) - 1;
-                const randomHost = Math.floor(Math.random() * maxHosts);
+                const baseInt = ipToInt(base);
+                const maskBits = parseInt(mask, 10);
+                const hostBits = 32 - maskBits;
+                if (hostBits < 2) {
+                    return intToIp(baseInt);
+                }
+                const usableHosts = Math.pow(2, hostBits) - 2;
+                const randomOffset = Math.floor(Math.random() * usableHosts) + 1;
 
-                const randomIP = baseIP.map((octet, index) => {
-                    if (index < 2) return octet;
-                    if (index === 2) return (octet & (255 << (subnetMask - 8))) + ((randomHost >> 8) & 255);
-                    return (octet & (255 << subnetMask)) + (randomHost & 255);
-                });
-
-                return randomIP.join('.');
+                const randomIPInt = baseInt + randomOffset;
+                return intToIp(randomIPInt);
             }
-            
+
             let counter = 1;
-            if (hostName.includes("worker") || hostName.includes("notls")) {
-                const randomPorts = httpPorts.concat('80');
-                addressesnotls = addressesnotls.concat(
-                    cfips.map(cidr => generateRandomIPFromCIDR(cidr) + ':' + randomPorts[Math.floor(Math.random() * randomPorts.length)] + '#CF随机节点' + String(counter++).padStart(2, '0'))
-                );
+            const totalIPsToGenerate = 10;
+            const generatedNodes = [];
+
+            if (hostName.includes("worker") || hostName.includes("notls") || noTLS === 'true') {
+                const randomPorts = httpPorts.length > 0 ? httpPorts : ['80'];
+                for (let i = 0; i < totalIPsToGenerate; i++) {
+                    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
+                    const randomIP = generateRandomIPFromCIDR(randomCIDR);
+                    const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
+                    generatedNodes.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
+                }
+                addressesnotls = addressesnotls.concat(generatedNodes);
             } else {
-                const randomPorts = httpsPorts.concat('443');
-                addresses = addresses.concat(
-                    cfips.map(cidr => generateRandomIPFromCIDR(cidr) + ':' + randomPorts[Math.floor(Math.random() * randomPorts.length)] + '#CF随机节点' + String(counter++).padStart(2, '0'))
-                );
+                const randomPorts = httpsPorts.length > 0 ? httpsPorts : ['443'];
+                for (let i = 0; i < totalIPsToGenerate; i++) {
+                    const randomCIDR = cfips[Math.floor(Math.random() * cfips.length)];
+                    const randomIP = generateRandomIPFromCIDR(randomCIDR);
+                    const port = randomPorts[Math.floor(Math.random() * randomPorts.length)];
+                    generatedNodes.push(`${randomIP}:${port}#CF随机节点${String(counter++).padStart(2, '0')}`);
+                }
+                addresses = addresses.concat(generatedNodes);
             }
         }
     }
