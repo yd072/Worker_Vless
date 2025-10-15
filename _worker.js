@@ -3,7 +3,6 @@ import { connect } from 'cloudflare:sockets';
 
 let userID = '';
 let proxyIP = '';
-let DNS64Server = '';
 //let sub = '';
 let subConverter = atob('U3ViQXBpLkNtbGlVc3NzUy5OZXQ=');
 let subConfig = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvY29uZmlnL0FDTDRTU1JfT25saW5lX01pbmlfTXVsdGlNb2RlLmluaQ==');
@@ -36,7 +35,6 @@ let FileName = atob('ZWRnZXR1bm5lbA==');
 let BotToken;
 let ChatID;
 let proxyhosts = [];
-let proxyhostsURL;
 let 请求CF反代IP = 'false';
 let httpsPorts = ["443"];
 let httpPorts = ["80"];
@@ -79,7 +77,6 @@ export default {
             proxyIP = env.PROXYIP || env.proxyip || proxyIP;
             proxyIPs = await 整理(proxyIP);
             proxyIP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
-            DNS64Server = env.DNS64 || env.NAT64 || DNS64Server;
             socks5Address = env.HTTP || env.SOCKS5 || socks5Address;
             socks5s = await 整理(socks5Address);
             socks5Address = socks5s[Math.floor(Math.random() * socks5s.length)];
@@ -258,117 +255,146 @@ export default {
 };
 
 async function 维列斯OverWSHandler(request) {
+	const webSocketPair = new WebSocketPair();
+	const [client, webSocket] = Object.values(webSocketPair);
+	webSocket.accept();
 
-    // @ts-ignore
-    const webSocketPair = new WebSocketPair();
-    const [client, webSocket] = Object.values(webSocketPair);
+	let address = '';
+	let portWithRandomLog = '';
+	const log = (info, event) => {
+		console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+	};
+	const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+	const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-    // 接受 WebSocket 连接
-    webSocket.accept();
+	let remoteSocketWapper = {
+		value: null
+	};
+	let udpWriter = null;
+	let isDns = false;
 
-    let address = '';
-    let portWithRandomLog = '';
-    // 日志函数，用于记录连接信息
-    const log = (
-        info, // @type {string}
-        event // @type {string | undefined}
-    ) => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
-    };
-    // 获取早期数据头部，可能包含了一些初始化数据
-    const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
+	readableWebSocketStream.pipeTo(new WritableStream({
+		async write(chunk, controller) {
+			if (isDns) return udpWriter?.write(chunk);
+			if (remoteSocketWapper.value) {
+				const writer = remoteSocketWapper.value.writable.getWriter();
+				await writer.write(chunk);
+				writer.releaseLock();
+				return;
+			}
 
-    // 创建一个可读的 WebSocket 流，用于接收客户端数据
-    const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
+			if (chunk.byteLength < 24) {
+				return;
+			}
 
-    // 用于存储远程 Socket 的包装器
-    let remoteSocketWapper = {
-        value: null,
-    };
-    // 标记是否为 DNS 查询
-    let udpStreamWrite = null;
-    let isDns = false;
+			const uuidBytes = new Uint8Array(chunk.slice(1, 17));
+			const expectedUUID = userID.replace(/-/g, '');
+			for (let i = 0; i < 16; i++) {
+				if (uuidBytes[i] !== parseInt(expectedUUID.substr(i * 2, 2), 16)) return;
+			}
 
-    // WebSocket 数据流向远程服务器的管道
-    readableWebSocketStream.pipeTo(new WritableStream({
-        async write(chunk, controller) {
-            if (isDns && udpStreamWrite) {
-                // 如果是 DNS 查询，直接写入 UDP 流
-                return udpStreamWrite(chunk);
-            }
-            if (remoteSocketWapper.value) {
-                // 如果已有远程 Socket，直接写入数据
-                const writer = remoteSocketWapper.value.writable.getWriter()
-                await writer.write(chunk);
-                writer.releaseLock();
-                return;
-            }
+			const view = new DataView(chunk);
+			const optLen = view.getUint8(17);
+			const cmd = view.getUint8(18 + optLen);
+			if (cmd !== 1 && cmd !== 2) {
+				return;
+			}
 
-            // 处理 维列斯 协议头部
-            const {
-                hasError,
-                message,
-                addressType,
-                portRemote = 443,
-                addressRemote = '',
-                rawDataIndex,
-                维列斯Version = new Uint8Array([0, 0]),
-                isUDP,
-            } = process维列斯Header(chunk, userID);
-            // 设置地址和端口信息，用于日志
-            address = addressRemote;
-            portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
-            if (hasError) {
-                // 如果有错误，抛出异常
-                throw new Error(message);
-                return;
-            }
-            // 如果是 UDP 且端口不是 DNS 端口（53），则关闭连接
-            if (isUDP) {
-                if (portRemote === 53) {
-                    isDns = true;
-                } else {
-                    throw new Error('UDP 代理仅对 DNS（53 端口）启用');
-                    return;
-                }
-            }
-            // 构建 维列斯 响应头部
-            const 维列斯ResponseHeader = new Uint8Array([维列斯Version[0], 0]);
-            // 获取实际的客户端数据
-            const rawClientData = chunk.slice(rawDataIndex);
+			let pos = 19 + optLen;
+			const port = view.getUint16(pos);
+			const type = view.getUint8(pos + 2);
+			pos += 3;
 
-            if (isDns) {
-                // 如果是 DNS 查询，处理 UDP 出站
-                const { write } = await handleUDPOutBound(webSocket, 维列斯ResponseHeader, log);
-                udpStreamWrite = write;
-                udpStreamWrite(rawClientData);
-                return;
-            }
-            // 处理 TCP 出站连接
-            if (!banHosts.includes(addressRemote)) {
-                log(`处理 TCP 出站连接 ${addressRemote}:${portRemote}`);
-                handleTCPOutBound(remoteSocketWapper, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log);
-            } else {
-                throw new Error(`黑名单关闭 TCP 出站连接 ${addressRemote}:${portRemote}`);
-            }
-        },
-        close() {
-            log(`readableWebSocketStream 已关闭`);
-        },
-        abort(reason) {
-            log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
-        },
-    })).catch((err) => {
-        log('readableWebSocketStream 管道错误', err);
-    });
+			let addr = '';
+			if (type === 1) {
+				addr = `${view.getUint8(pos)}.${view.getUint8(pos + 1)}.${view.getUint8(pos + 2)}.${view.getUint8(pos + 3)}`;
+				pos += 4;
+			} else if (type === 2) {
+				const len = view.getUint8(pos++);
+				addr = new TextDecoder().decode(chunk.slice(pos, pos + len));
+				pos += len;
+			} else if (type === 3) {
+				const ipv6 = [];
+				for (let i = 0; i < 8; i++, pos += 2) ipv6.push(view.getUint16(pos).toString(16));
+				addr = ipv6.join(':');
+			} else {
+				return;
+			}
 
-    // 返回一个 WebSocket 升级的响应
-    return new Response(null, {
-        status: 101,
-        // @ts-ignore
-        webSocket: client,
-    });
+			address = addr;
+			portWithRandomLog = `${port}--${Math.random()} ${cmd === 2 ? 'udp ' : 'tcp '} `;
+
+			const header = new Uint8Array([chunk[0], 0]);
+			const payload = chunk.slice(pos);
+
+			if (cmd === 2) {
+				if (port !== 53) {
+					throw new Error('UDP 代理仅对 DNS（53 端口）启用');
+				}
+				isDns = true;
+				let sent = false;
+				const {
+					readable,
+					writable
+				} = new TransformStream({
+					transform(chunk, ctrl) {
+						for (let i = 0; i < chunk.byteLength;) {
+							const len = new DataView(chunk.slice(i, i + 2)).getUint16(0);
+							ctrl.enqueue(chunk.slice(i + 2, i + 2 + len));
+							i += 2 + len;
+						}
+					}
+				});
+
+				readable.pipeTo(new WritableStream({
+					async write(query) {
+						try {
+							const resp = await fetch('https://1.1.1.1/dns-query', {
+								method: 'POST',
+								headers: {
+									'content-type': 'application/dns-message'
+								},
+								body: query
+							});
+							if (webSocket.readyState === 1) {
+								const result = new Uint8Array(await resp.arrayBuffer());
+								webSocket.send(new Uint8Array([...(sent ? [] : header), result.length >> 8, result.length & 0xff, ...result]));
+								sent = true;
+							}
+						} catch (e) {
+							log('dns fetch error' + e.toString());
+						}
+					}
+				}));
+				udpWriter = writable.getWriter();
+				return udpWriter.write(payload);
+			}
+
+			if (cmd === 1) {
+				if (!banHosts.includes(addr)) {
+					log(`处理 TCP 出站连接 ${addr}:${port}`);
+					handleTCPOutBound(remoteSocketWapper, type, addr, port, payload, webSocket, header, log);
+				} else {
+					throw new Error(`黑名单关闭 TCP 出站连接 ${addr}:${port}`);
+				}
+			}
+		},
+		close() {
+			log(`readableWebSocketStream 已关闭`);
+		},
+		abort(reason) {
+			log(`readableWebSocketStream 已中止`, JSON.stringify(reason));
+		},
+	})).catch((err) => {
+		log('readableWebSocketStream 管道错误', err);
+	});
+
+	return new Response(null, {
+		status: 101,
+		webSocket: client,
+	});
 }
+
 
 async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portRemote, rawClientData, webSocket, 维列斯ResponseHeader, log,) {
     async function useSocks5Pattern(address) {
@@ -397,25 +423,12 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         return tcpSocket;
     }
 
-    async function nat64() {
-        if (!useSocks) {
-            const nat64Proxyip = `[${await resolveToIPv6(addressRemote)}]`;
-            log(`NAT64 代理连接到 ${nat64Proxyip}:443`);
-            tcpSocket = await connectAndWrite(nat64Proxyip, 443);
-        }
-        tcpSocket.closed.catch(error => {
-            console.log('retry tcpSocket closed error', error);
-        }).finally(() => {
-            safeCloseWebSocket(webSocket);
-        })
-        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
-    }
-
     /**
      * 重试函数：当 Cloudflare 的 TCP Socket 没有传入数据时，我们尝试重定向 IP
      * 这可能是因为某些网络问题导致的连接失败
      */
     async function retry() {
+        let tcpSocket;
         if (enableSocks) {
             // 如果启用了 SOCKS5，通过 SOCKS5 代理重试连接
             tcpSocket = await connectAndWrite(addressRemote, portRemote, true, enableHttp);
@@ -441,7 +454,7 @@ async function handleTCPOutBound(remoteSocket, addressType, addressRemote, portR
         })
         */
         // 建立从远程 Socket 到 WebSocket 的数据流
-        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, nat64, log);
+        remoteSocketToWS(tcpSocket, webSocket, 维列斯ResponseHeader, null, log);
     }
 
     let useSocks = false;
@@ -531,152 +544,6 @@ function makeReadableWebSocketStream(webSocketServer, earlyDataHeader, log) {
     });
 
     return stream;
-}
-
-// https://xtls.github.io/development/protocols/维列斯.html
-// https://github.com/zizifn/excalidraw-backup/blob/main/v1ray-protocol.excalidraw
-
-/**
- * 解析 维列斯 协议的头部数据
- * @param { ArrayBuffer} 维列斯Buffer 维列斯 协议的原始头部数据
- * @param {string} userID 用于验证的用户 ID
- * @returns {Object} 解析结果，包括是否有错误、错误信息、远程地址信息等
- */
-function process维列斯Header(维列斯Buffer, userID) {
-    // 检查数据长度是否足够（至少需要 24 字节）
-    if (维列斯Buffer.byteLength < 24) {
-        return {
-            hasError: true,
-            message: 'invalid data',
-        };
-    }
-
-    // 解析 维列斯 协议版本（第一个字节）
-    const version = new Uint8Array(维列斯Buffer.slice(0, 1));
-
-    let isValidUser = false;
-    let isUDP = false;
-
-    // 验证用户 ID（接下来的 16 个字节）
-    const userIDArray = new Uint8Array(维列斯Buffer.slice(1, 17));
-    const userIDString = stringify(userIDArray);
-    if (userIDString === userID) {
-        isValidUser = true;
-    }
-
-    // 如果用户 ID 无效，返回错误
-    if (!isValidUser) {
-        return {
-            hasError: true,
-            message: `invalid user ${(new Uint8Array(维列斯Buffer.slice(1, 17)))}`,
-        };
-    }
-
-    // 获取附加选项的长度（第 17 个字节）
-    const optLength = new Uint8Array(维列斯Buffer.slice(17, 18))[0];
-    // 暂时跳过附加选项
-
-    // 解析命令（紧跟在选项之后的 1 个字节）
-    // 0x01: TCP, 0x02: UDP, 0x03: MUX（多路复用）
-    const command = new Uint8Array(
-        维列斯Buffer.slice(18 + optLength, 18 + optLength + 1)
-    )[0];
-
-    // 0x01 TCP
-    // 0x02 UDP
-    // 0x03 MUX
-    if (command === 1) {
-        // TCP 命令，不需特殊处理
-    } else if (command === 2) {
-        // UDP 命令
-        isUDP = true;
-    } else {
-        // 不支持的命令
-        return {
-            hasError: true,
-            message: `command ${command} is not support, command 01-tcp,02-udp,03-mux`,
-        };
-    }
-
-    // 解析远程端口（大端序，2 字节）
-    const portIndex = 18 + optLength + 1;
-    const portBuffer = 维列斯Buffer.slice(portIndex, portIndex + 2);
-    // port is big-Endian in raw data etc 80 == 0x005d
-    const portRemote = new DataView(portBuffer).getUint16(0);
-
-    // 解析地址类型和地址
-    let addressIndex = portIndex + 2;
-    const addressBuffer = new Uint8Array(
-        维列斯Buffer.slice(addressIndex, addressIndex + 1)
-    );
-
-    // 地址类型：1-IPv4(4字节), 2-域名(可变长), 3-IPv6(16字节)
-    const addressType = addressBuffer[0];
-    let addressLength = 0;
-    let addressValueIndex = addressIndex + 1;
-    let addressValue = '';
-
-    switch (addressType) {
-        case 1:
-            // IPv4 地址
-            addressLength = 4;
-            // 将 4 个字节转为点分十进制格式
-            addressValue = new Uint8Array(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-            ).join('.');
-            break;
-        case 2:
-            // 域名
-            // 第一个字节是域名长度
-            addressLength = new Uint8Array(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + 1)
-            )[0];
-            addressValueIndex += 1;
-            // 解码域名
-            addressValue = new TextDecoder().decode(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-            );
-            break;
-        case 3:
-            // IPv6 地址
-            addressLength = 16;
-            const dataView = new DataView(
-                维列斯Buffer.slice(addressValueIndex, addressValueIndex + addressLength)
-            );
-            // 每 2 字节构成 IPv6 地址的一部分
-            const ipv6 = [];
-            for (let i = 0; i < 8; i++) {
-                ipv6.push(dataView.getUint16(i * 2).toString(16));
-            }
-            addressValue = ipv6.join(':');
-            // seems no need add [] for ipv6
-            break;
-        default:
-            // 无效的地址类型
-            return {
-                hasError: true,
-                message: `invild addressType is ${addressType}`,
-            };
-    }
-
-    // 确保地址不为空
-    if (!addressValue) {
-        return {
-            hasError: true,
-            message: `addressValue is empty, addressType is ${addressType}`,
-        };
-    }
-
-    // 返回解析结果
-    return {
-        hasError: false,
-        addressRemote: addressValue,  // 解析后的远程地址
-        addressType,				 // 地址类型
-        portRemote,				 // 远程端口
-        rawDataIndex: addressValueIndex + addressLength,  // 原始数据的实际起始位置
-        维列斯Version: version,	  // 维列斯 协议版本
-        isUDP,					 // 是否是 UDP 请求
-    };
 }
 
 async function remoteSocketToWS(remoteSocket, webSocket, 维列斯ResponseHeader, retry, log) {
@@ -787,19 +654,6 @@ function base64ToArrayBuffer(base64Str) {
     }
 }
 
-/**
- * 这不是真正的 UUID 验证，而是一个简化的版本
- * @param {string} uuid 要验证的 UUID 字符串
- * @returns {boolean} 如果字符串匹配 UUID 格式则返回 true，否则返回 false
- */
-function isValidUUID(uuid) {
-    // 定义一个正则表达式来匹配 UUID 格式
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-    // 使用正则表达式测试 UUID 字符串
-    return uuidRegex.test(uuid);
-}
-
 // WebSocket 的两个重要状态常量
 const WS_READY_STATE_OPEN = 1;	 // WebSocket 处于开放状态，可以发送和接收消息
 const WS_READY_STATE_CLOSING = 2;  // WebSocket 正在关闭过程中
@@ -815,121 +669,6 @@ function safeCloseWebSocket(socket) {
         // 记录任何可能发生的错误，虽然按照规范不应该有错误
         console.error('safeCloseWebSocket error', error);
     }
-}
-
-// 预计算 0-255 每个字节的十六进制表示
-const byteToHex = [];
-for (let i = 0; i < 256; ++i) {
-    // (i + 256).toString(16) 确保总是得到两位数的十六进制
-    // .slice(1) 删除前导的 "1"，只保留两位十六进制数
-    byteToHex.push((i + 256).toString(16).slice(1));
-}
-
-/**
- * 快速地将字节数组转换为 UUID 字符串，不进行有效性检查
- * 这是一个底层函数，直接操作字节，不做任何验证
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} UUID 字符串
- */
-function unsafeStringify(arr, offset = 0) {
-    // 直接从查找表中获取每个字节的十六进制表示，并拼接成 UUID 格式
-    // 8-4-4-4-12 的分组是通过精心放置的连字符 "-" 实现的
-    // toLowerCase() 确保整个 UUID 是小写的
-    return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" +
-        byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" +
-        byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" +
-        byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" +
-        byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] +
-        byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
-}
-
-/**
- * 将字节数组转换为 UUID 字符串，并验证其有效性
- * 这是一个安全的函数，它确保返回的 UUID 格式正确
- * @param {Uint8Array} arr 包含 UUID 字节的数组
- * @param {number} offset 数组中 UUID 开始的位置，默认为 0
- * @returns {string} 有效的 UUID 字符串
- * @throws {TypeError} 如果生成的 UUID 字符串无效
- */
-function stringify(arr, offset = 0) {
-    // 使用不安全的函数快速生成 UUID 字符串
-    const uuid = unsafeStringify(arr, offset);
-    // 验证生成的 UUID 是否有效
-    if (!isValidUUID(uuid)) {
-        // 原：throw TypeError("Stringified UUID is invalid");
-        throw TypeError(`生成的 UUID 不符合规范 ${uuid}`);
-        //uuid = userID;
-    }
-    return uuid;
-}
-
-/**
- * 
- * @param {import("@cloudflare/workers-types").WebSocket} webSocket 
- * @param {ArrayBuffer} 维列斯ResponseHeader 
- * @param {(string)=> void} log 
- */
-async function handleUDPOutBound(webSocket, 维列斯ResponseHeader, log) {
-
-    let is维列斯HeaderSent = false;
-    const transformStream = new TransformStream({
-        start(controller) {
-
-        },
-        transform(chunk, controller) {
-            // udp message 2 byte is the the length of udp data
-            // TODO: this should have bug, beacsue maybe udp chunk can be in two websocket message
-            for (let index = 0; index < chunk.byteLength;) {
-                const lengthBuffer = chunk.slice(index, index + 2);
-                const udpPakcetLength = new DataView(lengthBuffer).getUint16(0);
-                const udpData = new Uint8Array(
-                    chunk.slice(index + 2, index + 2 + udpPakcetLength)
-                );
-                index = index + 2 + udpPakcetLength;
-                controller.enqueue(udpData);
-            }
-        },
-        flush(controller) {
-        }
-    });
-
-    // only handle dns udp for now
-    transformStream.readable.pipeTo(new WritableStream({
-        async write(chunk) {
-            const resp = await fetch('https://1.1.1.1/dns-query',
-                {
-                    method: 'POST',
-                    headers: {
-                        'content-type': 'application/dns-message',
-                    },
-                    body: chunk,
-                })
-            const dnsQueryResult = await resp.arrayBuffer();
-            const udpSize = dnsQueryResult.byteLength;
-            // console.log([...new Uint8Array(dnsQueryResult)].map((x) => x.toString(16)));
-            const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
-            if (webSocket.readyState === WS_READY_STATE_OPEN) {
-                log(`doh success and dns message length is ${udpSize}`);
-                if (is维列斯HeaderSent) {
-                    webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-                } else {
-                    webSocket.send(await new Blob([维列斯ResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-                    is维列斯HeaderSent = true;
-                }
-            }
-        }
-    })).catch((error) => {
-        log('dns udp has error' + error)
-    });
-
-    const writer = transformStream.writable.getWriter();
-
-    return {
-        write(chunk) { // @param {Uint8Array} chunk 
-            writer.write(chunk);
-        }
-    };
 }
 
 /**
@@ -1615,11 +1354,6 @@ async function sendMessage(type, ip, add_data = "") {
     }
 }
 
-function isValidIPv4(address) {
-    const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    return ipv4Regex.test(address);
-}
-
 async function KV(request, env) {
 	try {
 		if (request.method === "POST") {
@@ -2025,226 +1759,6 @@ async function handleGetRequest(env) {
     });
 }
 
-async function resolveToIPv6(target) {
-    const defaultAddress = atob('UHJveHlJUC5jbUxpdVNzc1MuTmV0');
-    if (!DNS64Server) {
-        try {
-            const response = await fetch(atob('aHR0cHM6Ly8xLjEuMS4xL2Rucy1xdWVyeT9uYW1lPW5hdDY0LmNtbGl1c3Nzcy5uZXQmdHlwZT1UWFQ='), {
-                headers: { 'Accept': 'application/dns-json' }
-            });
-
-            if (!response.ok) return defaultAddress;
-            const data = await response.json();
-            const txtRecords = (data.Answer || []).filter(record => record.type === 16).map(record => record.data);
-
-            if (txtRecords.length === 0) return defaultAddress;
-            let txtData = txtRecords[0];
-            if (txtData.startsWith('"') && txtData.endsWith('"')) txtData = txtData.slice(1, -1);
-            const prefixes = txtData.replace(/\\010/g, '\n').split('\n').filter(prefix => prefix.trim());
-            if (prefixes.length === 0) return defaultAddress;
-            DNS64Server = prefixes[Math.floor(Math.random() * prefixes.length)];
-        } catch (error) {
-            console.error('DNS64Server查询失败:', error);
-            return defaultAddress;
-        }
-    }
-
-    // 检查是否为IPv4
-    function isIPv4(str) {
-        const parts = str.split('.');
-        return parts.length === 4 && parts.every(part => {
-            const num = parseInt(part, 10);
-            return num >= 0 && num <= 255 && part === num.toString();
-        });
-    }
-
-    // 检查是否为IPv6
-    function isIPv6(str) {
-        return str.includes(':') && /^[0-9a-fA-F:]+$/.test(str);
-    }
-
-    // 获取域名的IPv4地址
-    async function fetchIPv4(domain) {
-        const url = `https://1.1.1.1/dns-query?name=${domain}&type=A`;
-        const response = await fetch(url, {
-            headers: { 'Accept': 'application/dns-json' }
-        });
-
-        if (!response.ok) throw new Error('DNS查询失败');
-
-        const data = await response.json();
-        const ipv4s = (data.Answer || [])
-            .filter(record => record.type === 1)
-            .map(record => record.data);
-
-        if (ipv4s.length === 0) throw new Error('未找到IPv4地址');
-        return ipv4s[Math.floor(Math.random() * ipv4s.length)];
-    }
-
-    // 查询NAT64 IPv6地址
-    async function queryNAT64(domain) {
-        const socket = connect({
-            hostname: isIPv6(DNS64Server) ? `[${DNS64Server}]` : DNS64Server,
-            port: 53
-        });
-
-        const writer = socket.writable.getWriter();
-        const reader = socket.readable.getReader();
-
-        try {
-            // 发送DNS查询
-            const query = buildDNSQuery(domain);
-            const queryWithLength = new Uint8Array(query.length + 2);
-            queryWithLength[0] = query.length >> 8;
-            queryWithLength[1] = query.length & 0xFF;
-            queryWithLength.set(query, 2);
-            await writer.write(queryWithLength);
-
-            // 读取响应
-            const response = await readDNSResponse(reader);
-            const ipv6s = parseIPv6(response);
-
-            return ipv6s.length > 0 ? ipv6s[0] : '未找到IPv6地址';
-        } finally {
-            await writer.close();
-            await reader.cancel();
-        }
-    }
-
-    // 构建DNS查询包
-    function buildDNSQuery(domain) {
-        const buffer = new ArrayBuffer(512);
-        const view = new DataView(buffer);
-        let offset = 0;
-
-        // DNS头部
-        view.setUint16(offset, Math.floor(Math.random() * 65536)); offset += 2; // ID
-        view.setUint16(offset, 0x0100); offset += 2; // 标志
-        view.setUint16(offset, 1); offset += 2; // 问题数
-        view.setUint16(offset, 0); offset += 6; // 答案数/权威数/附加数
-
-        // 域名编码
-        for (const label of domain.split('.')) {
-            view.setUint8(offset++, label.length);
-            for (let i = 0; i < label.length; i++) {
-                view.setUint8(offset++, label.charCodeAt(i));
-            }
-        }
-        view.setUint8(offset++, 0); // 结束标记
-
-        // 查询类型和类
-        view.setUint16(offset, 28); offset += 2; // AAAA记录
-        view.setUint16(offset, 1); offset += 2; // IN类
-
-        return new Uint8Array(buffer, 0, offset);
-    }
-
-    // 读取DNS响应
-    async function readDNSResponse(reader) {
-        const chunks = [];
-        let totalLength = 0;
-        let expectedLength = null;
-
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-
-            chunks.push(value);
-            totalLength += value.length;
-
-            if (expectedLength === null && totalLength >= 2) {
-                expectedLength = (chunks[0][0] << 8) | chunks[0][1];
-            }
-
-            if (expectedLength !== null && totalLength >= expectedLength + 2) {
-                break;
-            }
-        }
-
-        // 合并数据并跳过长度前缀
-        const fullResponse = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-            fullResponse.set(chunk, offset);
-            offset += chunk.length;
-        }
-
-        return fullResponse.slice(2);
-    }
-
-    // 解析IPv6地址
-    function parseIPv6(response) {
-        const view = new DataView(response.buffer);
-        let offset = 12; // 跳过DNS头部
-
-        // 跳过问题部分
-        while (view.getUint8(offset) !== 0) {
-            offset += view.getUint8(offset) + 1;
-        }
-        offset += 5;
-
-        const answers = [];
-        const answerCount = view.getUint16(6); // 答案数量
-
-        for (let i = 0; i < answerCount; i++) {
-            // 跳过名称
-            if ((view.getUint8(offset) & 0xC0) === 0xC0) {
-                offset += 2;
-            } else {
-                while (view.getUint8(offset) !== 0) {
-                    offset += view.getUint8(offset) + 1;
-                }
-                offset++;
-            }
-
-            const type = view.getUint16(offset); offset += 2;
-            offset += 6; // 跳过类和TTL
-            const dataLength = view.getUint16(offset); offset += 2;
-
-            if (type === 28 && dataLength === 16) { // AAAA记录
-                const parts = [];
-                for (let j = 0; j < 8; j++) {
-                    parts.push(view.getUint16(offset + j * 2).toString(16));
-                }
-                answers.push(parts.join(':'));
-            }
-            offset += dataLength;
-        }
-
-        return answers;
-    }
-
-    function convertToNAT64IPv6(ipv4Address) {
-        const parts = ipv4Address.split('.');
-        if (parts.length !== 4) {
-            throw new Error('无效的IPv4地址');
-        }
-
-        // 将每个部分转换为16进制
-        const hex = parts.map(part => {
-            const num = parseInt(part, 10);
-            if (num < 0 || num > 255) {
-                throw new Error('无效的IPv4地址段');
-            }
-            return num.toString(16).padStart(2, '0');
-        });
-
-        // 构造NAT64
-        return DNS64Server.split('/96')[0] + hex[0] + hex[1] + ":" + hex[2] + hex[3];
-    }
-
-    try {
-        // 判断输入类型并处理
-        if (isIPv6(target)) return target; // IPv6直接返回
-        const ipv4 = isIPv4(target) ? target : await fetchIPv4(target);
-        const nat64 = DNS64Server.endsWith('/96') ? convertToNAT64IPv6(ipv4) : await queryNAT64(ipv4 + atob('LmlwLjA5MDIyNy54eXo='));
-        return isIPv6(nat64) ? nat64 : defaultAddress;
-    } catch (error) {
-        console.error('解析错误:', error);
-        return defaultAddress;
-    }
-}
-
 async function nginx() {
     const text = `
 	<!DOCTYPE html>
@@ -2449,20 +1963,6 @@ async function 生成配置信息(userID, hostName, sub, UA, 请求CF反代IP, _
     const userAgent = UA.toLowerCase();
     let proxyhost = "";
     if (hostName.includes(".workers.dev")) {
-        if (proxyhostsURL && (!proxyhosts || proxyhosts.length == 0)) {
-            try {
-                const response = await fetch(proxyhostsURL);
-                if (response.ok) {
-                    const text = await response.text();
-                    const lines = text.split('\n').filter(line => line.trim() !== '');
-                    proxyhosts = [...new Set(proxyhosts.concat(lines))];
-                } else {
-					console.error('获取地址时出错:', response.status, response.statusText);
-				}
-            } catch (error) {
-                console.error('获取地址时出错:', error);
-            }
-        }
         if (proxyhosts.length > 0) {
 			proxyhost = proxyhosts[Math.floor(Math.random() * proxyhosts.length)] + "/";
 		}
