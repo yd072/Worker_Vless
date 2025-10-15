@@ -9,7 +9,6 @@
 | PROXYIP | bpb.radically.pro/1.2.3.4 |
 | SOCKS5 | user:password@1.2.3.4 :2222 |
 | HTTP | user:password@1.2.3.4 :2222 |
-| NAT64 | dns64.example.com或2001:67c:2960:6464::/96 |
 | ADD | icook.tw:8443#优选域名/1.2.3.4 :8443#优选IP |
 | ADDAPI | https://raw.githubusercontent.com/yd072/youxuanyuming/refs/heads/main/ip.txt |
 | ADDNOTLS | icook.tw:80#优选域名/1.2.3.4 :80#优选IP |
