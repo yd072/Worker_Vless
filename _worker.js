@@ -36,7 +36,7 @@ let FileName = atob('ZWRnZXR1bm5lbA==');
 let BotToken;
 let ChatID;
 let proxyhosts = [];
-let proxyhostsURL = atob('aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2NtbGl1L2NtbGl1L21haW4vUHJveHlIT1NU');
+let proxyhostsURL = '';
 let 请求CF反代IP = 'false';
 let httpsPorts = ["443"];
 let httpPorts = ["80"];
