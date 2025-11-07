@@ -1,13 +1,15 @@
 import { connect } from 'cloudflare:sockets';
+
 let userID = '';
+
 const path = '/api/ws';
+
 export default {
     async fetch(request, env) {
         userID = env.UUID || userID;
         if (!userID) {
             return new Response('UUID is not set. Please set the UUID environment variable.', { status: 404 });
         }
-
         const url = new URL(request.url);
         const upgradeHeader = request.headers.get('Upgrade');
 
@@ -63,8 +65,7 @@ async function handleWebSocketConnection(request) {
             if (!compareArrayBuffers(receivedUUID, expectedUUIDBytes)) {
                 console.error('Invalid UUID');
                 return;
-            }
-            
+            }            
             const view = new DataView(chunk);
             const optLen = view.getUint8(17);
             const cmd = view.getUint8(18 + optLen);
@@ -211,7 +212,7 @@ function base64ToArrayBuffer(base64Str) {
 
 function createNodeLink(uuid, host) {
     const remark = encodeURIComponent("Cloudflare-Worker");
-    const security = (host.endsWith('.workers.dev') || host.endsWith('.pages.dev')) ? 'tls' : '';
+    const security = 'tls';
     const sni = security ? `&sni=${host}` : '';
     const protocol = 'vl' + 'ess';
 
