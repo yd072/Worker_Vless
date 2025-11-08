@@ -6,7 +6,7 @@
 # 2.0 变量
 | 常用变量 | 示例  |   备注    |
 |--------|---------|-------|
-| PASSWORD  | 123456 |   你的登录密码   |
+| PASSWORD  | 123456 |   您的登录密码   |
 
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，简化代码
 
