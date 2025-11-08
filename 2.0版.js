@@ -369,11 +369,11 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
                 </form>
             </div>
             <div class="section">
-                <div class="section-header"><h2 class="section-title">端口优选源 (应用选择的端口)</h2></div>
+                <div class="section-header"><h2 class="section-title">官方优选源</h2></div>
                 <form method="POST" action="/${password}">
                     <input type="hidden" name="form_action" value="update_custom_api_urls">
                      <div class="modal-input-group">
-                        <label>选择要应用的端口</label>
+                        <label>选择应用的端口</label>
                         <div class="port-group-title">HTTPS 端口</div>
                         <div class="port-checkbox-group">${httpsPortCheckboxes}</div>
                         <div class="port-group-title">HTTP 端口</div>
