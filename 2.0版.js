@@ -1,14 +1,11 @@
 
 import { connect } from "cloudflare:sockets";
-
 const PLACEHOLDER_HOST = 'example.com';
 const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
-
 const WS_PATH = '/api/ws'; 
 const RANDOM_NODE_COUNT = 10; 
 const FILENAME = 'subscription'; 
 const CF_IPS_CIDR = [ '104.16.0.0/14', '104.21.0.0/16', '104.24.0.0/14', '8.35.211.0/23', '8.39.125.0/24' ];
-
 const selectableHttpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
 const selectableHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086"];
 
@@ -206,102 +203,80 @@ function statusPage() {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Service Status - Analytics</title>
-        <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0ZGRiI+PHBhdGggZD0iTTAgMGgyNHYyNEgweiIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Ik05IDE2LjE3TDQuODMgMTJsLTEuNDIgMS40MUw5IDE5IDIxIDdsLTEuNDEtMS40MXoiIGZpbGw9IiMyZGNlODkiLz48L3N2Zz4=">
+        <title>Welcome Page</title>
         <style>
-            :root {
-                --bg-color: #f4f7f9;
-                --card-bg-color: #ffffff;
-                --text-color: #333;
-                --primary-color: #0d6efd;
-                --secondary-color: #8898aa;
-                --border-color: #e9ecef;
-                --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            }
             body {
-                margin: 0;
-                font-family: var(--font-family);
-                background-color: var(--bg-color);
-                color: var(--text-color);
                 display: flex;
+                flex-direction: column;
                 justify-content: center;
                 align-items: center;
                 min-height: 100vh;
-                padding: 20px;
-                box-sizing: border-box;
+                margin: 0;
+                font-family: Arial, sans-serif;
+                background-color: #f5f5f5;
+                color: #333;
+                text-align: center;
             }
             .container {
-                max-width: 800px;
-                width: 100%;
-                background-color: var(--card-bg-color);
-                border-radius: 8px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                background: white;
+                width: 400px;
                 padding: 40px;
-                box-sizing: border-box;
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                border-top: 6px solid #4285F4;
+                margin-bottom: 40px;
             }
-            .header {
-                border-bottom: 1px solid var(--border-color);
-                padding-bottom: 20px;
-                margin-bottom: 30px;
+            h1 { color: #4285F4; }
+            input[type="text"] {
+                width: 80%;
+                padding: 10px;
+                margin-top: 20px;
+                border: 1px solid #4285F4;
+                border-radius: 6px;
             }
-            .header h1 { margin: 0; font-size: 24px; }
-            .header .all-systems-operational { color: var(--primary-color); font-size: 18px; font-weight: 600; margin-top: 10px; }
-            .service-group h2 { font-size: 18px; color: var(--text-color); margin-bottom: 15px; }
-            .service-item { display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--border-color); }
-            .service-item:last-child { border-bottom: none; }
-            .service-name { font-size: 16px; }
-            .service-status { font-size: 16px; font-weight: 600; color: var(--primary-color); }
-            .footer { margin-top: 30px; text-align: center; font-size: 14px; color: var(--secondary-color); }
-            .footer a { color: var(--secondary-color); text-decoration: none; }
-            .footer a:hover { text-decoration: underline; }
+            input[type="submit"] {
+                padding: 10px 20px;
+                margin-top: 20px;
+                background-color: #4285F4;
+                border: none;
+                border-radius: 6px;
+                color: white;
+                cursor: pointer;
+                font-weight: bold;
+            }
+            input[type="submit"]:hover { background-color: #3367D6; }
+            footer {
+                font-size: 12px;
+                color: #555;
+            }
+            footer a {
+                color: #555;
+                text-decoration: none;
+            }
+            footer a:hover { text-decoration: underline; }
         </style>
     </head>
     <body>
         <div class="container">
-            <div class="header">
-                <h1>Service Status</h1>
-                <div class="all-systems-operational">✔ All Systems Operational</div>
-            </div>
-            <div class="service-group">
-                <h2>Backend Infrastructure</h2>
-                <div class="service-item"><span class="service-name">API Gateway</span><span class="service-status">Operational</span></div>
-                <div class="service-item"><span class="service-name">Authentication Service</span><span class="service-status">Operational</span></div>
-                <div class="service-item"><span class="service-name">Storage Cluster</span><span class="service-status">Operational</span></div>
-            </div>
-            <div class="service-group" style="margin-top: 30px;">
-                <h2>Real-time Data Services</h2>
-                <div class="service-item"><span class="service-name">WebSocket Push Service</span><span class="service-status">Operational</span></div>
-                <div class="service-item"><span class="service-name">Real-time Data Pipeline</span><span class="service-status">Operational</span></div>
-            </div>
-            <div class="footer">
-                <!-- HTML 修改 -->
-                <p>
-                    Last Updated:
-                    <span id="date-container"></span>
-                    <span id="time-container" class="notranslate"></span>
-                </p>
-                <p><a href="/login">Admin Login</a></p>
-            </div>
+            <h1>Welcome!</h1>
+            <p>Enter the website you want to visit:</p>
+            <form id="redirectForm">
+                <input type="text" id="urlInput" placeholder="example.com" required><br>
+                <input type="submit" value="Go">
+            </form>
         </div>
-        <!-- JavaScript 修改 -->
+        <footer>© 2025 Quick Access - Making Your Day Easier | <a href="/login">Admin Login</a></footer>
         <script>
-            let lastDate = '';
-            function updateTimestamp() {
-                const now = new Date();
-                const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-                const currentDate = now.toLocaleDateString('en-US', dateOptions);
-                if (currentDate !== lastDate) {
-                    document.getElementById('date-container').textContent = currentDate;
-                    lastDate = currentDate;
+            document.getElementById('redirectForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                let url = document.getElementById('urlInput').value.trim();
+                if (url) {
+                    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                        url = 'https://' + url;
+                    }
+                    window.location.href = url;
                 }
-                const hours = String(now.getHours()).padStart(2, '0');
-                const minutes = String(now.getMinutes()).padStart(2, '0');
-                const seconds = String(now.getSeconds()).padStart(2, '0');
-                const currentTimeString = ' ' + hours + ':' + minutes + ':' + seconds;
-                document.getElementById('time-container').textContent = currentTimeString;
-            }
-            setInterval(updateTimestamp, 1000);
-            updateTimestamp();
+            });
         </script>
     </body>
     </html>`;
@@ -1199,15 +1174,21 @@ function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = 
 
 function generateClientConfig(nodeObjects) {
     const protocol = 'vl' + 'ess';
+    const fpOptions = ['chrome', 'random']; 
+
     return nodeObjects.map(node => {
         const security = node.tls ? 'tls' : 'none';
+        const randomFp = fpOptions[Math.floor(Math.random() * fpOptions.length)];
+
         const params = new URLSearchParams({
             encryption: 'none',
             security: security,
             sni: node.servername,
             type: 'ws',
             host: node.servername,
-            path: node['ws-opts'].path 
+            path: node['ws-opts'].path,
+            fp: randomFp, 
+            alpn: 'h3'   
         });
         return `${protocol}://${node.uuid}@${node.server}:${node.port}?${params.toString()}#${encodeURIComponent(node.name)}`;
     }).join('\n');
