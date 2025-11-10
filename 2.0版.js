@@ -1321,5 +1321,3 @@ function compareArrayBuffers(buf1, buf2) {
     }
     return true;
 }
-
-// --- END OF FINAL COMPLETE _worker.js ---
