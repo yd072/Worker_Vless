@@ -882,13 +882,13 @@ export default {
                     const convertedText = await subResponse.text();
                     const restoredText = convertedText.replaceAll(fakeHost, url.hostname);
 
-                    const finalHeaders = new Headers(subResponse.headers);
-                    finalHeaders.set('content-disposition', `inline; filename="subscription"; filename*=UTF-8''${encodeURIComponent(FILENAME)}`);
-                    finalHeaders.delete('content-length');
+                    const finalHeaders = new Headers();
+                    finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
+                    const subFilename = `${FILENAME}.yaml`;
+                    finalHeaders.set('Content-Disposition', `inline; filename="${subFilename}"; filename*=UTF-8''${encodeURIComponent(subFilename)}`);
 
                     return new Response(restoredText, { 
-                        status: subResponse.status, 
-                        statusText: subResponse.statusText, 
+                        status: 200, 
                         headers: finalHeaders 
                     });
                 } catch (e) {
@@ -914,7 +914,6 @@ export default {
             return new Response(base64Sub, { 
                 headers: {
                     'Content-Type': 'text/plain;charset=utf-8',
-                    'Content-Disposition': `inline; filename="subscription"; filename*=UTF-8''${encodeURIComponent(FILENAME)}`
                 }
             });
         }
@@ -1073,13 +1072,13 @@ async function fetchExternalSubscription(subDomain, realUuid, realHostName, user
              finalContentB64 = originalB64Content;
         }
 
-        const finalHeaders = new Headers(response.headers);
+        const finalHeaders = new Headers();
         finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
-        finalHeaders.set('Content-Disposition', `inline; filename="subscription"; filename*=UTF-8''${encodeURIComponent(FILENAME)}`);
-        finalHeaders.delete('content-length');
+        finalHeaders.set('Content-Disposition', `inline; filename="${FILENAME}"; filename*=UTF-8''${encodeURIComponent(FILENAME)}`);
+
 
         return new Response(finalContentB64, {
-            status: response.status,
+            status: 200,
             headers: finalHeaders
         });
 
