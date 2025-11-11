@@ -2,9 +2,9 @@
 import { connect } from "cloudflare:sockets";
 const PLACEHOLDER_HOST = 'example.com';
 const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
-const WS_PATH = '/api/ws'; 
-const RANDOM_NODE_COUNT = 10; 
-const FILENAME = 'subscription'; 
+const WS_PATH = '/api/ws';
+const RANDOM_NODE_COUNT = 10;
+const FILENAME = 'subscription';
 const CF_IPS_CIDR = [ '104.16.0.0/14', '104.21.0.0/16', '104.24.0.0/14', '8.35.211.0/23', '8.39.125.0/24' ];
 const selectableHttpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
 const selectableHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086"];
@@ -14,8 +14,8 @@ async function generateUUIDFromPassword(password) {
     const data = encoder.encode(password);
     const hashBuffer = await crypto.subtle.digest('SHA-1', data);
     const hashBytes = new Uint8Array(hashBuffer).slice(0, 16);
-    hashBytes[6] = (hashBytes[6] & 0x0f) | 0x50; 
-    hashBytes[8] = (hashBytes[8] & 0x3f) | 0x80; 
+    hashBytes[6] = (hashBytes[6] & 0x0f) | 0x50;
+    hashBytes[8] = (hashBytes[8] & 0x3f) | 0x80;
     const hex = Array.from(hashBytes, b => b.toString(16).padStart(2, '0')).join('');
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
@@ -307,9 +307,9 @@ function statusPage() {
 function subscriptionManagementPage(request, password, uuid, settings, error = null, isKvBound = false) {
     const hostName = new URL(request.url).hostname;
     const userAgent = request.headers.get('User-Agent') || 'N/A';
-    
+
     const messageHtml = error ? `<div class="message error">${error}</div>` : '';
-    
+
     let advancedSections = '';
     if (isKvBound) {
         const { apiUrls = '', apiUrlsWithCustomPorts = '', selectedHttpsPorts = [], selectedHttpPorts = [], subConverter = '', subConfig = '' } = settings;
@@ -778,7 +778,7 @@ export default {
             
             const subDomain = url.searchParams.get('sub');
             if (subDomain) {
-                return await fetchExternalSubscription(subDomain, AUTH_UUID, fakeHost, userAgent, url.searchParams);
+                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams);
             }
 
             const preferredDomains = await fetchPreferredDomains(settings);
@@ -1032,31 +1032,30 @@ async function parseProxyIP(proxyIPString) {
 
 async function fetchExternalSubscription(subDomain, realUuid, realHostName, userAgent, searchParams) {
     const subUrl = `https://${subDomain}/sub?host=${PLACEHOLDER_HOST}&uuid=${PLACEHOLDER_UUID}&path=${encodeURIComponent('/')}`;
-    
+
     try {
         const response = await fetch(subUrl, { headers: { 'User-Agent': userAgent } });
         if (!response.ok) {
             throw new Error(`Failed to fetch SUB source: ${response.status}`);
         }
-        
-        const content = await response.text();
-        
-        const restoredContent = content.replace(new RegExp(PLACEHOLDER_HOST, 'g'), realHostName)
-                                     .replace(new RegExp(PLACEHOLDER_UUID, 'g'), realUuid);
 
-        let modifiedContent = restoredContent;
-        const proxyIP = searchParams.get('proxyip');
-        
-        if (proxyIP) {
-            try {
-                const decoded = atob(restoredContent);
-                const links = decoded.split('\n');
+        const originalB64Content = await response.text();
+        let finalContentB64 = originalB64Content; 
+
+        try {
+            let decodedContent = atob(originalB64Content);
+            let restoredContent = decodedContent.replace(new RegExp(PLACEHOLDER_HOST, 'g'), realHostName)
+                                                .replace(new RegExp(PLACEHOLDER_UUID, 'g'), realUuid);
+
+            const proxyIP = searchParams.get('proxyip');
+            if (proxyIP) {
+                const links = restoredContent.split('\n');
                 const modifiedLinks = links.map(link => {
                     if (!link.trim()) return link;
                     try {
                         const nodeUrl = new URL(link);
                         const wsPath = nodeUrl.searchParams.get('path') || '/';
-                        const pathUrl = new URL(wsPath, 'https://dummy.com'); 
+                        const pathUrl = new URL(wsPath, 'https://dummy.com');
                         pathUrl.searchParams.set('proxyip', proxyIP);
                         nodeUrl.searchParams.set('path', `${pathUrl.pathname}${pathUrl.search}`);
                         return nodeUrl.toString();
@@ -1064,18 +1063,22 @@ async function fetchExternalSubscription(subDomain, realUuid, realHostName, user
                         return link; 
                     }
                 });
-                modifiedContent = btoa(modifiedLinks.join('\n'));
-            } catch (e) {
-                modifiedContent = restoredContent;
+                restoredContent = modifiedLinks.join('\n');
             }
+            
+            finalContentB64 = btoa(restoredContent);
+
+        } catch (e) {
+             console.error("Error processing external subscription content:", e);
+             finalContentB64 = originalB64Content;
         }
-        
+
         const finalHeaders = new Headers(response.headers);
         finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
         finalHeaders.set('Content-Disposition', `inline; filename="subscription"; filename*=UTF-8''${encodeURIComponent(FILENAME)}`);
         finalHeaders.delete('content-length');
-        
-        return new Response(modifiedContent, {
+
+        return new Response(finalContentB64, {
             status: response.status,
             headers: finalHeaders
         });
