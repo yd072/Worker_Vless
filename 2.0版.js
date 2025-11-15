@@ -7,7 +7,7 @@ const RANDOM_NODE_COUNT = 10;
 const FILENAME = 'subscription';
 const CF_IPS_CIDR = [ '104.16.0.0/14', '104.21.0.0/16', '104.24.0.0/14', '8.35.211.0/23', '8.39.125.0/24' ];
 const selectableHttpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
-const selectableHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086"];
+const selectableHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086","2095"];
 
 async function generateUUIDFromPassword(password) {
     const encoder = new TextEncoder();
