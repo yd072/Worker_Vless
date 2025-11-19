@@ -308,7 +308,7 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
     const hostName = new URL(request.url).hostname;
     const userAgent = request.headers.get('User-Agent') || 'N/A';
 
-    const messageHtml = error ? `<div class="message error">${error}</div>` : '';
+    const messageHtml = error ? `<div class="message error">${error}</p>` : '';
 
     let advancedSections = '';
     if (isKvBound) {
@@ -653,7 +653,7 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
                 
                 function updateSubscriptionLinks() {
                     const settings = getSettings();
-                    const baseUrl = \`https://${hostName}/${password}\`;
+                    const baseUrl = window.location.href.split('?')[0];
                     const params = new URLSearchParams();
                     let isCustomized = false;
                     
@@ -800,7 +800,22 @@ export default {
                 try {
                     const formData = await request.formData();
                     if (formData.get('password') === PASSWORD) {
-                        return Response.redirect(new URL(`/${PASSWORD}`, request.url).toString(), 302);
+                        const secret = PASSWORD + "-a-very-secret-salt-string-for-source-js";
+                        const encoder = new TextEncoder();
+                        const data = encoder.encode(secret);
+                        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                        const hashArray = Array.from(new Uint8Array(hashBuffer));
+                        const sessionToken = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                        const redirectUrl = new URL(`/${PASSWORD}`, request.url).toString();
+                        const headers = new Headers();
+                        headers.set('Location', redirectUrl);
+                        headers.set('Set-Cookie', `session_token=${sessionToken}; HttpOnly; Secure; Path=/; Max-Age=3600; SameSite=Strict`);
+                        
+                        return new Response(null, {
+                            status: 302,
+                            headers: headers,
+                        });
                     } else {
                         return loginPage("密码不正确，请重试。");
                     }
@@ -812,6 +827,25 @@ export default {
         }
 
         if (path === `/${PASSWORD}`) {
+            const subParams = ['clash', 'singbox', 'sb', 'base64', 'sub'];
+            const hasSubParam = subParams.some(p => url.searchParams.has(p));
+            if (userAgent.includes('mozilla') && !hasSubParam) {
+                const secret = PASSWORD + "-a-very-secret-salt-string-for-source-js";
+                const encoder = new TextEncoder();
+                const data = encoder.encode(secret);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                const expectedToken = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                const cookie = request.headers.get('Cookie') || '';
+                const match = cookie.match(/session_token=([a-f0-9]+)/);
+                const receivedToken = match ? match[1] : '';
+
+                if (receivedToken !== expectedToken) {
+                    const loginUrl = new URL('/login', url).toString();
+                    return Response.redirect(loginUrl, 302);
+                }
+            }
             let settings = {}; 
             if (KV) {
                 try {
@@ -850,6 +884,9 @@ export default {
                 } catch (e) {
                     return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `处理请求时出错: ${e.message}`, !!KV);
                 }
+            }
+            if (userAgent.includes('mozilla') && !hasSubParam) {
+                return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, null, !!KV);
             }
             
             const subConverterHost = (settings && settings.subConverter) || 'SUBAPI.cmliussss.net';
@@ -894,11 +931,6 @@ export default {
                 } catch (e) {
                     return new Response(`Error contacting subscription converter: ${e.message}`, { status: 500 });
                 }
-            }
-            
-            const subParams = ['clash', 'singbox', 'sb', 'base64', 'sub'];
-            if (userAgent.includes('mozilla') && !subParams.some(p => url.searchParams.has(p))) {
-                return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, null, !!KV);
             }
             
             const subDomain = url.searchParams.get('sub');
