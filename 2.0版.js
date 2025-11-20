@@ -20,6 +20,15 @@ async function generateUUIDFromPassword(password) {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+async function generateAdminPath(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + "-admin-path-salt");
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex.slice(0, 24); 
+}
+
 async function generateFakeInfo(password) {
     const encoder = new TextEncoder();
     const data = encoder.encode(password + "-fake-seed-for-converter");
@@ -295,7 +304,7 @@ function statusPage() {
                 const seconds = String(now.getSeconds()).padStart(2, '0');
                 const currentTimeString = ' ' + hours + ':' + minutes + ':' + seconds;
                 document.getElementById('time-container').textContent = currentTimeString;
-                }
+            }
             setInterval(updateTimestamp, 1000);
             updateTimestamp();
         </script>
@@ -304,7 +313,7 @@ function statusPage() {
     return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
-function subscriptionManagementPage(request, password, uuid, settings, error = null, isKvBound = false) {
+function subscriptionManagementPage(request, password, uuid, settings, subPath, error = null, isKvBound = false) {
     const hostName = new URL(request.url).hostname;
     const userAgent = request.headers.get('User-Agent') || 'N/A';
 
@@ -328,7 +337,7 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
         advancedSections = `
             <div class="section">
                 <div class="section-header"><h2 class="section-title">🔄 订阅转换设置</h2></div>
-                <form method="POST" action="/${password}">
+                <form method="POST">
                     <input type="hidden" name="form_action" value="update_sub_settings">
                     <div class="modal-input-group">
                         <label for="sub_converter">订阅转换器地址</label>
@@ -343,7 +352,7 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
             </div>
             <div class="section">
                 <div class="section-header"><h2 class="section-title">🌐 优选源 (常规)</h2></div>
-                <form method="POST" action="/${password}">
+                <form method="POST">
                     <input type="hidden" name="form_action" value="update_api_urls">
                     <div class="modal-input-group">
                         <label for="api_urls">常规源 (每行一个)</label>
@@ -354,7 +363,7 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
             </div>
             <div class="section">
                 <div class="section-header"><h2 class="section-title">端口优选源 (应用选择的端口)</h2></div>
-                <form method="POST" action="/${password}">
+                <form method="POST">
                     <input type="hidden" name="form_action" value="update_custom_api_urls">
                      <div class="modal-input-group">
                         <label>选择要应用的端口</label>
@@ -630,6 +639,8 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
                 const clashBtn = document.getElementById('clash-sub-button');
                 const singboxBtn = document.getElementById('singbox-sub-button');
 
+                const subBaseUrl = "${subPath}"; 
+
                 const settingsMap = {
                     sub: { enable: document.getElementById('enableSub'), input: document.getElementById('subInput') },
                     proxyip: { enable: document.getElementById('enableProxyip'), input: document.getElementById('proxyipInput') }
@@ -652,7 +663,9 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
                 
                 function updateSubscriptionLinks() {
                     const settings = getSettings();
-                    const baseUrl = window.location.href.split('?')[0];
+                    const origin = window.location.origin;
+                    const baseUrl = origin + subBaseUrl;
+                    
                     const params = new URLSearchParams();
                     let isCustomized = false;
                     
@@ -750,6 +763,7 @@ export default {
         }
 
         const AUTH_UUID = await generateUUIDFromPassword(PASSWORD);
+        const ADMIN_PATH = await generateAdminPath(PASSWORD);
         const { fakePassword, fakeHost } = await generateFakeInfo(PASSWORD);
         const url = new URL(request.url);
         
@@ -768,9 +782,7 @@ export default {
                 try {
                     const storedSettings = await KV.get("settings", "json");
                     if (storedSettings) settings = storedSettings;
-                } catch (e) {
-                     console.error(`KV 'settings' read/parse error for fake path: ${e}.`);
-                }
+                } catch (e) { console.error(e); }
             } else if (ENV_APIURLS) {
                 settings.apiUrls = ENV_APIURLS;
             }
@@ -783,11 +795,7 @@ export default {
             const preferredDomains = await fetchPreferredDomains(settings);
             const randomNodes = generateRandomCFNodes(fakeHost, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
             const subContent = generateClientConfig(randomNodes);
-            const base64Sub = btoa(subContent);
-            
-            return new Response(base64Sub, { 
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-            });
+            return new Response(btoa(subContent), { headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
         }
 
         if (path === '/') {
@@ -800,74 +808,64 @@ export default {
                     const formData = await request.formData();
                     const inputPassword = formData.get('password') || '';
                     const encoder = new TextEncoder();
+                    
                     const targetHash = await crypto.subtle.digest('SHA-256', encoder.encode(PASSWORD));
                     const inputHash = await crypto.subtle.digest('SHA-256', encoder.encode(inputPassword));
+
                     if (crypto.subtle.timingSafeEqual(targetHash, inputHash)) {
-                        const secret = PASSWORD + "-a-very-secret-salt-string-for-source-js";
+                        const secret = PASSWORD + "-session-salt";
                         const data = encoder.encode(secret);
                         const hashBuffer = await crypto.subtle.digest('SHA-256', data);
                         const hashArray = Array.from(new Uint8Array(hashBuffer));
                         const sessionToken = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-                        const redirectUrl = new URL(`/${PASSWORD}`, request.url).toString();
+                        const redirectUrl = new URL(`/${ADMIN_PATH}`, request.url).toString();
                         const headers = new Headers();
                         headers.set('Location', redirectUrl);
                         headers.set('Set-Cookie', `session_token=${sessionToken}; HttpOnly; Secure; Path=/; Max-Age=3600; SameSite=Strict`);
                         
-                        return new Response(null, {
-                            status: 302,
-                            headers: headers,
-                        });
+                        return new Response(null, { status: 302, headers: headers });
                     } else {
-                        return loginPage("密码不正确，请重试。");
+                        return loginPage("密码不正确");
                     }
                 } catch (e) {
-                     return loginPage("处理请求时出错。");
+                     return loginPage("Error");
                 }
             }
             return loginPage(); 
         }
 
-        if (path === `/${PASSWORD}`) {
-            const subParams = ['clash', 'singbox', 'sb', 'base64', 'sub'];
-            const hasSubParam = subParams.some(p => url.searchParams.has(p));
-            if (userAgent.includes('mozilla') && !hasSubParam) {
-                const secret = PASSWORD + "-a-very-secret-salt-string-for-source-js";
-                const encoder = new TextEncoder();
-                const data = encoder.encode(secret);
-                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                const expectedToken = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        if (path === `/${ADMIN_PATH}`) {
+            const secret = PASSWORD + "-session-salt";
+            const encoder = new TextEncoder();
+            const data = encoder.encode(secret);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const expectedToken = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-                const cookie = request.headers.get('Cookie') || '';
-                const match = cookie.match(/session_token=([a-f0-9]+)/);
-                const receivedToken = match ? match[1] : '';
+            const cookie = request.headers.get('Cookie') || '';
+            const match = cookie.match(/session_token=([a-f0-9]+)/);
+            const receivedToken = match ? match[1] : '';
 
-                if (receivedToken !== expectedToken) {
-                    const loginUrl = new URL('/login', url).toString();
-                    return Response.redirect(loginUrl, 302);
-                }
+            if (receivedToken !== expectedToken) {
+                return Response.redirect(new URL('/login', url).toString(), 302);
             }
+
             let settings = {}; 
             if (KV) {
                 try {
                     const storedSettings = await KV.get("settings", "json");
                     if (storedSettings) settings = storedSettings;
-                } catch (e) {
-                    console.error(`KV 'settings' read/parse error: ${e}.`);
-                }
+                } catch (e) {}
             } else if (ENV_APIURLS) {
                 settings.apiUrls = ENV_APIURLS;
             }
             
             if (request.method === 'POST') {
-                 if (!KV) {
-                    return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, "错误：未绑定 KV，无法保存在线设置。", false);
-                }
+                 if (!KV) return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, "KV 未绑定", false);
                 try {
                     const formData = await request.formData();
                     const formAction = formData.get('form_action');
-                    
                     if (formAction === 'update_api_urls') {
                         settings.apiUrls = formData.get('api_urls');
                     } else if (formAction === 'update_custom_api_urls') {
@@ -878,19 +876,34 @@ export default {
                         settings.subConverter = formData.get('sub_converter');
                         settings.subConfig = formData.get('sub_config');
                     }
-
                     await KV.put('settings', JSON.stringify(settings));
-                    const targetUrl = new URL(`/${PASSWORD}`, url);
+                    const targetUrl = new URL(`/${ADMIN_PATH}`, url); 
                     targetUrl.searchParams.set('success', 'true');
                     return Response.redirect(targetUrl.toString(), 303);
                 } catch (e) {
-                    return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `处理请求时出错: ${e.message}`, !!KV);
+                    return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, e.message, !!KV);
                 }
             }
-            if (userAgent.includes('mozilla') && !hasSubParam) {
-                return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, null, !!KV);
-            }
+
+            return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, null, !!KV);
+        }
+
+        if (path === `/${PASSWORD}`) {
+            const subParams = ['clash', 'singbox', 'sb', 'base64', 'sub'];
+            const hasSubParam = subParams.some(p => url.searchParams.has(p));
             
+            if (userAgent.includes('mozilla') && !hasSubParam) {
+                return Response.redirect(new URL('/login', url).toString(), 302);
+            }
+
+            let settings = {}; 
+            if (KV) {
+                try {
+                    const storedSettings = await KV.get("settings", "json");
+                    if (storedSettings) settings = storedSettings;
+                } catch (e) {}
+            } else if (ENV_APIURLS) { settings.apiUrls = ENV_APIURLS; }
+
             const subConverterHost = (settings && settings.subConverter) || 'SUBAPI.cmliussss.net';
             const subConfig = (settings && settings.subConfig) || 'https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_MultiMode.ini';
             
@@ -906,33 +919,26 @@ export default {
                 sourceSubUrl.searchParams.delete('clash');
                 sourceSubUrl.searchParams.delete('singbox');
                 sourceSubUrl.searchParams.delete('sb');
-                
-                sourceSubUrl.pathname = `/${fakePassword}`;
+                sourceSubUrl.pathname = `/${fakePassword}`; 
 
                 const converterUrl = `https://${subConverterHost}/sub?target=${targetClient}&url=${encodeURIComponent(sourceSubUrl.toString())}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 
                 try {
                     const subResponse = await fetch(converterUrl, { headers: { 'User-Agent': 'cloudflare-worker' } });
-                    
-                    if (!subResponse.ok) {
-                        return new Response(`Error from subscription converter: ${subResponse.statusText}`, { status: subResponse.status });
-                    }
-                    
+                    if (!subResponse.ok) return new Response(subResponse.statusText, { status: subResponse.status });
                     const convertedText = await subResponse.text();
                     const restoredText = convertedText.replaceAll(fakeHost, url.hostname);
-
+                    
+                    const subFilename = `${FILENAME}.yaml`;
                     const finalHeaders = new Headers();
                     finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
-                    const subFilename = `${FILENAME}.yaml`;
-                    finalHeaders.set('Content-Disposition', `inline; filename="${subFilename}"; filename*=UTF-8''${encodeURIComponent(subFilename)}`);
+                    finalHeaders.set('Content-Disposition', `inline; filename="subscription.yaml"; filename*=UTF-8''${encodeURIComponent(subFilename)}`);
 
                     return new Response(restoredText, { 
                         status: 200, 
                         headers: finalHeaders 
                     });
-                } catch (e) {
-                    return new Response(`Error contacting subscription converter: ${e.message}`, { status: 500 });
-                }
+                } catch (e) { return new Response(e.message, { status: 500 }); }
             }
             
             const subDomain = url.searchParams.get('sub');
@@ -943,13 +949,12 @@ export default {
             const preferredDomains = await fetchPreferredDomains(settings);
             const randomNodes = generateRandomCFNodes(url.hostname, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
             const subContent = generateClientConfig(randomNodes);
-            const base64Sub = btoa(subContent);
+            const subFilename = `${FILENAME}.txt`;
+            const finalHeaders = new Headers();
+            finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
+            finalHeaders.set('Content-Disposition', `inline; filename="subscription.txt"; filename*=UTF-8''${encodeURIComponent(subFilename)}`);
             
-            return new Response(base64Sub, { 
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8',
-                }
-            });
+            return new Response(btoa(subContent), { headers: finalHeaders });
         }
         
         return statusPage();
@@ -1106,9 +1111,10 @@ async function fetchExternalSubscription(subDomain, realUuid, realHostName, user
              finalContentB64 = originalB64Content;
         }
 
+        const subFilename = `${FILENAME}`;
         const finalHeaders = new Headers();
         finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
-        finalHeaders.set('Content-Disposition', `inline; filename="${FILENAME}"; filename*=UTF-8''${encodeURIComponent(FILENAME)}`);
+        finalHeaders.set('Content-Disposition', `inline; filename="subscription"; filename*=UTF-8''${encodeURIComponent(subFilename)}`);
 
 
         return new Response(finalContentB64, {
