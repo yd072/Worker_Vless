@@ -317,7 +317,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
     const hostName = new URL(request.url).hostname;
     const userAgent = request.headers.get('User-Agent') || 'N/A';
 
-    const messageHtml = error ? `<div class="message error">${error}</p>` : '';
+    const messageHtml = error ? `<div class="message error">${error}</div>` : '';
 
     let advancedSections = '';
     if (isKvBound) {
