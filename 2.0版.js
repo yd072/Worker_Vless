@@ -798,9 +798,12 @@ export default {
             if (request.method === 'POST') {
                 try {
                     const formData = await request.formData();
-                    if (formData.get('password') === PASSWORD) {
+                    const inputPassword = formData.get('password') || '';
+                    const encoder = new TextEncoder();
+                    const targetHash = await crypto.subtle.digest('SHA-256', encoder.encode(PASSWORD));
+                    const inputHash = await crypto.subtle.digest('SHA-256', encoder.encode(inputPassword));
+                    if (crypto.subtle.timingSafeEqual(targetHash, inputHash)) {
                         const secret = PASSWORD + "-a-very-secret-salt-string-for-source-js";
-                        const encoder = new TextEncoder();
                         const data = encoder.encode(secret);
                         const hashBuffer = await crypto.subtle.digest('SHA-256', data);
                         const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -1282,7 +1285,6 @@ function remoteSocketToWS(remoteSocket, webSocket, responseHeader) {
     })).catch(() => { safeCloseWebSocket(webSocket); });
 }
 
-
 function makeReadableWebSocketStream(webSocket, earlyDataHeader) {
     let readableStreamCancel = false;
     const stream = new ReadableStream({
@@ -1299,7 +1301,7 @@ function makeReadableWebSocketStream(webSocket, earlyDataHeader) {
                 }
             });
             webSocket.addEventListener('error', (err) => controller.error(err));
-            
+
             const { earlyData, error } = base64ToArrayBuffer(earlyDataHeader);
             if (error) {
                 controller.error(error);
