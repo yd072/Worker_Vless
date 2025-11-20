@@ -585,7 +585,6 @@ function subscriptionManagementPage(request, password, uuid, settings, error = n
                 <div class="section-header"><h2 class="section-title">🔧 设置信息</h2></div>
                 <div class="config-info">
                     HOST: ${hostName}<br>
-                    PASSWORD: ${password}<br>
                     UUID: ${uuid}<br>
                     UA: ${userAgent}
                 </div>
