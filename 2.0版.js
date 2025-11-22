@@ -377,7 +377,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 <form method="POST">
                     <input type="hidden" name="form_action" value="update_sub_settings">
                     <div class="modal-input-group">
-                        <label for="custom_sub_domain">默认外部订阅域名 (SUB)</label>
+                        <label for="custom_sub_domain">SUB</label>
                         <input type="text" id="custom_sub_domain" name="custom_sub_domain" value="${customSubDomain || ''}">
                         <small style="color:#666;">如果没有在 URL 参数中指定 ?sub=...，将优先使用此域名获取节点。</small>
                     </div>
