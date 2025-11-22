@@ -1,4 +1,3 @@
-
 import { connect } from "cloudflare:sockets";
 const PLACEHOLDER_HOST = 'example.com';
 const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
@@ -36,9 +35,8 @@ async function generateFakeInfo(password) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     const fakePassword = hashHex.slice(0, 32);
-    const fakeHostLocal = `local.${hashHex.slice(32, 38)}.com`;
-    const fakeHostCustom = `custom.${hashHex.slice(38, 44)}.com`;    
-    return { fakePassword, fakeHostLocal, fakeHostCustom };
+    const fakeHost = `${hashHex.slice(32, 38)}.${hashHex.slice(38, 46)}.com`;
+    return { fakePassword, fakeHost };
 }
 
 function setupMissingVarsPage() {
@@ -329,8 +327,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             selectedHttpPorts = [], 
             subConverter = '', 
             subConfig = '',
-            customUUID = '', 
-            customSNI = '',
             customSubDomain = '' 
         } = settings;
 
@@ -346,32 +342,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             </div>`).join('');
 
         advancedSections = `
-            <div class="section">
-                <div class="section-header"><h2 class="section-title">🆔 自定义节点身份</h2></div>
-                
-                <!-- 按钮居中，无边框 -->
-                <div class="subscription-buttons-container">
-                    <button class="copy-button" onclick="copySpecificSub('text', 'custom')">通用订阅</button>
-                    <button class="copy-button" onclick="copySpecificSub('base64', 'custom')">Base64</button>
-                    <button class="copy-button" onclick="copySpecificSub('clash', 'custom')">Clash</button>
-                    <button class="copy-button" onclick="copySpecificSub('sb', 'custom')">SingBox</button>
-                </div>
-
-                <form method="POST">
-                    <input type="hidden" name="form_action" value="update_identity">
-                    <div class="modal-input-group">
-                        <label for="custom_uuid">自定义 UUID</label>
-                        <input type="text" id="custom_uuid" name="custom_uuid" value="${customUUID || ''}" placeholder="留空则仅使用默认节点">
-                    </div>
-                    <div class="modal-input-group">
-                        <label for="custom_sni">自定义 SNI (Host/sin)</label>
-                        <input type="text" id="custom_sni" name="custom_sni" value="${customSNI || ''}" placeholder="留空则仅使用默认节点">
-                        <small style="color:#666;">注意：设置此项后，生成的节点将使用此域名作为 Host/SNI，适用于使用外部节点。</small>
-                    </div>
-                    <div class="form-footer"><button type="submit" class="copy-button">保存</button></div>
-                </form>
-            </div>
-
             <div class="section">
                 <div class="section-header"><h2 class="section-title">🔄 订阅转换与外部源设置</h2></div>
                 <form method="POST">
@@ -652,7 +622,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 <div class="modal-input-group">
                     <div class="checkbox-label-group">
                         <input type="checkbox" id="enableSub">
-                        <label for="enableSub">SUB </label>
+                        <label for="enableSub">SUB</label>
                     </div>
                     <input type="text" id="subInput">
                 </div>
@@ -670,8 +640,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
         </div>
 
         <script>
-            window.copySpecificSub = null;
-
             document.addEventListener('DOMContentLoaded', () => {
                 const settingsKey = 'subSettings_${uuid}';
                 const modal = document.getElementById('settingsModal');
@@ -705,49 +673,23 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                         .then(() => showToast('✅ 已复制到剪贴板'))
                         .catch(() => showToast('❌ 复制失败'));
                 }
-
-                function buildParams(subset) {
+                
+                function updateSubscriptionLinks() {
                     const settings = getSettings();
+                    const origin = window.location.origin;
+                    const baseUrl = origin + subBaseUrl;
+                    
                     const params = new URLSearchParams();
+                    let isCustomized = false;
                     
                     for (const key in settings) {
                         if (settings[key].enabled && settings[key].value) {
                             params.set(key, settings[key].value);
+                            isCustomized = true;
                         }
                     }
-                    if (subset) {
-                        params.set('subset', subset);
-                    }
-                    return params;
-                }
-
-                window.copySpecificSub = function(type, subset) {
-                    const origin = window.location.origin;
-                    const baseUrl = origin + subBaseUrl;
-                    const params = buildParams(subset);
-
-                    let finalUrl = baseUrl;
-
-                    if (type === 'base64') {
-                        params.set('base64', '1');
-                    } else if (type === 'clash') {
-                        params.set('clash', '1');
-                    } else if (type === 'sb') {
-                        params.set('sb', '1');
-                    }
-
-                    const queryString = params.toString();
-                    finalUrl += queryString ? ('?' + queryString) : '';
-                    copyToClipboard(finalUrl);
-                }
-                
-                function updateSubscriptionLinks() {
-                    const origin = window.location.origin;
-                    const baseUrl = origin + subBaseUrl;
-                    const params = buildParams(null); 
                     
-                    const queryString = params.toString();
-                    const finalUrl = baseUrl + (queryString ? ('?' + queryString) : '');
+                    const finalUrl = params.toString() ? \`\${baseUrl}?\${params.toString()}\` : baseUrl;
                     const separator = finalUrl.includes('?') ? '&' : '?';
 
                     genericBtn.onclick = () => copyToClipboard(finalUrl);
@@ -755,11 +697,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                     clashBtn.onclick = () => copyToClipboard(\`\${finalUrl}\${separator}clash\`);
                     singboxBtn.onclick = () => copyToClipboard(\`\${finalUrl}\${separator}sb\`);
                     
-                    let isCustomized = false;
-                    const currentSettings = getSettings();
-                    for (const key in currentSettings) {
-                         if (currentSettings[key].enabled && currentSettings[key].value) isCustomized = true;
-                    }
                     openModalBtn.textContent = isCustomized ? '自定义参数 ✓' : '自定义参数';
                 }
 
@@ -840,62 +777,37 @@ export default {
 
         const AUTH_UUID = await generateUUIDFromPassword(PASSWORD);
         const ADMIN_PATH = await generateAdminPath(PASSWORD);
-        const { fakePassword, fakeHostLocal, fakeHostCustom } = await generateFakeInfo(PASSWORD);
+        const { fakePassword, fakeHost } = await generateFakeInfo(PASSWORD);
         const url = new URL(request.url);
-        
-        let settings = {};
-        if (KV) {
-            try {
-                const storedSettings = await KV.get("settings", "json");
-                if (storedSettings) settings = storedSettings;
-            } catch (e) { console.error(e); }
-        } else if (ENV_APIURLS) {
-            settings.apiUrls = ENV_APIURLS;
-        }
-
-        const localUUID = AUTH_UUID;
-        const localHost = url.hostname;
-        
-        const customUUID = (settings.customUUID && settings.customUUID.length === 36) ? settings.customUUID : null;
-        const customHost = settings.customSNI ? settings.customSNI : null;
-        const useCustom = !!(customUUID && customHost);
         
         const upgradeHeader = request.headers.get('Upgrade');
         if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
             const proxyIP = getProxyIPFromRequest(request);
-            return await handleWebSocketConnection(request, localUUID, customUUID, proxyIP);
+            return await handleWebSocketConnection(request, AUTH_UUID, proxyIP);
         }
 
         const path = url.pathname;
         const userAgent = (request.headers.get('User-Agent') || '').toLowerCase();
 
         if (path === `/${fakePassword}`) {
-            const targetSubDomain = url.searchParams.get('sub') || settings.customSubDomain;
-
-            if (targetSubDomain) {
-                const subResponse = await fetchExternalSubscription(targetSubDomain, PLACEHOLDER_UUID, fakeHostCustom, userAgent, url.searchParams);
-                return subResponse;
+            let settings = {};
+            if (KV) {
+                try {
+                    const storedSettings = await KV.get("settings", "json");
+                    if (storedSettings) settings = storedSettings;
+                } catch (e) { console.error(e); }
+            } else if (ENV_APIURLS) {
+                settings.apiUrls = ENV_APIURLS;
+            }
+            
+            const subDomain = url.searchParams.get('sub') || settings.customSubDomain;
+            if (subDomain) {
+                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams);
             }
 
             const preferredDomains = await fetchPreferredDomains(settings);
-
-            const localNodes = generateRandomCFNodes(fakeHostLocal, localUUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
-            let customNodes = [];
-            if (useCustom) {
-                customNodes = generateRandomCFNodes(fakeHostCustom, PLACEHOLDER_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
-            }
-            const subset = url.searchParams.get('subset');
-            let allNodes = [];
-            
-            if (subset === 'custom' && useCustom) {
-                allNodes = customNodes;
-            } else if (subset === 'local') {
-                allNodes = localNodes;
-            } else {
-                allNodes = localNodes;
-            }
-
-            const subContent = generateClientConfig(allNodes);
+            const randomNodes = generateRandomCFNodes(fakeHost, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
+            const subContent = generateClientConfig(randomNodes);
             return new Response(btoa(subContent), { headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
         }
 
@@ -952,8 +864,18 @@ export default {
                 return Response.redirect(new URL('/login', url).toString(), 302);
             }
 
+            let settings = {}; 
+            if (KV) {
+                try {
+                    const storedSettings = await KV.get("settings", "json");
+                    if (storedSettings) settings = storedSettings;
+                } catch (e) {}
+            } else if (ENV_APIURLS) {
+                settings.apiUrls = ENV_APIURLS;
+            }
+            
             if (request.method === 'POST') {
-                 if (!KV) return subscriptionManagementPage(request, PASSWORD, localUUID, settings, `/${PASSWORD}`, "KV 未绑定", false);
+                 if (!KV) return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, "KV 未绑定", false);
                 try {
                     const formData = await request.formData();
                     const formAction = formData.get('form_action');
@@ -966,21 +888,18 @@ export default {
                     } else if (formAction === 'update_sub_settings') {
                         settings.subConverter = formData.get('sub_converter');
                         settings.subConfig = formData.get('sub_config');
-                        settings.customSubDomain = formData.get('custom_sub_domain').trim();
-                    } else if (formAction === 'update_identity') {
-                        settings.customUUID = formData.get('custom_uuid').trim();
-                        settings.customSNI = formData.get('custom_sni').trim();
+                        settings.customSubDomain = formData.get('custom_sub_domain').trim(); // Save Custom SUB Domain
                     }
                     await KV.put('settings', JSON.stringify(settings));
                     const targetUrl = new URL(`/${ADMIN_PATH}`, url); 
                     targetUrl.searchParams.set('success', 'true');
                     return Response.redirect(targetUrl.toString(), 303);
                 } catch (e) {
-                    return subscriptionManagementPage(request, PASSWORD, localUUID, settings, `/${PASSWORD}`, e.message, !!KV);
+                    return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, e.message, !!KV);
                 }
             }
 
-            return subscriptionManagementPage(request, PASSWORD, localUUID, settings, `/${PASSWORD}`, null, !!KV);
+            return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, null, !!KV);
         }
 
         if (path === `/${PASSWORD}`) {
@@ -990,7 +909,15 @@ export default {
             if (userAgent.includes('mozilla') && !hasSubParam) {
                 return Response.redirect(new URL('/login', url).toString(), 302);
             }
-            
+
+            let settings = {}; 
+            if (KV) {
+                try {
+                    const storedSettings = await KV.get("settings", "json");
+                    if (storedSettings) settings = storedSettings;
+                } catch (e) {}
+            } else if (ENV_APIURLS) { settings.apiUrls = ENV_APIURLS; }
+
             const subConverterHost = (settings && settings.subConverter) || 'SUBAPI.cmliussss.net';
             const subConfig = (settings && settings.subConfig) || 'https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_MultiMode.ini';
             
@@ -1014,13 +941,7 @@ export default {
                     const subResponse = await fetch(converterUrl, { headers: { 'User-Agent': 'cloudflare-worker' } });
                     if (!subResponse.ok) return new Response(subResponse.statusText, { status: subResponse.status });
                     const convertedText = await subResponse.text();
-                    
-                    let restoredText = convertedText.replaceAll(fakeHostLocal, localHost);
-                    
-                    if (useCustom) {
-                        restoredText = restoredText.replaceAll(fakeHostCustom, customHost)
-                                                   .replaceAll(PLACEHOLDER_UUID, customUUID);
-                    }
+                    const restoredText = convertedText.replaceAll(fakeHost, url.hostname);
                     
                     const subFilename = `${FILENAME}.yaml`;
                     const finalHeaders = new Headers();
@@ -1033,33 +954,15 @@ export default {
                     });
                 } catch (e) { return new Response(e.message, { status: 500 }); }
             }
-
-            const targetSubDomain = url.searchParams.get('sub') || settings.customSubDomain;
             
-            if (targetSubDomain) {
-                const targetUUID = useCustom ? customUUID : localUUID;
-                const targetHost = useCustom ? customHost : localHost;
-                return await fetchExternalSubscription(targetSubDomain, targetUUID, targetHost, userAgent, url.searchParams);
+            const subDomain = url.searchParams.get('sub') || settings.customSubDomain;
+            if (subDomain) {
+                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams);
             }
 
             const preferredDomains = await fetchPreferredDomains(settings);
-            const localNodes = generateRandomCFNodes(localHost, localUUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
-            let customNodes = [];
-            if (useCustom) {
-                customNodes = generateRandomCFNodes(customHost, customUUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
-            }
-            const subset = url.searchParams.get('subset');
-            let allNodes = [];
-            
-            if (subset === 'custom' && useCustom) {
-                allNodes = customNodes;
-            } else if (subset === 'local') {
-                allNodes = localNodes;
-            } else {
-                allNodes = localNodes;
-            }
-            
-            const subContent = generateClientConfig(allNodes);
+            const randomNodes = generateRandomCFNodes(url.hostname, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
+            const subContent = generateClientConfig(randomNodes);
             const subFilename = `${FILENAME}.txt`;
             const finalHeaders = new Headers();
             finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
@@ -1072,7 +975,7 @@ export default {
     },
 };
 
-async function handleWebSocketConnection(request, localUUID, customUUID, proxyIP) {
+async function handleWebSocketConnection(request, AUTH_UUID, proxyIP) {
     const webSocketPair = new WebSocketPair();
     const [client, server] = Object.values(webSocketPair);
     server.accept();
@@ -1089,14 +992,7 @@ async function handleWebSocketConnection(request, localUUID, customUUID, proxyIP
                 writer.releaseLock();
                 return;
             }
-
-            if (chunk.byteLength < 24) return;
-            
-            const requestUUIDBytes = chunk.slice(1, 17);
-            const isLocal = compareArrayBuffers(requestUUIDBytes, uuidToBytes(localUUID));
-            const isCustom = customUUID ? compareArrayBuffers(requestUUIDBytes, uuidToBytes(customUUID)) : false;
-
-            if (!isLocal && !isCustom) return;
+            if (chunk.byteLength < 24 || !compareArrayBuffers(chunk.slice(1, 17), uuidToBytes(AUTH_UUID))) return;
             
             const view = new DataView(chunk);
             const optLen = view.getUint8(17);
@@ -1166,6 +1062,7 @@ function getProxyIPFromRequest(request) {
     }
     return (request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt');
 }
+
 
 async function parseProxyIP(proxyIPString) {
     proxyIPString = proxyIPString.toLowerCase();
