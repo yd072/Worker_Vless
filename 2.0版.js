@@ -652,7 +652,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 <div class="modal-input-group">
                     <div class="checkbox-label-group">
                         <input type="checkbox" id="enableSub">
-                        <label for="enableSub">SUB 外部订阅域名</label>
+                        <label for="enableSub">SUB </label>
                     </div>
                     <input type="text" id="subInput">
                 </div>
