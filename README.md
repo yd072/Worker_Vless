@@ -11,7 +11,4 @@
 | PASSWORD  | 123456 |   您的登录密码   |
 
 
-# 感谢
-[cmliu](https://github.com/cmliu/edgetunnel)
-
 
