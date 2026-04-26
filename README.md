@@ -1,6 +1,5 @@
 # 2.0版
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，简化代码
-![](./eom.png)
 ## 2.0 使用说明
 设置`PASSWORD`变量，变量值为您的密码，进入页面找到页面下方的`Admin Login`点击进入登录页面输入密码。
 
